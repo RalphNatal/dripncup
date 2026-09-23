@@ -22,8 +22,9 @@ create table public.profiles (
   -- Encoded in the member QR on the account page.
   member_code         text not null unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10)),
 
-  -- Set by "delete my account"; the row is retained only to keep historical
-  -- orders referentially intact, with the personal fields scrubbed.
+  -- Tombstone stamped by delete_account_data() as it scrubs the personal
+  -- fields. The row itself goes when the auth user is deleted a moment later;
+  -- if that step fails, deleted_at still keeps the account locked out.
   deleted_at          timestamptz,
 
   created_at          timestamptz not null default now(),
@@ -59,6 +60,14 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  -- Email sign-up sends `full_name`. Social providers (post-launch) send
+  -- `full_name` and/or `name`, so either is accepted and nothing else changes
+  -- when Google or Apple sign-in is switched on.
+  display_name text := nullif(trim(coalesce(
+    nullif(new.raw_user_meta_data ->> 'full_name', ''),
+    new.raw_user_meta_data ->> 'name'
+  )), '');
 begin
   -- Metadata is client-supplied, so only harmless fields are read from it and
   -- the opt-in is true only when explicitly sent as true. `role` is never
@@ -67,8 +76,8 @@ begin
   values (
     new.id,
     new.email,
-    nullif(left(new.raw_user_meta_data ->> 'full_name', 100), ''),
-    nullif(left(split_part(coalesce(new.raw_user_meta_data ->> 'full_name', ''), ' ', 1), 30), ''),
+    left(display_name, 100),
+    nullif(left(split_part(coalesce(display_name, ''), ' ', 1), 30), ''),
     nullif(left(new.raw_user_meta_data ->> 'phone', 32), ''),
     coalesce(new.raw_user_meta_data -> 'marketing_opt_in' = 'true'::jsonb, false)
   )

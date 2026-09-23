@@ -1,4 +1,4 @@
-import { ChevronRight, KeyRound, LayoutDashboard, Store } from "lucide-react";
+import { ChevronRight, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -83,6 +83,17 @@ export default async function AccountPage() {
 
       <div className="mt-10">
         <SignOutButton />
+      </div>
+
+      <div className="mt-6 border-t pt-4">
+        <Link
+          href="/account/delete"
+          className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-base font-medium text-destructive hover:bg-destructive/5"
+        >
+          <UserX className="size-5" aria-hidden="true" />
+          <span className="flex-1">Delete my account</span>
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </Link>
       </div>
     </PageShell>
   );

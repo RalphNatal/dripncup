@@ -123,7 +123,16 @@ export function CheckboxField({
   );
 }
 
-export function SubmitButton({ children, pendingLabel }: { children: ReactNode; pendingLabel: string }) {
+export function SubmitButton({
+  children,
+  pendingLabel,
+  tone = "primary",
+}: {
+  children: ReactNode;
+  pendingLabel: string;
+  /** `danger` for irreversible actions; white on --destructive clears AA (5.6:1). */
+  tone?: "primary" | "danger";
+}) {
   const { pending } = useFormStatus();
 
   return (
@@ -131,7 +140,12 @@ export function SubmitButton({ children, pendingLabel }: { children: ReactNode; 
       type="submit"
       disabled={pending}
       aria-disabled={pending}
-      className="h-12 w-full rounded-full bg-brand-teal-deep text-base font-semibold text-white hover:bg-brand-teal-deep/90"
+      className={cn(
+        "h-12 w-full rounded-full text-base font-semibold text-white",
+        tone === "danger"
+          ? "bg-destructive hover:bg-destructive/90"
+          : "bg-brand-teal-deep hover:bg-brand-teal-deep/90",
+      )}
     >
       {pending ? (
         <>

@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { removeAuthUser } from "@/lib/auth/account-deletion";
 import { getCurrentUser } from "@/lib/auth/dal";
 import { authErrorMessage, echoValues, type FormState } from "@/lib/auth/form-state";
 import { safeNextPath } from "@/lib/auth/redirect";
@@ -51,6 +52,9 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
 
   if (!profile || profile.deleted_at) {
     await supabase.auth.signOut({ scope: "local" });
+    // A tombstone means a deletion whose last step failed. They have just
+    // proved the password, so finish removing the login now.
+    if (profile?.deleted_at) await removeAuthUser(data.user.id);
     return { status: "error", message: "This account has been closed." };
   }
 

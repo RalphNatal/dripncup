@@ -1,5 +1,10 @@
 @AGENTS.md
 
+# Spec
+
+Read `docs/SPEC.md` in full before starting any phase. It is the source of
+truth; where its Decisions Log differs from the original sections, the log wins.
+
 # Database migrations
 
 Once the migrations in `supabase/migrations/` have been pushed to a hosted

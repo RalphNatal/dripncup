@@ -13,6 +13,10 @@
 --
 -- The numbers are column DEFAULTs rather than BEFORE INSERT triggers so the
 -- generated TypeScript Insert types mark them optional.
+--
+-- Every numbering function takes an optional `as_of` instant (default now()).
+-- Production never passes it; it exists so the HST date rollover can be
+-- regression-tested at fixed instants (supabase/tests/numbering.test.sql).
 -- ----------------------------------------------------------------------------
 create table public.daily_counters (
   scope       text not null,
@@ -21,19 +25,24 @@ create table public.daily_counters (
   primary key (scope, counter_day)
 );
 
-create or replace function public.next_daily_number(counter_scope text)
+create or replace function public.next_daily_number(
+  counter_scope text,
+  as_of timestamptz default now()
+)
 returns integer
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  today_hst date := public.cafe_today();
+  -- The Honolulu date, not the UTC one: an 11 PM HST order is already
+  -- "tomorrow" in UTC but must still count towards today.
+  day_hst date := public.cafe_date(as_of);
   next_value integer;
 begin
   -- ON CONFLICT ... RETURNING makes this atomic under concurrent checkouts.
   insert into public.daily_counters (scope, counter_day, last_value)
-  values (counter_scope, today_hst, 1)
+  values (counter_scope, day_hst, 1)
   on conflict (scope, counter_day)
   do update set last_value = daily_counters.last_value + 1
   returning last_value into next_value;
@@ -43,25 +52,25 @@ end;
 $$;
 
 -- Orders look like DC-260923-0042 (HST date, then that day's sequence).
-create or replace function public.next_order_number()
+create or replace function public.next_order_number(as_of timestamptz default now())
 returns text
 language sql
 security definer
 set search_path = public, pg_temp
 as $$
   select 'DC-'
-    || to_char(public.cafe_today(), 'YYMMDD')
+    || to_char(public.cafe_date(as_of), 'YYMMDD')
     || '-'
-    || lpad(public.next_daily_number('order')::text, 4, '0');
+    || lpad(public.next_daily_number('order', as_of)::text, 4, '0');
 $$;
 
 -- Only the numbering defaults may bump a counter; otherwise any signed-in
 -- user could burn numbers or fill daily_counters with junk scopes via RPC.
 -- Orders are inserted only by the service role (see orders RLS), so
 -- customers need no EXECUTE on next_order_number() either.
-revoke execute on function public.next_daily_number(text) from public, anon, authenticated;
-revoke execute on function public.next_order_number() from public, anon, authenticated;
-grant execute on function public.next_order_number() to service_role;
+revoke execute on function public.next_daily_number(text, timestamptz) from public, anon, authenticated;
+revoke execute on function public.next_order_number(timestamptz) from public, anon, authenticated;
+grant execute on function public.next_order_number(timestamptz) to service_role;
 
 create table public.orders (
   id                  uuid primary key default gen_random_uuid(),
@@ -69,7 +78,9 @@ create table public.orders (
   order_number        text not null unique default public.next_order_number()
                       check (order_number <> ''),
 
-  user_id             uuid not null references public.profiles (id) on delete restrict,
+  -- Null only once the customer has deleted their account: the order stays
+  -- for sales and tax reports, detached from them (see anonymized_at).
+  user_id             uuid references public.profiles (id) on delete set null,
   location_id         uuid not null references public.locations (id) on delete restrict,
 
   status              public.order_status not null default 'pending_payment',
@@ -120,6 +131,10 @@ create table public.orders (
   cancelled_at        timestamptz,
   cancellation_reason text,
 
+  -- Set by account deletion when the customer's personal fields were scrubbed
+  -- and user_id detached. See delete_account_data().
+  anonymized_at       timestamptz,
+
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now(),
 
@@ -128,6 +143,12 @@ create table public.orders (
   ),
   constraint orders_cancel_needs_reason check (
     status <> 'cancelled' or cancellation_reason is not null
+  ),
+  -- An order without an owner is only legitimate after an account deletion.
+  -- This stops a checkout bug from writing orphaned orders, and stops a user
+  -- being deleted around the anonymising flow (the FK's SET NULL would fail).
+  constraint orders_owner_or_anonymized check (
+    user_id is not null or anonymized_at is not null
   )
 );
 

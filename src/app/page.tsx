@@ -1,12 +1,14 @@
 import { Clock, MapPin } from "lucide-react";
 import { Suspense } from "react";
 
+import { AccountDeletedNotice } from "@/components/account/account-deleted-notice";
 import { AccountLink, AccountLinkSkeleton } from "@/components/auth/account-link";
 import { Logo, Swirl } from "@/components/brand/logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BRAND, CAFE_ADDRESS, CAFE_ADDRESS_ONE_LINE } from "@/lib/brand";
+import { firstParam, type SearchParams } from "@/lib/search-params";
 
 /**
  * Placeholder home screen for Phase 1.
@@ -15,7 +17,8 @@ import { BRAND, CAFE_ADDRESS, CAFE_ADDRESS_ONE_LINE } from "@/lib/brand";
  * active order card, seasonal banner). It stays deliberately small, but it is
  * built from the brand tokens so the foundation is visibly working.
  */
-export default function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
+  const accountDeleted = firstParam((await searchParams).account) === "deleted";
   const mapsHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     CAFE_ADDRESS_ONE_LINE,
   )}`;
@@ -28,6 +31,11 @@ export default function HomePage() {
             <AccountLink />
           </Suspense>
         </div>
+        {accountDeleted ? (
+          <div className="mx-auto mt-4 w-full max-w-md">
+            <AccountDeletedNotice />
+          </div>
+        ) : null}
         <div className="mx-auto w-full max-w-md pt-4">
           <Logo size="lg" />
           <Swirl className="mt-3 h-7 text-brand-magenta" />

@@ -117,12 +117,13 @@ export type Database = {
       }
       catering_requests: {
         Row: {
+          anonymized_at: string | null
           budget_cents: number | null
           cancellation_reason: string | null
           cancelled_at: string | null
           confirmed_at: string | null
-          contact_email: string
-          contact_name: string
+          contact_email: string | null
+          contact_name: string | null
           contact_phone: string | null
           created_at: string
           custom_drink_request: string | null
@@ -140,15 +141,16 @@ export type Database = {
           request_number: string
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
+          anonymized_at?: string | null
           budget_cents?: number | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           confirmed_at?: string | null
-          contact_email: string
-          contact_name: string
+          contact_email?: string | null
+          contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
           custom_drink_request?: string | null
@@ -166,15 +168,16 @@ export type Database = {
           request_number?: string
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
+          anonymized_at?: string | null
           budget_cents?: number | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           confirmed_at?: string | null
-          contact_email?: string
-          contact_name?: string
+          contact_email?: string | null
+          contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
           custom_drink_request?: string | null
@@ -192,7 +195,7 @@ export type Database = {
           request_number?: string
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -905,6 +908,7 @@ export type Database = {
       orders: {
         Row: {
           accepted_at: string | null
+          anonymized_at: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
           created_at: string
@@ -939,10 +943,11 @@ export type Database = {
           tip_cents: number
           total_cents: number
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           accepted_at?: string | null
+          anonymized_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           created_at?: string
@@ -977,10 +982,11 @@ export type Database = {
           tip_cents?: number
           total_cents?: number
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           accepted_at?: string | null
+          anonymized_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           created_at?: string
@@ -1015,7 +1021,7 @@ export type Database = {
           tip_cents?: number
           total_cents?: number
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1319,7 +1325,7 @@ export type Database = {
           id: string
           order_id: string
           promo_id: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           amount_cents: number
@@ -1327,7 +1333,7 @@ export type Database = {
           id?: string
           order_id: string
           promo_id: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           amount_cents?: number
@@ -1335,7 +1341,7 @@ export type Database = {
           id?: string
           order_id?: string
           promo_id?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1547,10 +1553,15 @@ export type Database = {
         Returns: Database["public"]["Enums"]["user_role"]
       }
       cafe_clock: { Args: never; Returns: string }
+      cafe_date: { Args: { instant: string }; Returns: string }
       cafe_today: { Args: never; Returns: string }
       can_access_location: {
         Args: { target_location_id: string }
         Returns: boolean
+      }
+      delete_account_data: {
+        Args: { target_user_id: string }
+        Returns: undefined
       }
       get_setting: { Args: { setting_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
@@ -1562,9 +1573,12 @@ export type Database = {
         }
         Returns: boolean
       }
-      next_catering_number: { Args: never; Returns: string }
-      next_daily_number: { Args: { counter_scope: string }; Returns: number }
-      next_order_number: { Args: never; Returns: string }
+      next_catering_number: { Args: { as_of?: string }; Returns: string }
+      next_daily_number: {
+        Args: { as_of?: string; counter_scope: string }
+        Returns: number
+      }
+      next_order_number: { Args: { as_of?: string }; Returns: string }
       set_location_accepting_orders: {
         Args: { accepting: boolean; target_location_id: string }
         Returns: {

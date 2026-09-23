@@ -113,6 +113,19 @@ export const profileSchema = z.object({
   orderReadyPush: checkbox(),
 });
 
+/** What the customer must type to confirm account deletion. Case-sensitive. */
+export const DELETE_CONFIRMATION = "DELETE";
+
+export const deleteAccountSchema = z.object({
+  // Same handling as sign-in, so whatever signs them in also confirms here.
+  password: text().pipe(z.string().min(1, { error: "Enter your password." })),
+  confirmation: text().pipe(
+    z.string().refine((value) => value === DELETE_CONFIRMATION, {
+      error: `Type ${DELETE_CONFIRMATION} in capitals to confirm.`,
+    }),
+  ),
+});
+
 /** Field name -> first error message, ready to render under each input. */
 export type FieldErrors = Partial<Record<string, string>>;
 

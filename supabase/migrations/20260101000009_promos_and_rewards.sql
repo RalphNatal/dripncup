@@ -55,7 +55,9 @@ comment on table public.promos is
 create table public.promo_redemptions (
   id           uuid primary key default gen_random_uuid(),
   promo_id     uuid not null references public.promos (id) on delete cascade,
-  user_id      uuid not null references public.profiles (id) on delete cascade,
+  -- Detached (not deleted) when the customer deletes their account, so promo
+  -- usage reports still add up.
+  user_id      uuid references public.profiles (id) on delete set null,
   -- FK added in the orders migration, which runs after this one.
   order_id     uuid not null,
   amount_cents integer not null check (amount_cents >= 0),

@@ -1,0 +1,56 @@
+/**
+ * End-to-end tests. `npm run test:e2e`.
+ *
+ * Prerequisites: the local Supabase stack is running and seeded
+ * (`npm run db:start`, `npm run db:reset`, `npm run db:seed`).
+ *
+ * The suite builds the app and serves the production build on port 3100, so
+ * it never collides with `npm run dev` on 3000.
+ *
+ * Tests share one database and flip real rows in it (sold-out flags, the pause
+ * toggle), so they run one at a time.
+ */
+import { defineConfig, devices } from "@playwright/test";
+
+const PORT = 3100;
+
+/**
+ * Which browser build to drive. On Windows this defaults to the Microsoft Edge
+ * that ships with the OS, so no browser download is needed; elsewhere it uses
+ * Playwright's bundled Chromium (`npx playwright install chromium`).
+ * Override with PLAYWRIGHT_CHANNEL=chromium | chrome | msedge.
+ */
+const envChannel = process.env.PLAYWRIGHT_CHANNEL;
+const channel =
+  envChannel === "chromium"
+    ? undefined
+    : (envChannel ?? (process.platform === "win32" ? "msedge" : undefined));
+
+export default defineConfig({
+  testDir: "e2e",
+  fullyParallel: false,
+  workers: 1,
+  retries: process.env.CI ? 1 : 0,
+  forbidOnly: Boolean(process.env.CI),
+  reporter: [["list"]],
+  globalSetup: "./e2e/global-setup.ts",
+  timeout: 45_000,
+  expect: { timeout: 10_000 },
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
+  projects: [
+    // Phone first, matching the design: 390px-class viewport, touch, mobile UA.
+    { name: "mobile", use: { ...devices["Pixel 7"], channel } },
+    // The product dialog and top navigation only exist at desktop widths.
+    { name: "desktop", use: { ...devices["Desktop Chrome"], channel }, grep: /@desktop/ },
+  ],
+  webServer: {
+    command: `npm run build && npm run start -- --port ${PORT}`,
+    url: `http://localhost:${PORT}`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 300_000,
+  },
+});

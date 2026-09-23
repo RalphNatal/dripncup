@@ -31,9 +31,9 @@ Browse the menu → customise your drink → pay → pick it up → earn Overflo
 | npm | 10+ | ships with Node |
 | **Docker Desktop** | latest | **required** — the local Supabase stack runs in containers |
 
-> Docker Desktop is not currently installed on this machine. Install it from
-> <https://www.docker.com/products/docker-desktop/>, start it, and make sure
-> the whale icon says "Engine running" before continuing.
+> Install Docker Desktop from <https://www.docker.com/products/docker-desktop/>,
+> start it, and make sure the whale icon says "Engine running" before
+> continuing.
 
 ---
 
@@ -122,6 +122,8 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Vitest unit tests |
 | `npm run test:watch` | Vitest in watch mode |
+| `npm run test:db` | pgTAP database tests in `supabase/tests` (local stack must be running) |
+| `npm run test:e2e` | Playwright end-to-end tests (builds the app, serves it on port 3100) |
 | `npm run db:start` / `db:stop` | Start / stop the local Supabase stack |
 | `npm run db:reset` | Recreate the database and re-run every migration |
 | `npm run db:push` | Apply migrations to the **linked remote** project |
@@ -195,6 +197,33 @@ stack allows only two auth emails per hour (`[auth.rate_limit]` in
 
 ---
 
+## Tests
+
+```powershell
+npm test            # unit tests: pure logic, no database
+npm run test:db     # pgTAP: SQL functions, triggers, constraints, grants
+npm run test:e2e    # Playwright: the app in a real browser
+```
+
+`test:db` and `test:e2e` need the local stack running and seeded (`npm run
+db:start`, `npm run db:reset`, `npm run db:seed`).
+
+- **Database tests** run each file in `supabase/tests` inside a transaction
+  that is rolled back, so they leave nothing behind. `scripts/test-db.mjs`
+  pipes them into the running database container, rather than using
+  `supabase test db`, because Docker Desktop on Windows intermittently fails
+  the bind mount that command needs.
+- **End-to-end tests** build the app and serve it on port 3100, so they never
+  clash with `npm run dev`. On Windows they drive the Microsoft Edge that ships
+  with the OS, so nothing needs downloading. Elsewhere, run
+  `npx playwright install chromium` once. `PLAYWRIGHT_CHANNEL` overrides the
+  browser (`chromium`, `chrome` or `msedge`). The tests change real rows (the
+  pause toggle, sold-out flags, opening hours) and put them back afterwards,
+  so they run one at a time. Avoid running them against a database you are
+  using by hand.
+
+---
+
 ## Testing Stripe webhooks locally (Phase 4)
 
 Install the [Stripe CLI](https://docs.stripe.com/stripe-cli), then in a second
@@ -226,9 +255,9 @@ src/
   app/                 App Router pages, layouts, route handlers
     (auth)/            Sign-in, sign-up, forgot-password (shared layout)
     auth/callback/     Landing route for emailed confirmation / reset links
-    account/           Profile, preferences, change password
+    account/           Profile, preferences, change password, delete account
   components/
-    account/           Profile form
+    account/           Profile form, delete-account form
     auth/              Auth forms, shared form fields, sign-out, account link
     brand/             Logo, decorative marks
     ui/                shadcn/ui primitives
@@ -240,6 +269,8 @@ src/
       roles.ts         Which roles may open which routes
       schemas.ts       Zod schemas for every auth/account form
       redirect.ts      safeNextPath -- blocks open redirects via ?next=
+      reauthenticate.ts  Password re-check for sensitive actions
+      account-deletion.ts  Last-admin check, auth-user removal
     brand.ts           Brand copy, address, contact, setting fallbacks
     env.ts             Zod-validated environment variables
     money.ts           Integer-cent maths and USD formatting
@@ -255,6 +286,10 @@ src/
 supabase/
   migrations/          Schema, RLS policies, triggers
   seed/seed.ts         Demo data
+  tests/               pgTAP database tests (npm run test:db)
+e2e/                   Playwright specs and their DB helpers (npm run test:e2e)
+scripts/test-db.mjs    Runs supabase/tests against the local database
+docs/SPEC.md           The build spec -- read before starting any phase
 ```
 
 ---
@@ -293,7 +328,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 ## Build phases
 
 1. ✅ **Foundation** — setup, design tokens, migrations + RLS, seed
-2. ✅ **Auth & roles** — sign-up/in/out, password reset, account page, role-gated `/staff` and `/admin`
+2. ✅ **Auth & roles** — sign-up/in/out, password reset, account page, account deletion, role-gated `/staff` and `/admin`
 3. ⬜ Menu & customisation
 4. ⬜ Cart & checkout (Stripe)
 5. ⬜ Order tracking & history

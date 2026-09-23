@@ -2,7 +2,7 @@
 
 > **Source of truth for every phase.** Read this in full before starting any phase. Decisions made during development are recorded in the **Decisions Log** at the end; where the log and the original spec differ, **the log wins**.
 >
-> **Status:** Phase 1 (Foundation) and Phase 2 (Auth & roles) complete. Next: Phase 2 wrap-up (account deletion, timezone test) → Phase 3.
+> **Status:** Phase 1 (Foundation) and Phase 2 (Auth & roles, including account deletion and the timezone test) complete. Next: Phase 3.
 
 You are a senior full-stack engineer building a production-quality, mobile-first order-ahead web app for **Drincup Cafe**, an independent drink and food cafe at **1221 Kapiolani Blvd, Site 112A, Honolulu, HI 96814**. The experience should rival a major coffee chain's app (browse → customize → pay → pick up → earn rewards) but with Drincup's own warm, community-focused identity. Do not copy any other company's names, colors, logos, icons, copy, or layouts.
 
@@ -174,7 +174,7 @@ Rules:
 
 ## 15. Build Phases (stop and report after each)
 1. ✅ **Foundation:** project setup, Tailwind/shadcn, Supabase client, folder structure, brand design tokens, migrations + RLS, seed script
-2. ✅ **Auth & roles:** sign up/in (email + password), profiles, role-based route protection. *Wrap-up pending: account deletion, timezone regression test*
+2. ✅ **Auth & roles:** sign up/in (email + password), profiles, role-based route protection, account deletion, timezone regression test
 3. **Menu & customization:** app shell, location handling, menu, product detail with data-driven modifiers, shared pricing engine, live pricing, minimal cart store
 4. **Cart & checkout:** cart page, promos, tax, tips, pickup slot logic, server-side pricing, Stripe test integration + webhook
 5. **Order tracking & history:** realtime status, emails, history, reorder, favorites
@@ -222,6 +222,12 @@ Decisions made during development. These override the sections above where they 
 - **Sign-up ignores any client-supplied role**; `?next=` redirects are restricted to same-site paths; password reset never reveals whether an email exists
 - **Hosted auth settings** (for Phase 11): Site URL, redirect URLs `https://<domain>/**`, minimum password length 8, email confirmation on (see README)
 - **Account deletion** (Phase 2 wrap-up): requires password re-entry; cancels unfinished orders and catering requests; keeps past orders and catering records for reports with personal data removed and `user_id` detached; deletes favorites and profile; the last remaining admin cannot delete themselves
+
+### Phase 2 wrap-up
+- **Account deletion is one service-role SQL function** (`delete_account_data`) plus the admin API call that removes the auth user. Also scrubbed: order notes, catering notes/custom-drink brief/delivery address, and stored Stripe payloads. Promo redemptions are detached, not deleted; the loyalty ledger is deleted. `order_items` are not touched (immutable snapshot, no contact data)
+- **`orders.user_id`, `catering_requests.user_id` and `promo_redemptions.user_id` are nullable**, with an `anonymized_at` marker on orders and catering; check constraints allow a missing owner only once anonymised
+- **Numbering functions take `as_of timestamptz default now()`**. Customers may take only today's catering number; an explicit `as_of` is server-only
+- **Database tests use pgTAP** in `supabase/tests` (`npm run test:db`); **e2e uses Playwright**, which drives the OS-installed Microsoft Edge on Windows
 
 ### Pending client confirmation
 Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, and which POS the cafe uses.

@@ -303,9 +303,11 @@ create policy catering_requests_select on public.catering_requests
   for select to authenticated
   using (user_id = auth.uid() or public.is_admin());
 
+-- anonymized_at must stay null: it is what relaxes the contact-details check,
+-- and only account deletion may set it.
 create policy catering_requests_insert_own on public.catering_requests
   for insert to authenticated
-  with check (user_id = auth.uid() and status = 'submitted');
+  with check (user_id = auth.uid() and status = 'submitted' and anonymized_at is null);
 
 -- Quoting, confirming and cancelling are admin actions.
 create policy catering_requests_admin_write on public.catering_requests

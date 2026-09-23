@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { echoValues } from "./form-state";
 import {
+  deleteAccountSchema,
   firstFieldErrors,
   newPasswordSchema,
   profileSchema,
@@ -93,6 +94,28 @@ describe("profileSchema", () => {
       smsOptIn: false,
       firstName: null,
     });
+  });
+});
+
+describe("deleteAccountSchema", () => {
+  it("accepts the password and DELETE typed exactly", () => {
+    expect(deleteAccountSchema.safeParse(form({ password: "pw", confirmation: " DELETE " })).success).toBe(
+      true,
+    );
+  });
+
+  it("requires DELETE in capitals, not a near miss", () => {
+    for (const confirmation of ["delete", "Delete", "DELET", "", "DELETE ME"]) {
+      const result = deleteAccountSchema.safeParse(form({ password: "pw", confirmation }));
+      expect(result.success, confirmation).toBe(false);
+      if (!result.success) expect(firstFieldErrors(result.error).confirmation).toMatch(/DELETE/);
+    }
+  });
+
+  it("requires the password", () => {
+    const result = deleteAccountSchema.safeParse(form({ password: "", confirmation: "DELETE" }));
+    expect(result.success).toBe(false);
+    if (!result.success) expect(firstFieldErrors(result.error).password).toBeDefined();
   });
 });
 

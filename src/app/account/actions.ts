@@ -1,10 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
-import { getCurrentProfile } from "@/lib/auth/dal";
-import { GENERIC_ERROR, echoValues, type FormState } from "@/lib/auth/form-state";
-import { firstFieldErrors, profileSchema } from "@/lib/auth/schemas";
+import { LAST_ADMIN_SQLSTATE, removeAuthUser } from "@/lib/auth/account-deletion";
+import { getCurrentProfile, getCurrentUser } from "@/lib/auth/dal";
+import { GENERIC_ERROR, authErrorMessage, echoValues, type FormState } from "@/lib/auth/form-state";
+import { verifyPassword } from "@/lib/auth/reauthenticate";
+import { deleteAccountSchema, firstFieldErrors, profileSchema } from "@/lib/auth/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -58,4 +62,64 @@ export async function updateProfile(_prev: FormState, formData: FormData): Promi
 
   revalidatePath("/account");
   return { status: "success", message: "Saved.", values: echoValues(formData) };
+}
+
+/**
+ * "Delete my account", after the customer has re-entered their password and
+ * typed DELETE.
+ *
+ * The data work is one database transaction (delete_account_data), so the
+ * account is either closed completely or not at all. Only then is the login
+ * itself removed. What is cancelled, kept and scrubbed is documented on that
+ * function and in ARCHITECTURE.md.
+ */
+export async function deleteAccount(_prev: FormState, formData: FormData): Promise<FormState> {
+  const [user, profile] = await Promise.all([getCurrentUser(), getCurrentProfile()]);
+  if (!user?.email || !profile) {
+    return { status: "error", message: "Your session has ended. Sign in again to continue." };
+  }
+
+  const parsed = deleteAccountSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { status: "error", fieldErrors: firstFieldErrors(parsed.error), values: echoValues(formData) };
+  }
+
+  const check = await verifyPassword(user.id, user.email, parsed.data.password);
+  if (check === "invalid") {
+    return {
+      status: "error",
+      fieldErrors: { password: "That password isn't right. Your account has not been deleted." },
+      values: echoValues(formData),
+    };
+  }
+  if (check !== "ok") {
+    const message = check === "rate_limited" ? authErrorMessage("over_request_rate_limit") : GENERIC_ERROR;
+    return { status: "error", message, values: echoValues(formData) };
+  }
+
+  // Service role: this has to reach rows RLS hides from the customer (their
+  // orders' payments, the staff roster) and write columns they cannot.
+  const { error } = await createAdminClient().rpc("delete_account_data", { target_user_id: user.id });
+  if (error) {
+    if (error.code === LAST_ADMIN_SQLSTATE) {
+      return {
+        status: "error",
+        message: "You're the only admin. Make someone else an admin before deleting your account.",
+      };
+    }
+    console.error(`Account ${user.id}: delete_account_data failed`, error);
+    return { status: "error", message: GENERIC_ERROR, values: echoValues(formData) };
+  }
+
+  // The account is closed from here on. Clear this browser's session first,
+  // so the cookies go even if removing the login below were to fail.
+  const supabase = await createClient();
+  await supabase.auth.signOut({ scope: "local" });
+
+  // Also ends every other session. On failure the tombstone keeps them out and
+  // their next sign-in attempt retries this (see signIn).
+  await removeAuthUser(user.id);
+
+  revalidatePath("/", "layout");
+  redirect("/?account=deleted");
 }
