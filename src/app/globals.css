@@ -1,0 +1,256 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   Drincup Cafe design tokens
+   --------------------------------------------------------------------------
+   Two layers, on purpose:
+
+   1. `--brand-*` are the raw palette. They never change per theme.
+   2. The shadcn semantic tokens (`--primary`, `--accent`, ...) point at the
+      brand palette. Components only ever use the semantic names.
+
+   Contrast note: the hero teal (#1AB3C0) is a light colour -- white text on it
+   lands at 2.6:1, well under WCAG AA. So the palette carries a deepened teal
+   and magenta for anything that needs white text on top (buttons, badges,
+   links), while the bright hues stay for large fills and decoration. Measured
+   contrast against white is noted on each.
+   ========================================================================== */
+
+@theme inline {
+  /* Brand palette -------------------------------------------------------- */
+  --color-brand-teal: var(--brand-teal);
+  --color-brand-teal-deep: var(--brand-teal-deep);
+  --color-brand-teal-soft: var(--brand-teal-soft);
+  --color-brand-pink: var(--brand-pink);
+  --color-brand-pink-soft: var(--brand-pink-soft);
+  --color-brand-magenta: var(--brand-magenta);
+  --color-brand-magenta-deep: var(--brand-magenta-deep);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-sand: var(--brand-sand);
+
+  /* Semantic tokens consumed by shadcn components ------------------------ */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Type ------------------------------------------------------------------
+     Baloo 2 for headings (rounded, warm); Inter for body. Both cover the
+     Hawaiian okina and kahako. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-baloo), var(--font-inter), ui-rounded, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Rounded shapes are core to the brand. */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-3xl: calc(var(--radius) * 2.5);
+  --radius-4xl: calc(var(--radius) * 3);
+}
+
+:root {
+  /* ---- Raw brand palette ---- */
+  --brand-teal: #1ab3c0; /* hero fill; needs dark text (8.2:1 with ink) */
+  --brand-teal-deep: #0e7c86; /* interactive; white text at 4.95:1 */
+  --brand-teal-soft: #e6f7f9; /* tinted surfaces */
+  --brand-pink: #f29bb8; /* light accent; dark text only */
+  --brand-pink-soft: #fdeef3;
+  --brand-magenta: #e0409b; /* large fills and decoration */
+  --brand-magenta-deep: #b81c74; /* white text at 6.1:1 */
+  --brand-ink: #101114; /* near-black, softer than pure #000 on screen */
+  --brand-sand: #fffaf4; /* warm off-white page background */
+
+  /* ---- Semantic, light mode ---- */
+  --background: var(--brand-sand);
+  --foreground: var(--brand-ink);
+
+  --card: #ffffff;
+  --card-foreground: var(--brand-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--brand-ink);
+
+  --primary: var(--brand-teal-deep);
+  --primary-foreground: #ffffff;
+
+  --secondary: var(--brand-teal-soft);
+  --secondary-foreground: #0a5b63;
+
+  --muted: #f3f1ee;
+  --muted-foreground: #5d5a56;
+
+  --accent: var(--brand-pink-soft);
+  --accent-foreground: #8a1457;
+
+  --destructive: #c0332f;
+  --success: #17795a;
+  --warning: #9a6207;
+
+  --border: #e7e2dc;
+  --input: #ded8d0;
+  --ring: var(--brand-teal-deep);
+
+  /* Chart ramp: brand hues first, then supporting tones. */
+  --chart-1: var(--brand-teal-deep);
+  --chart-2: var(--brand-magenta);
+  --chart-3: #f2a341;
+  --chart-4: #5b8def;
+  --chart-5: #17795a;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: var(--brand-ink);
+  --sidebar-primary: var(--brand-teal-deep);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--brand-teal-soft);
+  --sidebar-accent-foreground: #0a5b63;
+  --sidebar-border: #e7e2dc;
+  --sidebar-ring: var(--brand-teal-deep);
+
+  --radius: 1rem;
+}
+
+/* Dark mode is a nice-to-have, not the shipping default; light mode is the
+   designed experience. Tokens are defined so components do not break if a
+   viewer forces dark. */
+.dark {
+  --background: #0e1113;
+  --foreground: #f5f2ee;
+
+  --card: #161b1e;
+  --card-foreground: #f5f2ee;
+  --popover: #161b1e;
+  --popover-foreground: #f5f2ee;
+
+  --primary: #3fd0dc;
+  --primary-foreground: #06282c;
+
+  --secondary: #1b2f33;
+  --secondary-foreground: #bdeef3;
+
+  --muted: #1c2124;
+  --muted-foreground: #a7a29b;
+
+  --accent: #33202b;
+  --accent-foreground: #f8b6cf;
+
+  --destructive: #f26b63;
+  --success: #4cc79b;
+  --warning: #e0a94a;
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: #3fd0dc;
+
+  --sidebar: #161b1e;
+  --sidebar-foreground: #f5f2ee;
+  --sidebar-primary: #3fd0dc;
+  --sidebar-primary-foreground: #06282c;
+  --sidebar-accent: #1b2f33;
+  --sidebar-accent-foreground: #bdeef3;
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: #3fd0dc;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    /* Stops iOS Safari inflating text in landscape. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading tracking-tight;
+  }
+
+  /* Prices and order numbers line up in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Accessibility: every interactive target clears 44px, per WCAG 2.1 AA. */
+  button,
+  [role="button"],
+  a.tap,
+  input[type="checkbox"],
+  input[type="radio"] {
+    touch-action: manipulation;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Safe-area padding for the bottom tab bar on notched phones. */
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* The sunny island gradient used behind the home header. */
+  .bg-brand-wash {
+    background-image: linear-gradient(
+      160deg,
+      var(--brand-teal-soft) 0%,
+      var(--brand-sand) 55%,
+      var(--brand-pink-soft) 100%
+    );
+  }
+}
