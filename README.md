@@ -254,15 +254,27 @@ must be running for checkout to complete end to end.
 src/
   app/                 App Router pages, layouts, route handlers
     (auth)/            Sign-in, sign-up, forgot-password (shared layout)
+    (shop)/            Customer app: header, bottom tab bar, pickup location
+      page.tsx         Home (placeholder)
+      menu/            Menu, /menu/[slug] full page, @modal/(.)[slug] sheet
+      account/         Profile, preferences, change password, delete account
+      rewards/ orders/ cart/   Placeholders until their phases
     auth/callback/     Landing route for emailed confirmation / reset links
-    account/           Profile, preferences, change password, delete account
+    staff/ admin/      Dashboards (own plain frame, no customer tab bar)
   components/
     account/           Profile form, delete-account form
-    auth/              Auth forms, shared form fields, sign-out, account link
+    auth/              Auth forms, shared form fields, sign-out
     brand/             Logo, decorative marks
+    shell/             App header, tab bar, cart button, sheet/dialog primitive
+    locations/         Location picker, status dot, directions link
+    menu/              Menu browser, product card + customiser + sheet, banners
     ui/                shadcn/ui primitives
     providers.tsx      TanStack Query + Tooltip + Toaster
   lib/
+    pricing/           Shared pricing + validation engine (pure; client and server)
+    menu/              Catalogue (cached), sold-out (live), page models, search
+    locations/         Open/closed status, storefront context, selection cookie
+    cart/              Zustand cart store (persisted)
     auth/
       actions.ts       Sign-in/up/out and password Server Actions
       dal.ts           getCurrentProfile, requireProfile, requireRole
@@ -303,7 +315,11 @@ docs/SPEC.md           The build spec -- read before starting any phase
 - **The server recalculates every amount.** Client-sent totals are never
   trusted.
 - **Modifiers are data, not code.** Nothing in the UI hardcodes a syrup or a
-  milk option.
+  milk option. Swapping in the real menu means changing rows (seed now, admin
+  in Phase 9), never components.
+- **The menu catalogue is cached for up to 60 seconds** (sold-out flags, hours
+  and the pause toggle are always live). After `npm run db:seed`, restart
+  `npm run dev` or wait a minute before the new menu shows.
 
 ---
 
@@ -319,6 +335,8 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 - [ ] **GET rate** — seeded at 4.712% (Oʻahu visible pass-on rate)
 - [ ] Whether tips should be excluded from the taxed amount (assumed yes)
 - [ ] Real menu, prices, sizes and modifier upcharges
+- [ ] Whether flavours are charged once or per pump (seeded as once per flavour; `modifier_groups.charge_per_quantity`)
+- [ ] Product photography (a generated brand-coloured placeholder shows until then)
 - [ ] Pickup-shelf wording
 - [ ] Whether catering delivery is offered (assumed yes)
 - [ ] Catering minimum lead time (seeded at 72 hours)
@@ -329,7 +347,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 
 1. ✅ **Foundation** — setup, design tokens, migrations + RLS, seed
 2. ✅ **Auth & roles** — sign-up/in/out, password reset, account page, account deletion, role-gated `/staff` and `/admin`
-3. ⬜ Menu & customisation
+3. ✅ **Menu & customisation** — app shell, pickup locations and live status, menu, product sheet with data-driven modifiers, shared pricing engine, cart store
 4. ⬜ Cart & checkout (Stripe)
 5. ⬜ Order tracking & history
 6. ⬜ Staff dashboard

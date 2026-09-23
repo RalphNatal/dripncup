@@ -2,7 +2,7 @@
 
 > **Source of truth for every phase.** Read this in full before starting any phase. Decisions made during development are recorded in the **Decisions Log** at the end; where the log and the original spec differ, **the log wins**.
 >
-> **Status:** Phase 1 (Foundation) and Phase 2 (Auth & roles, including account deletion and the timezone test) complete. Next: Phase 3.
+> **Status:** Phases 1–3 complete (Foundation; Auth & roles, including account deletion and the timezone test; Menu & customization). Next: Phase 4.
 
 You are a senior full-stack engineer building a production-quality, mobile-first order-ahead web app for **Drincup Cafe**, an independent drink and food cafe at **1221 Kapiolani Blvd, Site 112A, Honolulu, HI 96814**. The experience should rival a major coffee chain's app (browse → customize → pay → pick up → earn rewards) but with Drincup's own warm, community-focused identity. Do not copy any other company's names, colors, logos, icons, copy, or layouts.
 
@@ -175,7 +175,7 @@ Rules:
 ## 15. Build Phases (stop and report after each)
 1. ✅ **Foundation:** project setup, Tailwind/shadcn, Supabase client, folder structure, brand design tokens, migrations + RLS, seed script
 2. ✅ **Auth & roles:** sign up/in (email + password), profiles, role-based route protection, account deletion, timezone regression test
-3. **Menu & customization:** app shell, location handling, menu, product detail with data-driven modifiers, shared pricing engine, live pricing, minimal cart store
+3. ✅ **Menu & customization:** app shell, location handling, menu, product detail with data-driven modifiers, shared pricing engine, live pricing, minimal cart store
 4. **Cart & checkout:** cart page, promos, tax, tips, pickup slot logic, server-side pricing, Stripe test integration + webhook
 5. **Order tracking & history:** realtime status, emails, history, reorder, favorites
 6. **Staff dashboard:** live queue, alerts, status updates, sold-out and pause toggles
@@ -229,5 +229,16 @@ Decisions made during development. These override the sections above where they 
 - **Numbering functions take `as_of timestamptz default now()`**. Customers may take only today's catering number; an explicit `as_of` is server-only
 - **Database tests use pgTAP** in `supabase/tests` (`npm run test:db`); **e2e uses Playwright**, which drives the OS-installed Microsoft Edge on Windows
 
+### Phase 3
+- **Conditional modifier groups:** `product_modifier_groups.visible_when_option_id` (per product link, so Ice can be conditional on a latte but always shown on a lemonade). A deferred trigger requires the option to come from another group on the same product. Hidden groups are not validated, charged or stored
+- **`modifier_groups.quantity_unit`** ("pump", "shot") and **`charge_per_quantity`** (per unit vs once per option), so per-pump vs per-flavour pricing is a data choice. Seed: syrups charged once per flavour, extra shots per shot (`NEEDS_CONFIRMATION`)
+- **Pricing engine API:** `validateSelection(product, groups, selection)`; `resolveSelection(groups, modifiers)` turns ids into catalogue-priced modifiers (the `order_items.modifiers` snapshot shape); `calculateLinePrice(product, size, resolvedModifiers, quantity)`. Prices never come from the client
+- **Caching:** the catalogue is cached 60 s (`unstable_cache`, tag `menu`); sold-out flags, hours, closures and the pause toggle are read live (`no-store`). The app stays on Next's previous caching model; Cache Components is a separate decision
+- **Selected location** lives in an `httpOnly` cookie (`dc_location`); only a currently offered location can be selected
+- **Paused** shows only during open hours; outside them the status reads `Closed · Opens …`. The global `orders.accepting_online_orders` setting pauses every location
+- **Images:** only this project's public Storage URLs (or bucket paths) are rendered; anything else falls back to a generated brand placeholder. Collection accent colours must be plain colour values
+- **`/cart` is a placeholder** (item count only) so the header icon has a destination; the real cart page is Phase 4
+- **Seed tweaks:** an optional "Add milk" group for drip and cold brew (black by default), Ice conditional on Iced wherever both are linked, and one demo sold-out product and option at the cafe
+
 ### Pending client confirmation
-Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, and which POS the cafe uses.
+Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, and whether flavors are charged once or per pump.

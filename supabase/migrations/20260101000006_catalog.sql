@@ -106,6 +106,15 @@ create table public.modifier_groups (
   -- 2 extra shots. A value of 1 means a plain on/off toggle.
   max_quantity_per_option integer not null default 1 check (max_quantity_per_option >= 1),
 
+  -- What one unit of quantity is called in the UI and on tickets ("pump",
+  -- "shot"). Null reads as a plain count ("x 2").
+  quantity_unit  text check (quantity_unit is null or char_length(quantity_unit) between 1 and 20),
+
+  -- true:  the option's price_delta_cents is charged per unit (2 shots = 2x).
+  -- false: charged once however many units (a flavour costs the same at
+  --        1 pump or 4). Lets the real menu price either way with data only.
+  charge_per_quantity boolean not null default true,
+
   sort_order     integer not null default 0,
   is_active      boolean not null default true,
   created_at     timestamptz not null default now(),
@@ -167,6 +176,13 @@ create table public.product_modifier_groups (
   override_is_required    boolean,
   override_min_selections integer check (override_min_selections is null or override_min_selections >= 0),
   override_max_selections integer check (override_max_selections is null or override_max_selections > 0),
+
+  -- Conditional group: shown, validated and charged only while this option
+  -- (from another group on the same product) is selected -- e.g. Ice only
+  -- when Iced is chosen. Null = always shown. Per product, because a drink
+  -- that is only ever served cold shows Ice unconditionally.
+  visible_when_option_id  uuid references public.modifier_options (id) on delete set null,
+
   created_at              timestamptz not null default now(),
 
   primary key (product_id, modifier_group_id),
@@ -179,6 +195,46 @@ create table public.product_modifier_groups (
 );
 
 create index product_modifier_groups_group_idx on public.product_modifier_groups (modifier_group_id);
+create index product_modifier_groups_condition_idx
+  on public.product_modifier_groups (visible_when_option_id) where visible_when_option_id is not null;
+
+-- The controlling option must belong to a different group that is linked to
+-- the same product; otherwise the condition could never be met. Deferred, so
+-- a product's links can be inserted in any order within one transaction.
+create or replace function public.check_product_modifier_condition()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.visible_when_option_id is null then
+    return null;
+  end if;
+
+  if not exists (
+    select 1
+      from public.modifier_options o
+      join public.product_modifier_groups link
+        on link.modifier_group_id = o.modifier_group_id
+       and link.product_id = new.product_id
+     where o.id = new.visible_when_option_id
+       and o.modifier_group_id <> new.modifier_group_id
+  ) then
+    raise exception 'visible_when_option_id must be an option from another modifier group on the same product'
+      using errcode = 'check_violation';
+  end if;
+
+  return null;
+end;
+$$;
+
+create constraint trigger product_modifier_groups_condition_valid
+  after insert or update of visible_when_option_id on public.product_modifier_groups
+  deferrable initially deferred
+  for each row execute function public.check_product_modifier_condition();
 
 comment on table public.modifier_groups is 'Data-driven customisation groups; the UI renders whatever is here.';
 comment on column public.modifier_groups.max_quantity_per_option is 'Enables pump counts and extra shots; 1 = simple toggle.';
+comment on column public.modifier_groups.charge_per_quantity is 'true = price delta per unit (shots); false = once per option (flavours).';
+comment on column public.product_modifier_groups.visible_when_option_id is
+  'Show this group only while the given option is selected (e.g. Ice when Iced).';

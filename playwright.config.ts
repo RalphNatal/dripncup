@@ -43,12 +43,14 @@ export default defineConfig({
   },
   projects: [
     // Phone first, matching the design: 390px-class viewport, touch, mobile UA.
-    { name: "mobile", use: { ...devices["Pixel 7"], channel } },
-    // The product dialog and top navigation only exist at desktop widths.
+    { name: "mobile", use: { ...devices["Pixel 7"], channel }, grepInvert: /@desktop/ },
+    // The centred product dialog and top navigation only exist at desktop widths.
     { name: "desktop", use: { ...devices["Desktop Chrome"], channel }, grep: /@desktop/ },
   ],
   webServer: {
-    command: `npm run build && npm run start -- --port ${PORT}`,
+    // The menu catalogue is cached in .next/cache and outlives a rebuild;
+    // clearing it means a freshly re-seeded database is what the tests see.
+    command: `node -e "require('fs').rmSync('.next/cache/fetch-cache',{recursive:true,force:true})" && npm run build && npm run start -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,

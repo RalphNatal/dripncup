@@ -4,7 +4,7 @@ import { useActionState } from "react";
 
 import { FormAlert, PasswordField, SubmitButton, TextField, formKey } from "@/components/auth/form-fields";
 import { FieldGroup } from "@/components/ui/field";
-import { deleteAccount } from "@/app/account/actions";
+import { deleteAccount } from "@/app/(shop)/account/actions";
 import { IDLE } from "@/lib/auth/form-state";
 import { DELETE_CONFIRMATION } from "@/lib/auth/schemas";
 

@@ -691,6 +691,7 @@ export type Database = {
       }
       modifier_groups: {
         Row: {
+          charge_per_quantity: boolean
           created_at: string
           description: string | null
           id: string
@@ -700,12 +701,14 @@ export type Database = {
           max_selections: number | null
           min_selections: number
           name: string
+          quantity_unit: string | null
           selection_type: Database["public"]["Enums"]["modifier_selection_type"]
           slug: string
           sort_order: number
           updated_at: string
         }
         Insert: {
+          charge_per_quantity?: boolean
           created_at?: string
           description?: string | null
           id?: string
@@ -715,12 +718,14 @@ export type Database = {
           max_selections?: number | null
           min_selections?: number
           name: string
+          quantity_unit?: string | null
           selection_type?: Database["public"]["Enums"]["modifier_selection_type"]
           slug: string
           sort_order?: number
           updated_at?: string
         }
         Update: {
+          charge_per_quantity?: boolean
           created_at?: string
           description?: string | null
           id?: string
@@ -730,6 +735,7 @@ export type Database = {
           max_selections?: number | null
           min_selections?: number
           name?: string
+          quantity_unit?: string | null
           selection_type?: Database["public"]["Enums"]["modifier_selection_type"]
           slug?: string
           sort_order?: number
@@ -1122,6 +1128,7 @@ export type Database = {
           override_min_selections: number | null
           product_id: string
           sort_order: number
+          visible_when_option_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1131,6 +1138,7 @@ export type Database = {
           override_min_selections?: number | null
           product_id: string
           sort_order?: number
+          visible_when_option_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1140,6 +1148,7 @@ export type Database = {
           override_min_selections?: number | null
           product_id?: string
           sort_order?: number
+          visible_when_option_id?: string | null
         }
         Relationships: [
           {
@@ -1154,6 +1163,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_modifier_groups_visible_when_option_id_fkey"
+            columns: ["visible_when_option_id"]
+            isOneToOne: false
+            referencedRelation: "modifier_options"
             referencedColumns: ["id"]
           },
         ]

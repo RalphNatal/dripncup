@@ -142,6 +142,11 @@
   --sidebar-ring: var(--brand-teal-deep);
 
   --radius: 1rem;
+
+  /* App shell. The header measures itself (StickyHeader) and overwrites
+     --header-h at runtime; this is the first-paint guess for phones. */
+  --header-h: 6.25rem;
+  --tabbar-h: 4rem;
 }
 
 /* Dark mode is a nice-to-have, not the shipping default; light mode is the
@@ -252,5 +257,43 @@
       var(--brand-sand) 55%,
       var(--brand-pink-soft) 100%
     );
+  }
+}
+
+/* ==========================================================================
+   App-shell utilities. Declared with @utility (not plain classes) so they
+   take responsive variants, e.g. `pb-tabbar md:pb-12`.
+   ========================================================================== */
+
+/* Horizontal chip rows scroll by swipe; the bar itself is noise. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Clearance for content above the fixed bottom tab bar (phones). */
+@utility pb-tabbar {
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 1.5rem);
+}
+
+/* Sticks just above the bottom tab bar (phones). */
+@utility bottom-tabbar {
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* Sticks just below the app header. */
+@utility top-header {
+  top: var(--header-h);
+}
+
+/* A visible, on-brand keyboard focus ring for custom controls. */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 5px color-mix(in oklab, var(--brand-teal-deep) 70%, transparent);
   }
 }

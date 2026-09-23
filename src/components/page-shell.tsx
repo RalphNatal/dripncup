@@ -3,33 +3,35 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 /**
- * Plain single-column frame for inner pages until the tab bar and app header
- * arrive with the Home tab (Phase 3).
+ * Title block and single column for inner pages. The surrounding layout
+ * provides `<main>`: the customer app shell for shop pages, the plain frame
+ * for /staff and /admin.
  */
 export function PageShell({
   title,
-  backHref = "/",
-  backLabel = "Home",
+  backHref,
+  backLabel,
   children,
 }: {
   title: string;
+  /** Omit on top-level tabs; the tab bar is the way back. */
   backHref?: string;
   backLabel?: string;
   children: ReactNode;
 }) {
   return (
-    <main className="flex flex-1 flex-col px-4 pt-safe pb-12">
-      <div className="mx-auto w-full max-w-md pt-4">
+    <div className="mx-auto w-full max-w-md">
+      {backHref ? (
         <Link
           href={backHref}
           className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="size-4" aria-hidden="true" />
-          {backLabel}
+          {backLabel ?? "Back"}
         </Link>
-        <h1 className="mt-2 text-3xl font-extrabold">{title}</h1>
-        <div className="mt-6">{children}</div>
-      </div>
-    </main>
+      ) : null}
+      <h1 className="mt-2 text-3xl font-extrabold">{title}</h1>
+      <div className="mt-6">{children}</div>
+    </div>
   );
 }

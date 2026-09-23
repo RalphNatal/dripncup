@@ -229,6 +229,10 @@ type GroupSeed = {
   min_selections?: number;
   max_selections?: number | null;
   max_quantity_per_option?: number;
+  /** "pump", "shot" -- how one unit reads in the UI. */
+  quantity_unit?: string;
+  /** false = the price delta is charged once however many units. */
+  charge_per_quantity?: boolean;
   sort_order: number;
   options: {
     name: string;
@@ -273,22 +277,43 @@ const MODIFIER_GROUPS: GroupSeed[] = [
     ],
   },
   {
+    // Black coffee by default; milk is an optional add.
+    slug: "add-milk",
+    name: "Add milk",
+    description: "Served black unless you add some.",
+    selection_type: "single",
+    max_selections: 1,
+    sort_order: 25,
+    options: [
+      { name: "Whole milk", allergens: ["dairy"] },
+      { name: "Nonfat milk", allergens: ["dairy"] },
+      { name: "Oat milk", price_delta_cents: 80, allergens: ["gluten"] },
+      { name: "Almond milk", price_delta_cents: 80, allergens: ["tree_nuts"] },
+      { name: "Macadamia milk", price_delta_cents: 90, allergens: ["tree_nuts", "macadamia"] },
+      { name: "Coconut milk", price_delta_cents: 80 },
+    ],
+  },
+  {
     slug: "espresso-shots",
     name: "Espresso shots",
     description: "Add extra shots.",
     selection_type: "multi",
     max_selections: 1,
     max_quantity_per_option: 4,
+    quantity_unit: "shot",
+    charge_per_quantity: true,
     sort_order: 30,
     options: [{ name: "Extra espresso shot", price_delta_cents: 100, max_quantity: 4 }],
   },
   {
     slug: "syrups",
     name: "Flavors & syrups",
-    description: "Up to three flavors, up to six pumps each.",
+    description: "Up to three flavors, up to six pumps each. Each flavor is one price, however many pumps.",
     selection_type: "multi",
     max_selections: 3,
     max_quantity_per_option: 6,
+    quantity_unit: "pump",
+    charge_per_quantity: false,
     sort_order: 40,
     options: [
       { name: "Vanilla", price_delta_cents: 75, max_quantity: 6 },
@@ -390,8 +415,17 @@ const MODIFIER_GROUPS: GroupSeed[] = [
   },
 ];
 
+/**
+ * Conditional groups: `group` is only shown while `whenOption` (in
+ * `whenGroup`) is selected. Applied to every product that links both groups;
+ * a cold-only drink without the temperature group shows Ice unconditionally.
+ */
+const CONDITIONAL_GROUPS = [{ group: "ice-level", whenGroup: "temperature", whenOption: "Iced" }] as const;
+
 async function seedModifiers() {
-  const bySlug = new Map<string, string>();
+  const groupIds = new Map<string, string>();
+  /** "group-slug/Option name" -> option id */
+  const optionIds = new Map<string, string>();
 
   for (const group of MODIFIER_GROUPS) {
     const row = ok(
@@ -406,6 +440,8 @@ async function seedModifiers() {
           min_selections: group.min_selections ?? 0,
           max_selections: group.max_selections ?? null,
           max_quantity_per_option: group.max_quantity_per_option ?? 1,
+          quantity_unit: group.quantity_unit ?? null,
+          charge_per_quantity: group.charge_per_quantity ?? true,
           sort_order: group.sort_order,
         })
         .select()
@@ -413,9 +449,9 @@ async function seedModifiers() {
       `insert modifier group ${group.slug}`,
     );
 
-    bySlug.set(group.slug, row.id);
+    groupIds.set(group.slug, row.id);
 
-    ok(
+    const options = ok(
       await db
         .from("modifier_options")
         .insert(
@@ -432,9 +468,11 @@ async function seedModifiers() {
         .select(),
       `insert options for ${group.slug}`,
     );
+
+    for (const option of options) optionIds.set(`${group.slug}/${option.name}`, option.id);
   }
 
-  return bySlug;
+  return { groupIds, optionIds };
 }
 
 // ---------------------------------------------------------------------------
@@ -460,7 +498,9 @@ const DRINK_SIZES: [string, number, number][] = [
   ["Large", 6.5, 24],
 ];
 
-const HOT_DRINK_GROUPS = ["temperature", "milk", "espresso-shots", "syrups", "signature-addons"];
+// Ice sits straight after Hot/Iced: it appears only once Iced is picked
+// (CONDITIONAL_GROUPS), right where the customer is looking.
+const HOT_DRINK_GROUPS = ["temperature", "ice-level", "milk", "espresso-shots", "syrups", "signature-addons"];
 const COLD_DRINK_GROUPS = ["sweetness", "ice-level", "syrups", "toppings", "signature-addons"];
 
 const CATALOG: { slug: string; name: string; description: string; products: ProductSeed[] }[] = [
@@ -475,7 +515,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         description: "Our house drip, smooth and nutty with a clean finish.",
         sizes: [["Small", 3.5, 12], ["Medium", 4.25, 16], ["Large", 4.95, 24]],
         dietary: ["contains_caffeine", "vegan"],
-        modifierGroups: ["temperature", "milk", "syrups", "sweetness"],
+        modifierGroups: ["temperature", "ice-level", "add-milk", "syrups", "sweetness"],
         catering: true,
       },
       {
@@ -484,7 +524,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         description: "Steeped 18 hours for a low-acid, chocolatey cup.",
         sizes: [["Medium", 5.25, 16], ["Large", 6.0, 24]],
         dietary: ["contains_caffeine", "vegan"],
-        modifierGroups: ["milk", "syrups", "sweetness", "ice-level", "signature-addons"],
+        modifierGroups: ["ice-level", "add-milk", "syrups", "sweetness", "signature-addons"],
         catering: true,
       },
       {
@@ -522,7 +562,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         description: "Espresso and hot water, bright and simple.",
         sizes: DRINK_SIZES,
         dietary: ["contains_caffeine", "vegan"],
-        modifierGroups: ["temperature", "espresso-shots", "syrups", "ice-level"],
+        modifierGroups: ["temperature", "ice-level", "espresso-shots", "syrups"],
       },
       {
         slug: "mocha",
@@ -596,7 +636,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         description: "Floral and light, hot or iced.",
         sizes: DRINK_SIZES,
         dietary: ["vegan", "contains_caffeine"],
-        modifierGroups: ["temperature", "sweetness", "ice-level", "toppings"],
+        modifierGroups: ["temperature", "ice-level", "sweetness", "toppings"],
         catering: true,
       },
       {
@@ -615,7 +655,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         sizes: DRINK_SIZES,
         allergens: ["dairy"],
         dietary: ["vegetarian", "contains_caffeine"],
-        modifierGroups: ["temperature", "milk", "syrups", "sweetness", "ice-level"],
+        modifierGroups: ["temperature", "ice-level", "milk", "syrups", "sweetness"],
         catering: true,
       },
     ],
@@ -741,7 +781,7 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
   },
 ];
 
-async function seedCatalog(groupIds: Map<string, string>) {
+async function seedCatalog(groupIds: Map<string, string>, optionIds: Map<string, string>) {
   const productIds = new Map<string, string>();
 
   for (const [categoryIndex, category] of CATALOG.entries()) {
@@ -809,10 +849,22 @@ async function seedCatalog(groupIds: Map<string, string>) {
               product.modifierGroups.map((slug, index) => {
                 const groupId = groupIds.get(slug);
                 if (!groupId) throw new Error(`Unknown modifier group '${slug}' on ${product.slug}`);
+
+                const condition = CONDITIONAL_GROUPS.find(
+                  (rule) => rule.group === slug && product.modifierGroups.includes(rule.whenGroup),
+                );
+                const visibleWhen = condition
+                  ? optionIds.get(`${condition.whenGroup}/${condition.whenOption}`)
+                  : undefined;
+                if (condition && !visibleWhen) {
+                  throw new Error(`Unknown option ${condition.whenGroup}/${condition.whenOption}`);
+                }
+
                 return {
                   product_id: productRow.id,
                   modifier_group_id: groupId,
                   sort_order: index * 10,
+                  visible_when_option_id: visibleWhen ?? null,
                 };
               }),
             )
@@ -853,6 +905,33 @@ async function seedEventMenu(eventId: string, productIds: Map<string, string>) {
       )
       .select(),
     "insert event menu",
+  );
+}
+
+/**
+ * One sold-out product and one sold-out option at the cafe, so the badges and
+ * disabled states are visible without first signing in to /staff.
+ */
+async function seedSoldOut(cafeId: string, productIds: Map<string, string>, optionIds: Map<string, string>) {
+  ok(
+    await db
+      .from("location_availability")
+      .insert([
+        {
+          location_id: cafeId,
+          product_id: productIds.get("banana-bread")!,
+          is_available: false,
+          reason: "Demo: sold out for the day",
+        },
+        {
+          location_id: cafeId,
+          modifier_option_id: optionIds.get("milk/Macadamia milk")!,
+          is_available: false,
+          reason: "Demo: out of macadamia milk",
+        },
+      ])
+      .select(),
+    "insert sold-out overrides",
   );
 }
 
@@ -1084,16 +1163,17 @@ async function main() {
   const { cafe, event } = await seedLocations();
   console.log("  locations + hours");
 
-  const groupIds = await seedModifiers();
+  const { groupIds, optionIds } = await seedModifiers();
   console.log(`  ${groupIds.size} modifier groups`);
 
-  const productIds = await seedCatalog(groupIds);
+  const productIds = await seedCatalog(groupIds, optionIds);
   console.log(`  ${CATALOG.length} categories, ${productIds.size} products`);
 
   await seedEventMenu(event.id, productIds);
+  await seedSoldOut(cafe.id, productIds, optionIds);
   await seedCollection(productIds);
   await seedRewardsAndPromos();
-  console.log("  event menu, seasonal collection, rewards, promos");
+  console.log("  event menu, sold-out demo, seasonal collection, rewards, promos");
 
   const ids = await seedAccounts(cafe.id, event.id);
   console.log("  test accounts");

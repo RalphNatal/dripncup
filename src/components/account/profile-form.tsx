@@ -10,7 +10,7 @@ import {
   formKey,
 } from "@/components/auth/form-fields";
 import { FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field";
-import { updateProfile } from "@/app/account/actions";
+import { updateProfile } from "@/app/(shop)/account/actions";
 import { IDLE } from "@/lib/auth/form-state";
 
 export type ProfileFormDefaults = {

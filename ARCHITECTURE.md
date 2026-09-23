@@ -43,18 +43,34 @@ Four rules explain most of the design decisions below.
 | `categories` | Coffee & Espresso, Tropical Refreshers, Shave Ice, … |
 | `products` | Name, description, allergens, dietary tags, catering eligibility. |
 | `product_sizes` | Each size carries its own **absolute** price, not a delta — a large cold brew is not reliably "small plus a fixed amount". |
-| `modifier_groups` | Reusable customisation groups: Milk, Syrups, Sweetness, Ice. |
+| `modifier_groups` | Reusable customisation groups: Milk, Syrups, Sweetness, Ice. `quantity_unit` names one unit ("pump", "shot"); `charge_per_quantity` says whether a delta is charged per unit (extra shots) or once (a flavour at any number of pumps). |
 | `modifier_options` | The choices inside a group, each with a `price_delta_cents`. |
-| `product_modifier_groups` | Links products to groups, with optional per-product overrides of required/min/max. |
+| `product_modifier_groups` | Links products to groups, with optional per-product overrides of required/min/max, and `visible_when_option_id` for conditional groups. |
 | `location_availability` | Sold-out overrides. **A row exists only when something is unavailable** — no row means available. |
 | `event_menu_items` | The subset of the catalog a pop-up booth carries. |
 | `collections` / `collection_products` | Seasonal ranges, shown and hidden purely by date window. |
 
-The customisation sheet is entirely data-driven. `selection_type`
-(single/multi), `is_required`, `min_selections`, `max_selections` and
-`max_quantity_per_option` between them describe radios, checkboxes, and
-steppers for pump counts and extra shots. **No modifier is hardcoded in UI
-code.**
+The customisation sheet is entirely data-driven. **No modifier is hardcoded in
+UI code.** How data becomes controls:
+
+| Data | Renders as |
+| ---- | ---------- |
+| `selection_type = 'single'` | Radio buttons |
+| `'multi'`, option max quantity 1 | Checkboxes |
+| `'multi'`, option max quantity > 1 | Checkbox, then a +/- stepper labelled with `quantity_unit` ("2 pumps") |
+| `'multi'` with a single option that allows > 1 | A bare +/- stepper from 0 (extra shots) |
+| `is_default` options | Preselected, unless sold out at the location, in which case the customer chooses |
+| `is_required`, `min_selections`, `max_selections` | Inline "Required · up to 3" hints and messages; further checkboxes lock once the maximum is reached |
+| `visible_when_option_id` | The group appears only while that option is chosen, e.g. Ice once Iced is picked |
+
+**Conditional groups** hang off the product link, not the group, because the
+same Ice group is conditional on a hot-or-iced latte but always shown on a
+lemonade. A deferred constraint trigger requires the controlling option to
+come from another group on the same product. A hidden group is not validated,
+not charged and not stored on the cart line. Its defaults stay filled in, so
+switching to Iced shows Ice with "Regular ice" already chosen. If the
+controlling option is deleted, the FK sets the column to null and the group
+is always shown: showing an unneeded choice is safer than hiding a needed one.
 
 ### Orders
 
@@ -140,7 +156,7 @@ Email and password through Supabase Auth, with the session in cookies via
 `@supabase/ssr`.
 
 - **Forms** post to Server Actions in `src/lib/auth/actions.ts` and
-  `src/app/account/actions.ts`, validated by the Zod schemas in
+  `src/app/(shop)/account/actions.ts`, validated by the Zod schemas in
   `src/lib/auth/schemas.ts`. They are plain `<form>` posts, so they work
   before JavaScript loads.
 - **Sign-up** passes `full_name`, `phone` and `marketing_opt_in` as user
@@ -296,8 +312,10 @@ tests covering modifiers, promos, rewards, tax and tips.
 
 ```
   line unit price  = size price (or product base price)
-                     + Σ (modifier delta × modifier quantity)
-  line total       = unit price × quantity
+                     + Σ modifier delta × (quantity if the group charges
+                                           per unit, else 1)
+                     never below 0
+  line total       = unit price × quantity             (quantity 1–99)
 
   subtotal         = Σ line totals
   discount         = promo + reward, capped at the subtotal
@@ -323,6 +341,29 @@ deltas.
 `orders.tax_rate` stores the rate in force at the time of the order, so editing
 the GET setting in admin never rewrites old receipts.
 
+### The shared engine (`src/lib/pricing/`)
+
+The product sheet (browser) and checkout (server) run the same functions.
+The folder may import only from itself; a test enforces that, so no React,
+Next.js or Supabase code can creep in.
+
+| Function | Job |
+| -------- | --- |
+| `defaultSelection(product, groups)` | Default size and every default option that is not sold out |
+| `visibleGroupIds(groups, modifiers)` | Which conditional groups are showing |
+| `validateSelection(product, groups, selection)` | Every reason the line cannot be made: sold out, missing size, required group empty, too few or too many, pump or shot limits, unknown ids, instructions over 100 characters |
+| `resolveSelection(groups, modifiers)` | Ids → catalogue-priced `SelectedModifier`s for the showing groups. This is exactly the `order_items.modifiers` snapshot shape |
+| `calculateLinePrice(product, size, resolved, quantity)` | Cents for the line |
+| `pruneSelection`, `describeSelection`, `selectionKey` | Cart storage, human-readable summary, merging identical lines |
+
+`calculateLinePrice` takes the *resolved* selection rather than raw ids, so a
+price can only come from the catalogue: the client sends ids and quantities,
+never amounts. Phase 4's `calculateOrderTotal` should be, per cart line,
+`validateSelection` → `resolveSelection` → `calculateLinePrice`, built from
+the same `buildProductDetail` mapping the product page uses
+(`src/lib/menu/model.ts`). That mapping is where per-product overrides,
+sold-out flags and event menus are applied.
+
 ### What checkout re-validates
 
 Menu-page state is not trusted at checkout. Before payment the server
@@ -330,6 +371,97 @@ re-verifies: the location is open and not paused, an event is inside its
 window, every product and modifier option is still available at that location,
 the promo is valid for this user and spend, the reward is affordable, and the
 scheduled slot is still within opening hours.
+
+---
+
+## The storefront: locations, menu and cart
+
+### Locations and status
+
+The selected pickup location is kept in an `httpOnly` cookie (`dc_location`,
+a location id and nothing else), so Server Components render the right menu
+and status in the first response. The `selectLocation` Server Action accepts
+only a location that is currently offered: the cafe, or a pop-up whose window
+is running or still to come. A missing or stale cookie falls back to the
+cafe.
+
+`getLocationStatus()` (`src/lib/locations/status.ts`) is a pure function of
+the location, its weekly hours, closures, the pause toggle, the global
+`orders.accepting_online_orders` setting, and `now`, all in Honolulu time.
+Strongest rule first:
+
+1. **Events** are open only inside `starts_at`–`ends_at`. Outside it:
+   `Event · Oct 8, 10:00 AM – 3:00 PM`.
+2. **A closure row** for the day replaces the weekly hours, either closed all
+   day or holiday hours. The location's own row beats an all-locations row.
+3. **Weekly hours**; several rows on one day are split hours. Open means
+   `opensAt <= now < closesAt`, so at 4:00:00 PM a 4 PM close is closed.
+4. **Paused** applies only while it would otherwise be open. Outside hours
+   the label says `Closed · Opens Fri 6:30 AM`, which is the more useful
+   thing to know.
+
+The label, today's hours and an "ordering unavailable" sentence are computed
+on the server and passed down as plain strings. The same function will
+re-check at checkout.
+
+### Menu data and caching
+
+| Data | Freshness | Where |
+| ---- | --------- | ----- |
+| Catalogue: categories, products, sizes, modifiers, links, collections, event menus | Cached across requests for 60 s, tag `menu` | `src/lib/menu/catalog.ts` (`unstable_cache`) |
+| Sold-out flags | Every request, `no-store` | `src/lib/menu/availability.ts` |
+| Locations, hours, closures, pause toggle, global switch | Every request, `no-store` | `src/lib/locations/storefront.ts` |
+
+The cached catalogue is read with a cookie-less anon client
+(`src/lib/supabase/public.ts`), so a cached answer is exactly what any guest
+would see and can never carry one customer's data to another. Phase 9's menu
+editor should call `revalidateTag("menu", "max")` after a save, so changes
+appear immediately rather than within a minute. The storefront reads its
+cookie before querying, which marks the route as per-request, and its
+queries are explicitly `no-store`, so nothing time-sensitive is ever cached,
+not even during `next build`.
+
+The project uses Next's previous caching model (no `cacheComponents`).
+`unstable_cache` is the supported tool there; moving to Cache Components and
+`"use cache"` is a separate, app-wide change to plan on its own.
+
+`src/lib/menu/model.ts` turns catalogue rows into what pages render and what
+the pricing engine validates. It applies per-product overrides, sold-out
+flags and event menus. A pop-up with no `event_menu_items` shows "menu coming
+soon", not the whole catalogue. A product in a switched-off category is
+hidden. Photos are either Storage paths or full URLs into this project's
+public Storage, the only images `next.config.ts` allows. Anything else, or
+no photo at all, shows a generated brand-coloured placeholder. A collection's
+`accent_color` must look like a colour before it reaches an inline style.
+
+### Routes
+
+```
+(shop)/layout.tsx          header (location + cart), tab bar, cart sync
+(shop)/page.tsx            Home (placeholder)
+(shop)/menu/page.tsx       the menu, server-rendered
+(shop)/menu/[slug]         full product page: shared links, refreshes
+(shop)/menu/@modal/(.)[slug]
+                           the same product as a sheet / dialog when opened
+                           from the menu (intercepting + parallel routes)
+(shop)/rewards, /orders, /cart   placeholders until their phases
+```
+
+Closing the sheet calls `router.back()`, so the menu keeps its scroll
+position. Focus returns to the card that opened it (`useRouteDialogFocus`),
+because Radix would otherwise send focus to a `Dialog.Trigger` this route
+does not have.
+
+### Cart (Phase 3 scope)
+
+A Zustand store persisted to `localStorage` (`src/lib/cart/store.ts`). Each
+line holds the location id, product and size ids, the pruned modifier
+selection, special instructions and quantity, plus a display snapshot: names,
+a summary, and the unit price when it was added. The snapshot is only for
+display. Checkout re-validates and re-prices every line from the ids.
+Identical lines merge (capped at 99). Changing location keeps the cart but
+sets `needsRevalidation`; Phase 4's cart page acts on it. The store hydrates
+after the first render, so server and client HTML agree.
 
 ---
 
@@ -400,6 +532,18 @@ possible:
 - `orders.fulfillment` already models `delivery` alongside `pickup`.
 - All user-facing copy is centralised in `src/lib/brand.ts` rather than
   scattered through components.
+
+Known follow-ups for later phases:
+
+- **Refunds on cancellation** (Phase 4): see Account deletion above.
+- **Condition cycles** (Phase 9 admin): the database accepts group A shown
+  when B's option is chosen *and* B shown when A's option is chosen; the
+  engine would then hide both. The menu editor should refuse cycles.
+- **Deleting orders that have items:** `freeze_order_items` blocks deleting
+  items of any order past `pending_payment`, cascades included, so a placed
+  order cannot be deleted outright. That is deliberate for real data, but the
+  seed script's wipe will need `npm run db:reset` instead once real orders
+  exist locally.
 
 ---
 
