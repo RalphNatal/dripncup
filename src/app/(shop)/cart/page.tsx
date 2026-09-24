@@ -1,18 +1,33 @@
 import type { Metadata } from "next";
 
-import { CartPlaceholder } from "@/components/cart/cart-placeholder";
-import { PageShell } from "@/components/page-shell";
+import { CartView } from "@/components/cart/cart-view";
+import { getCurrentProfile } from "@/lib/auth/dal";
+import { getStorefront } from "@/lib/locations/storefront";
 
 export const metadata: Metadata = { title: "Cart" };
 
-/**
- * Stand-in so the header's cart icon has somewhere to go. The real cart --
- * editing lines, promo codes, tax, tip -- is Phase 4.
- */
-export default function CartPage() {
+/** The cart. Guests can see it; checkout asks them to sign in first. */
+export default async function CartPage() {
+  const [{ selected }, profile] = await Promise.all([getStorefront(), getCurrentProfile()]);
+
   return (
-    <PageShell title="Your cart" backHref="/menu" backLabel="Menu">
-      <CartPlaceholder />
-    </PageShell>
+    <div className="mx-auto max-w-2xl">
+      <h1 className="text-3xl font-extrabold">Your cart</h1>
+      <div className="mt-4">
+        {selected ? (
+          <CartView
+            signedIn={Boolean(profile)}
+            location={{
+              id: selected.id,
+              name: selected.name,
+              statusLabel: selected.status.label,
+              statusKind: selected.status.kind,
+            }}
+          />
+        ) : (
+          <p className="text-muted-foreground">Ordering opens soon.</p>
+        )}
+      </div>
+    </div>
   );
 }

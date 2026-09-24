@@ -69,8 +69,8 @@ function rows<T>(result: { data: T[] | null; error: { message: string } | null }
   return result.data ?? [];
 }
 
-async function fetchCatalog(): Promise<CatalogData> {
-  const db = createPublicClient();
+async function fetchCatalog({ live = false }: { live?: boolean } = {}): Promise<CatalogData> {
+  const db = createPublicClient({ live });
 
   // RLS already limits a guest to active rows; ordering happens here once.
   const [categories, products, sizes, groups, options, links, collections, collectionProducts, eventMenuItems] =
@@ -119,7 +119,16 @@ async function fetchCatalog(): Promise<CatalogData> {
   };
 }
 
-export const getCatalog = unstable_cache(fetchCatalog, ["menu-catalog", "v1"], {
+/** For browsing: may be up to a minute old. */
+export const getCatalog = unstable_cache(() => fetchCatalog(), ["menu-catalog", "v1"], {
   tags: [MENU_CACHE_TAG],
   revalidate: CATALOG_REVALIDATE_SECONDS,
 });
+
+/**
+ * For the cart and checkout: never cached. A price or modifier changed a
+ * second ago must be what the customer is charged and told about.
+ */
+export function getLiveCatalog(): Promise<CatalogData> {
+  return fetchCatalog({ live: true });
+}

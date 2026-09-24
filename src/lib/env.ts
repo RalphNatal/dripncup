@@ -7,15 +7,22 @@
  *   - `serverEnv()` is a function, not a constant, and throws if it is ever
  *     reached from a browser bundle. Importing it from a client component is a
  *     build-time mistake we want to fail loudly rather than leak a key.
+ *
+ * Values are trimmed: a stray space after a pasted key is invisible in an
+ * editor and would otherwise fail signature checks.
  */
 import { z } from "zod";
 
+const trimmed = () => z.string().trim();
+
 const clientSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url({
-    message: "NEXT_PUBLIC_SUPABASE_URL must be a full URL, e.g. http://127.0.0.1:54321",
-  }),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  NEXT_PUBLIC_SITE_URL: z.string().url().default("http://localhost:3000"),
+  NEXT_PUBLIC_SUPABASE_URL: trimmed().pipe(
+    z.string().url({ message: "NEXT_PUBLIC_SUPABASE_URL must be a full URL, e.g. http://127.0.0.1:54321" }),
+  ),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: trimmed().pipe(z.string().min(1)),
+  NEXT_PUBLIC_SITE_URL: trimmed().pipe(z.string().url()).default("http://localhost:3000"),
+  /** Safe to expose; Stripe.js needs it in the browser. Checkout requires it. */
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: trimmed().optional(),
 });
 
 const serverSchema = z.object({
@@ -23,13 +30,15 @@ const serverSchema = z.object({
    * Bypasses RLS. Server-only, never in a client component, never in
    * NEXT_PUBLIC_*.
    */
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: trimmed().pipe(z.string().min(1)),
 
-  // Payments and email arrive in later phases, so they stay optional until the
-  // code that needs them exists.
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  RESEND_API_KEY: z.string().optional(),
+  // Optional here so the rest of the app runs without them; the code that
+  // needs them asks through stripeEnv() / cronSecret(), which fail clearly.
+  STRIPE_SECRET_KEY: trimmed().optional(),
+  STRIPE_WEBHOOK_SECRET: trimmed().optional(),
+  /** Vercel Cron sends it as `Authorization: Bearer <secret>`. */
+  CRON_SECRET: trimmed().optional(),
+  RESEND_API_KEY: trimmed().optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -40,6 +49,7 @@ const parsedClient = clientSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
 });
 
 if (!parsedClient.success) {
@@ -65,6 +75,7 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    CRON_SECRET: process.env.CRON_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
   });
 
@@ -74,4 +85,17 @@ export function serverEnv(): z.infer<typeof serverSchema> {
 
   cachedServerEnv = parsed.data;
   return cachedServerEnv;
+}
+
+/** The Stripe secrets, or a clear error naming what is missing. */
+export function stripeEnv(): { secretKey: string; webhookSecret: string } {
+  const env = serverEnv();
+  const missing = [
+    !env.STRIPE_SECRET_KEY && "STRIPE_SECRET_KEY",
+    !env.STRIPE_WEBHOOK_SECRET && "STRIPE_WEBHOOK_SECRET",
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    throw new Error(`Stripe is not configured: set ${missing.join(" and ")} in .env.local (see README, Stripe).`);
+  }
+  return { secretKey: env.STRIPE_SECRET_KEY!, webhookSecret: env.STRIPE_WEBHOOK_SECRET! };
 }

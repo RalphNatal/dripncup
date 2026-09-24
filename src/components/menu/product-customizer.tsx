@@ -19,7 +19,7 @@ import { toast } from "sonner";
 
 import { DietaryChips, allergenSentence } from "@/components/menu/dietary";
 import { ProductImage } from "@/components/menu/product-image";
-import { useCartStore } from "@/lib/cart/store";
+import { useCartStore, type NewCartLine } from "@/lib/cart/store";
 import type { DetailGroup, DetailOption, ProductDetail } from "@/lib/menu/model";
 import type { OrderingState } from "@/lib/menu/queries";
 import { formatCents, formatPriceDelta } from "@/lib/money";
@@ -47,6 +47,18 @@ export interface ProductCustomizerProps {
   layout: "sheet" | "page";
   /** Called after a successful add; the sheet closes itself with it. */
   onAdded?: () => void;
+  /**
+   * Editing a cart line: starts from its choices, and saves through `onSave`
+   * instead of adding a new line. Opening hours do not block an edit -- the
+   * line is already in the cart; checkout decides whether it can be ordered.
+   */
+  editing?: {
+    sizeId: string | null;
+    selection: ModifierSelection;
+    quantity: number;
+    specialInstructions: string;
+    onSave: (line: NewCartLine) => void;
+  };
 }
 
 /** "Required", "Optional · up to 3", "Required · at least 2". */
@@ -69,16 +81,25 @@ function optionPrice(group: DetailGroup, option: DetailOption): string {
 const isStepperOnly = (group: DetailGroup) =>
   group.selectionType === "multi" && group.options.length === 1 && group.options[0].maxQuantity > 1;
 
-export function ProductCustomizer({ detail, location, ordering, layout, onAdded }: ProductCustomizerProps) {
+export function ProductCustomizer({ detail, location, ordering, layout, onAdded, editing }: ProductCustomizerProps) {
   const { product, groups } = detail;
   const uid = useId();
   const addLine = useCartStore((state) => state.addLine);
 
-  const [initial] = useState(() => defaultSelection(product, groups));
+  const [initial] = useState(() => {
+    const defaults = defaultSelection(product, groups);
+    if (!editing) return defaults;
+    // The line's own choices, over the defaults: a group the line never showed
+    // (Ice on a hot drink) still has its default ready if the customer switches.
+    return {
+      sizeId: product.sizes.some((s) => s.id === editing.sizeId) ? editing.sizeId : defaults.sizeId,
+      modifiers: { ...defaults.modifiers, ...editing.selection },
+    };
+  });
   const [sizeId, setSizeId] = useState(initial.sizeId);
   const [modifiers, setModifiers] = useState<ModifierSelection>(initial.modifiers);
-  const [quantity, setQuantity] = useState(1);
-  const [instructions, setInstructions] = useState("");
+  const [quantity, setQuantity] = useState(editing?.quantity ?? 1);
+  const [instructions, setInstructions] = useState(editing?.specialInstructions ?? "");
   /** Inline errors appear after the first Add attempt, then track every change. */
   const [attempted, setAttempted] = useState(false);
   /** Price announcements start with the customer's first change, not on open. */
@@ -105,7 +126,7 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded 
     ? `${product.name} is sold out at ${location.name} right now.`
     : !detail.onLocationMenu
       ? `${product.name} isn't on the menu at ${location.name}.`
-      : !ordering.canOrder
+      : !ordering.canOrder && !editing
         ? (ordering.reason ?? `${location.name} isn't taking orders right now.`)
         : null;
 
@@ -146,7 +167,7 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded 
       return;
     }
 
-    addLine({
+    const line: NewCartLine = {
       locationId: location.id,
       productId: product.id,
       productSlug: product.slug,
@@ -158,8 +179,14 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded 
       specialInstructions: instructions.trim(),
       quantity,
       unitPriceCents: unitPrice,
-    });
-    toast.success(`Added ${quantity > 1 ? `${quantity} × ` : ""}${product.name} to your cart`);
+    };
+
+    if (editing) {
+      editing.onSave(line);
+    } else {
+      addLine(line);
+      toast.success(`Added ${quantity > 1 ? `${quantity} × ` : ""}${product.name} to your cart`);
+    }
     onAdded?.();
   }
 
@@ -428,7 +455,7 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded 
           aria-describedby={blockedReason ? `${uid}-blocked` : undefined}
           className="focus-ring tabular inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-teal-deep px-5 text-base font-bold text-white hover:bg-brand-teal-deep/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
         >
-          {product.soldOut ? "Sold out" : `Add to Cart · ${formatCents(total)}`}
+          {product.soldOut ? "Sold out" : `${editing ? "Update item" : "Add to Cart"} · ${formatCents(total)}`}
         </button>
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">

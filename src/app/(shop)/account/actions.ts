@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { LAST_ADMIN_SQLSTATE, removeAuthUser } from "@/lib/auth/account-deletion";
+import { LAST_ADMIN_SQLSTATE, isLastAdmin, removeAuthUser } from "@/lib/auth/account-deletion";
+import { settleOrdersBeforeAccountDeletion } from "@/lib/orders/account-deletion";
 import { getCurrentProfile, getCurrentUser } from "@/lib/auth/dal";
 import { GENERIC_ERROR, authErrorMessage, echoValues, type FormState } from "@/lib/auth/form-state";
 import { verifyPassword } from "@/lib/auth/reauthenticate";
@@ -97,15 +98,23 @@ export async function deleteAccount(_prev: FormState, formData: FormData): Promi
     return { status: "error", message, values: echoValues(formData) };
   }
 
+  const lastAdminMessage = "You're the only admin. Make someone else an admin before deleting your account.";
+  // Checked before any refund: refusing after refunding would be the worst of
+  // both. The database repeats the check under a lock.
+  if (profile.role === "admin" && (await isLastAdmin(profile.id))) {
+    return { status: "error", message: lastAdminMessage };
+  }
+
+  // Money first: refund paid orders still in progress, cancel payments not
+  // yet made. A failed refund is recorded for an admin and does not block.
+  await settleOrdersBeforeAccountDeletion(user.id);
+
   // Service role: this has to reach rows RLS hides from the customer (their
   // orders' payments, the staff roster) and write columns they cannot.
   const { error } = await createAdminClient().rpc("delete_account_data", { target_user_id: user.id });
   if (error) {
     if (error.code === LAST_ADMIN_SQLSTATE) {
-      return {
-        status: "error",
-        message: "You're the only admin. Make someone else an admin before deleting your account.",
-      };
+      return { status: "error", message: lastAdminMessage };
     }
     console.error(`Account ${user.id}: delete_account_data failed`, error);
     return { status: "error", message: GENERIC_ERROR, values: echoValues(formData) };

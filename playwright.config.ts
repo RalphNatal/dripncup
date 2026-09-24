@@ -14,6 +14,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 3100;
 
+// The order-expiry route only answers with its secret; the test server gets a
+// fixed one, and the tests read it back from here.
+process.env.E2E_CRON_SECRET ??= "e2e-local-cron-secret";
+
 /**
  * Which browser build to drive. On Windows this defaults to the Microsoft Edge
  * that ships with the OS, so no browser download is needed; elsewhere it uses
@@ -52,6 +56,7 @@ export default defineConfig({
     // clearing it means a freshly re-seeded database is what the tests see.
     command: `node -e "require('fs').rmSync('.next/cache/fetch-cache',{recursive:true,force:true})" && npm run build && npm run start -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
+    env: { CRON_SECRET: process.env.E2E_CRON_SECRET },
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },
