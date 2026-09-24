@@ -1039,6 +1039,24 @@ async function seedRewardsAndPromos() {
       .select(),
     "insert promos",
   );
+
+  // Expired. Checkout must answer exactly as it does for a code that never
+  // existed, so codes cannot be probed.
+  const day = 24 * 60 * 60 * 1000;
+  ok(
+    await db
+      .from("promos")
+      .insert({
+        code: "SPRING24",
+        description: "Expired demo code.",
+        type: "percent",
+        percent: 20,
+        starts_at: new Date(Date.now() - 400 * day).toISOString(),
+        ends_at: new Date(Date.now() - 300 * day).toISOString(),
+      })
+      .select(),
+    "insert expired promo",
+  );
 }
 
 async function seedAccounts(cafeId: string, eventId: string) {

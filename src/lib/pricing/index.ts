@@ -6,8 +6,12 @@
  * checkout (Phase 4) reuse exactly the code the product sheet runs.
  */
 export * from "./constants";
+export * from "./order-total";
 export * from "./price";
+export * from "./promo";
+export * from "./rounding";
 export * from "./selection";
 export * from "./summary";
+export * from "./tip";
 export * from "./types";
 export { isSelectionValid, pluralUnit, validateSelection } from "./validate";

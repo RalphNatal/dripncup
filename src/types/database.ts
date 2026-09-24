@@ -917,12 +917,14 @@ export type Database = {
           anonymized_at: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
+          checkout_fingerprint: string | null
           created_at: string
           customer_email: string | null
           customer_first_name: string | null
           customer_phone: string | null
           discount_cents: number
           estimated_ready_at: string | null
+          flagged_for_review_at: string | null
           fulfillment: Database["public"]["Enums"]["fulfillment_type"]
           id: string
           idempotency_key: string
@@ -938,6 +940,7 @@ export type Database = {
           promo_code: string | null
           promo_id: string | null
           ready_at: string | null
+          review_reason: string | null
           reward_id: string | null
           reward_name: string | null
           scheduled_for: string | null
@@ -956,12 +959,14 @@ export type Database = {
           anonymized_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
+          checkout_fingerprint?: string | null
           created_at?: string
           customer_email?: string | null
           customer_first_name?: string | null
           customer_phone?: string | null
           discount_cents?: number
           estimated_ready_at?: string | null
+          flagged_for_review_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           id?: string
           idempotency_key: string
@@ -977,6 +982,7 @@ export type Database = {
           promo_code?: string | null
           promo_id?: string | null
           ready_at?: string | null
+          review_reason?: string | null
           reward_id?: string | null
           reward_name?: string | null
           scheduled_for?: string | null
@@ -995,12 +1001,14 @@ export type Database = {
           anonymized_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
+          checkout_fingerprint?: string | null
           created_at?: string
           customer_email?: string | null
           customer_first_name?: string | null
           customer_phone?: string | null
           discount_cents?: number
           estimated_ready_at?: string | null
+          flagged_for_review_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           id?: string
           idempotency_key?: string
@@ -1016,6 +1024,7 @@ export type Database = {
           promo_code?: string | null
           promo_id?: string | null
           ready_at?: string | null
+          review_reason?: string | null
           reward_id?: string | null
           reward_name?: string | null
           scheduled_for?: string | null
@@ -1065,6 +1074,8 @@ export type Database = {
           amount_cents: number
           created_at: string
           currency: string
+          failure_code: string | null
+          failure_message: string | null
           id: string
           order_id: string
           provider: string
@@ -1081,6 +1092,8 @@ export type Database = {
           amount_cents: number
           created_at?: string
           currency?: string
+          failure_code?: string | null
+          failure_message?: string | null
           id?: string
           order_id: string
           provider?: string
@@ -1097,6 +1110,8 @@ export type Database = {
           amount_cents?: number
           created_at?: string
           currency?: string
+          failure_code?: string | null
+          failure_message?: string | null
           id?: string
           order_id?: string
           provider?: string
@@ -1440,6 +1455,94 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limit_hits: {
+        Row: {
+          hits: number
+          key: string
+          window_start: string
+        }
+        Insert: {
+          hits?: number
+          key: string
+          window_start: string
+        }
+        Update: {
+          hits?: number
+          key?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
+      refunds: {
+        Row: {
+          amount_cents: number
+          attempts: number
+          created_at: string
+          failure_reason: string | null
+          id: string
+          order_id: string
+          payment_id: string | null
+          provider: string
+          provider_refund_id: string | null
+          reason: string
+          requested_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          attempts?: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          order_id: string
+          payment_id?: string | null
+          provider?: string
+          provider_refund_id?: string | null
+          reason: string
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          attempts?: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          order_id?: string
+          payment_id?: string | null
+          provider?: string
+          provider_refund_id?: string | null
+          reason?: string
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refunds_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refunds_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refunds_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rewards: {
         Row: {
           applicable_category_ids: string[]
@@ -1559,11 +1662,55 @@ export type Database = {
           },
         ]
       }
+      webhook_events: {
+        Row: {
+          attempted_at: string
+          attempts: number
+          id: string
+          last_error: string | null
+          processed_at: string | null
+          provider: string
+          received_at: string
+          status: string
+          type: string
+        }
+        Insert: {
+          attempted_at?: string
+          attempts?: number
+          id: string
+          last_error?: string | null
+          processed_at?: string | null
+          provider?: string
+          received_at?: string
+          status?: string
+          type: string
+        }
+        Update: {
+          attempted_at?: string
+          attempts?: number
+          id?: string
+          last_error?: string | null
+          processed_at?: string | null
+          provider?: string
+          received_at?: string
+          status?: string
+          type?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      apply_refund_state: {
+        Args: {
+          p_payment_intent_id: string
+          p_reason?: string
+          p_refunded_cents: number
+        }
+        Returns: string
+      }
       auth_role: {
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]
@@ -1575,9 +1722,24 @@ export type Database = {
         Args: { target_location_id: string }
         Returns: boolean
       }
+      create_checkout_order: {
+        Args: { p_items: Json; p_order: Json }
+        Returns: {
+          created: boolean
+          order_id: string
+        }[]
+      }
       delete_account_data: {
         Args: { target_user_id: string }
         Returns: undefined
+      }
+      get_promo_for_checkout: {
+        Args: {
+          p_code: string
+          p_exclude_idempotency_key?: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       get_setting: { Args: { setting_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
@@ -1589,12 +1751,37 @@ export type Database = {
         }
         Returns: boolean
       }
+      mark_order_paid: {
+        Args: {
+          p_amount_cents: number
+          p_charge_id: string
+          p_currency: string
+          p_order_id: string
+          p_payment_intent_id: string
+          p_raw?: Json
+          p_reject_reason?: string
+        }
+        Returns: string
+      }
       next_catering_number: { Args: { as_of?: string }; Returns: string }
       next_daily_number: {
         Args: { as_of?: string; counter_scope: string }
         Returns: number
       }
       next_order_number: { Args: { as_of?: string }; Returns: string }
+      rate_limit_hit: {
+        Args: {
+          p_cost?: number
+          p_key: string
+          p_limit: number
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
+      record_payment_failure: {
+        Args: { p_code: string; p_message: string; p_payment_intent_id: string }
+        Returns: boolean
+      }
       set_location_accepting_orders: {
         Args: { accepting: boolean; target_location_id: string }
         Returns: {
