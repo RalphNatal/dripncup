@@ -103,6 +103,7 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `STRIPE_SECRET_KEY` | **secret** | Phase 4 | Stripe test-mode secret key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | public | Phase 4 | Payment Element |
 | `STRIPE_WEBHOOK_SECRET` | **secret** | Phase 4 | Verifies webhook signatures |
+| `CRON_SECRET` | **secret** | Phase 4 | Guards `/api/cron/expire-orders` (Vercel Cron sends it) |
 | `RESEND_API_KEY` | **secret** | Phase 5 | Transactional email |
 | `EMAIL_FROM` | config | Phase 5 | Verified sender address |
 
@@ -117,6 +118,7 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | Command | What it does |
 | ------- | ------------ |
 | `npm run dev` | Next dev server (Turbopack) |
+| `npm run dev:lan` | The same, reachable from a phone on your Wi-Fi (see "Testing on a phone") |
 | `npm run build` | Production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -221,30 +223,149 @@ db:start`, `npm run db:reset`, `npm run db:seed`).
   pause toggle, sold-out flags, opening hours) and put them back afterwards,
   so they run one at a time. Avoid running them against a database you are
   using by hand.
+- **Checkout tests** (`e2e/checkout.spec.ts`, `e2e/webhooks.spec.ts`) pay
+  with Stripe test cards in the sandbox, so they need the three Stripe test
+  keys in `.env.local` (they refuse a live key). They do **not** need
+  `stripe listen`: the test server on 3100 is not where the CLI forwards, so
+  the tests fetch the real events from Stripe's Events API (or build signed
+  fixtures around real PaymentIntents) and deliver them to the webhook
+  themselves. If `stripe listen` is also forwarding to your dev server on the
+  same database, that is harmless: every event is handled idempotently.
 
 ---
 
-## Testing Stripe webhooks locally (Phase 4)
+## Payments (Stripe)
 
-Install the [Stripe CLI](https://docs.stripe.com/stripe-cli), then in a second
-PowerShell window:
+Checkout takes cards, Apple Pay / Google Pay (where the browser offers them)
+and whatever else is switched on in the Stripe dashboard, through Stripe's
+Payment Element and Express Checkout Element. Card details go straight from
+the browser to Stripe; the app never sees them. How an order moves from
+"Pay" to **Placed** is in [ARCHITECTURE.md](ARCHITECTURE.md#checkout-and-payments).
 
-```powershell
-stripe login
-stripe listen --forward-to localhost:3000/api/stripe/webhook
+### Setup
+
+1. In the Stripe dashboard, switch to the **drincup sandbox** and copy its
+   test keys (Developers → API keys) into `.env.local`:
+   `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (`pk_test_…`) and `STRIPE_SECRET_KEY`
+   (`sk_test_…`).
+2. Install the [Stripe CLI](https://docs.stripe.com/stripe-cli).
+3. In a second PowerShell window, forward webhooks to the dev server. Pass the
+   sandbox's secret key with `--api-key`, so the CLI listens to the same
+   account the payments are made in (a plain `stripe login` can point at a
+   different account):
+
+   ```powershell
+   stripe listen --api-key <STRIPE_SECRET_KEY> --events payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled,charge.refunded --forward-to localhost:3000/api/webhooks/stripe
+   ```
+
+4. It prints a signing secret (`whsec_…`). Put it in `.env.local` as
+   `STRIPE_WEBHOOK_SECRET` and restart `npm run dev`. The secret stays the
+   same between runs for the same account and machine.
+
+**Orders only become Placed when the webhook arrives.** Without the listener,
+checkout still takes the money but the confirmation page stays on
+"Confirming your payment…".
+
+The `--events` list is exactly what the app handles; update it if
+`src/lib/payments/stripe.ts` learns a new event. In production, create a
+webhook endpoint in the dashboard for `https://<domain>/api/webhooks/stripe`
+with the same four events, and use its signing secret.
+
+### Test cards
+
+Any future expiry date, any CVC, any ZIP.
+
+| Card | Result |
+| ---- | ------ |
+| `4242 4242 4242 4242` | Succeeds |
+| `4000 0025 0000 3155` | Asks for 3-D Secure; choose **Complete** (or **Fail**) |
+| `4000 0000 0000 0002` | Declined ("Your card was declined") |
+| `4000 0000 0000 9995` | Declined, insufficient funds |
+
+More at [docs.stripe.com/testing](https://docs.stripe.com/testing).
+
+### Trying it by hand
+
+With `npm run dev` and `stripe listen` running:
+
+1. Sign in as `customer@drincup.test`, add a Latte, open the cart, press
+   **Checkout**.
+2. Pay with `4242…`. You land on "Confirming your payment…", then **Mahalo!**
+   with the order number once the webhook arrives (watch the `stripe listen`
+   window for `[200] POST /api/webhooks/stripe`). The cart empties.
+3. Again with `4000 0000 0000 0002`: the decline shows on the checkout page;
+   pay again with `4242…` and it completes the **same** order.
+4. Again with `4000 0025 0000 3155`: complete the 3-D Secure test page.
+5. Promo codes: `MAHALO10` (10% off $10+), `ALOHA5` ($5 off $25+, so it
+   explains the minimum spend), `SPRING24` (expired: "This code can't be
+   applied.").
+6. Refund from the Stripe dashboard (Payments → the payment → Refund): the
+   order turns Refunded once `charge.refunded` arrives.
+7. Pause the location (until the staff toggle arrives in Phase 6: set
+   `locations.accepting_orders` to false in Supabase Studio,
+   http://127.0.0.1:54323) and try to pay: checkout refuses. A payment already
+   in flight when you pause is refunded automatically, and the confirmation
+   page says why.
+
+### Scheduled jobs
+
+`GET /api/cron/expire-orders` cancels checkouts nobody paid for (default: after
+30 minutes, setting `orders.pending_expiry_minutes`). It cancels the
+PaymentIntent first, so an abandoned checkout can never be charged later, and
+leaves alone anything Stripe says is paid or processing. It answers only with
+`Authorization: Bearer <CRON_SECRET>`.
+
+On Vercel, set `CRON_SECRET` in the project's environment variables and add a
+`vercel.json`:
+
+```json
+{
+  "crons": [{ "path": "/api/cron/expire-orders", "schedule": "*/10 * * * *" }]
+}
 ```
 
-`stripe listen` prints a signing secret (`whsec_...`). Put it in `.env.local` as
-`STRIPE_WEBHOOK_SECRET` and restart `npm run dev`.
-
-Trigger a test event:
+Vercel sends the secret itself. **The Hobby plan only allows daily cron
+jobs** (a 10-minute schedule fails the deploy), so on Hobby either use a daily
+schedule or call the route from an outside scheduler with the header. Nothing
+breaks while it waits: unpaid orders stop holding pickup slots once they are
+older than the expiry window, and a late payment is still handled by the
+webhook. Locally, call it by hand:
 
 ```powershell
-stripe trigger payment_intent.succeeded
+curl.exe -H "Authorization: Bearer $env:CRON_SECRET" http://localhost:3000/api/cron/expire-orders
 ```
 
-Orders only become **Placed** once the webhook confirms payment, so the listener
-must be running for checkout to complete end to end.
+---
+
+## Testing on a phone
+
+To try checkout on a real phone on the same Wi-Fi as your PC:
+
+1. Find the PC's address: `ipconfig` → the Wi-Fi adapter's **IPv4 Address**,
+   e.g. `192.168.1.23`.
+2. The phone's browser talks to Supabase directly, so it needs the PC's
+   address too. In `.env.local`, set
+   `NEXT_PUBLIC_SUPABASE_URL=http://192.168.1.23:54321` and
+   `NEXT_PUBLIC_SITE_URL=http://192.168.1.23:3000` (put them back to
+   `127.0.0.1` / `localhost` afterwards, or the e2e tests refuse to run).
+3. Allow the two ports through Windows Firewall, once, from an **admin**
+   PowerShell (private networks only):
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Drincup dev (Next)" -Direction Inbound -Protocol TCP -LocalPort 3000 -Profile Private -Action Allow
+   New-NetFirewallRule -DisplayName "Drincup dev (Supabase)" -Direction Inbound -Protocol TCP -LocalPort 54321 -Profile Private -Action Allow
+   ```
+
+   Make sure Windows calls your Wi-Fi a **Private** network (Settings →
+   Network & internet → Wi-Fi → your network).
+4. Run `npm run dev:lan` (plus `stripe listen` as above) and open
+   `http://192.168.1.23:3000` on the phone.
+
+Private-network addresses are already allowed in `next.config.ts`
+(`allowedDevOrigins`). Over plain HTTP, Stripe's card form works in test mode,
+but Apple Pay and Google Pay stay hidden: wallets need HTTPS. To test those,
+use a tunnel with HTTPS (for example `ngrok http 3000`) and add its hostname to
+`allowedDevOrigins`.
 
 ---
 
@@ -258,7 +379,11 @@ src/
       page.tsx         Home (placeholder)
       menu/            Menu, /menu/[slug] full page, @modal/(.)[slug] sheet
       account/         Profile, preferences, change password, delete account
-      rewards/ orders/ cart/   Placeholders until their phases
+      cart/ checkout/  Cart (re-validated on the server) and checkout
+      orders/[id]/confirmed/  Confirmation, after Stripe's redirect
+      rewards/ orders/ Placeholders until their phases
+    api/webhooks/stripe/     Stripe webhook (raw body, signature checked)
+    api/cron/expire-orders/  Cancels unpaid checkouts (Vercel Cron)
     auth/callback/     Landing route for emailed confirmation / reset links
     staff/ admin/      Dashboards (own plain frame, no customer tab bar)
   components/
@@ -268,6 +393,8 @@ src/
     shell/             App header, tab bar, cart button, sheet/dialog primitive
     locations/         Location picker, status dot, directions link
     menu/              Menu browser, product card + customiser + sheet, banners
+    cart/              Cart page, quantity stepper, edit-in-place sheet
+    checkout/          Checkout, Stripe Elements, pickup/tip/promo, confirmation
     ui/                shadcn/ui primitives
     providers.tsx      TanStack Query + Tooltip + Toaster
   lib/
@@ -275,6 +402,11 @@ src/
     menu/              Catalogue (cached), sold-out (live), page models, search
     locations/         Open/closed status, storefront context, selection cookie
     cart/              Zustand cart store (persisted)
+    checkout/          Cart re-check, quote, createCheckout, pickup slots, settings
+    payments/          PaymentProvider interface, Stripe, webhook handling, refunds
+    orders/            Confirmation data, expiry job, staff cancel, deletion refunds
+    rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
+    client-id.ts       Browser ids / idempotency keys (works over plain HTTP)
     auth/
       actions.ts       Sign-in/up/out and password Server Actions
       dal.ts           getCurrentProfile, requireProfile, requireRole
@@ -340,6 +472,9 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 - [ ] Pickup-shelf wording
 - [ ] Whether catering delivery is offered (assumed yes)
 - [ ] Catering minimum lead time (seeded at 72 hours)
+- [ ] Ordering ahead while closed: a cart already built can be scheduled for the next open day at checkout, but the menu still blocks adding while closed. Allow adding too?
+- [ ] Checkout timings: unpaid checkouts expire after 30 minutes; the ASAP estimate adds 2 minutes per order in the queue; 8 orders per 15-minute slot; last slot 15 minutes before closing
+- [ ] Custom tip cap (seeded at $100 or 100% of the subtotal, whichever is lower)
 
 ---
 
@@ -348,7 +483,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 1. ✅ **Foundation** — setup, design tokens, migrations + RLS, seed
 2. ✅ **Auth & roles** — sign-up/in/out, password reset, account page, account deletion, role-gated `/staff` and `/admin`
 3. ✅ **Menu & customisation** — app shell, pickup locations and live status, menu, product sheet with data-driven modifiers, shared pricing engine, cart store
-4. ⬜ Cart & checkout (Stripe)
+4. ✅ **Cart & checkout** — server-validated cart with edit in place, checkout with pickup slots, promos and tips, Stripe Payment + Express Checkout Elements, webhook-driven order placement, refunds, pending-order expiry
 5. ⬜ Order tracking & history
 6. ⬜ Staff dashboard
 7. ⬜ Rewards

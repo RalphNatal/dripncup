@@ -79,7 +79,10 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | `orders` | One per checkout. Holds the full money breakdown plus the tax rate in force at the time. `user_id` is null only after an account deletion (`anonymized_at` set). |
 | `order_items` | Immutable snapshot lines. `modifiers` is JSONB. |
 | `order_status_history` | Append-only audit, written by a trigger on every status change. |
-| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. |
+| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. Never stores a client secret. Records the last failure (`failure_code`, `failure_message`) and the running `refunded_cents`. |
+| `refunds` | One row per refund attempt, written **before** the provider is called, so a crash or a decline still leaves a record. `failed` rows are the admin retry queue. Customers can read refunds on their own orders. |
+| `webhook_events` | One row per provider event id: the dedupe log. Service role only. |
+| `rate_limit_hits` | Fixed-window counters for checkout and promo-code limits. Service role only. |
 
 ### Money and loyalty
 
@@ -186,8 +189,15 @@ action then:
    (`src/lib/auth/reauthenticate.ts`). A throwaway, non-persisting Supabase
    client signs in, so the check never touches the visitor's session cookies,
    and the session it creates is revoked straight away. A stolen session
-   cookie alone therefore cannot delete an account.
-2. **Calls `delete_account_data()`** with the service role. In one
+   cookie alone therefore cannot delete an account. The last admin is
+   refused here too, before anything irreversible happens.
+2. **Settles money first** (`settleOrdersBeforeAccountDeletion`,
+   `src/lib/orders/account-deletion.ts`). Every paid order still in progress
+   (`placed` to `ready`) is refunded in full; every checkout still waiting for
+   payment has its PaymentIntent cancelled, so it cannot be charged after the
+   account is gone. A refund the provider refuses does **not** block the
+   deletion: it stays in `refunds` as `failed` for an admin to retry.
+3. **Calls `delete_account_data()`** with the service role. In one
    transaction, it:
    - cancels unfinished orders (`pending_payment` through `ready`) and open
      catering requests, through the normal transition triggers, so the audit
@@ -203,12 +213,12 @@ action then:
    The function is `service_role`-only. The last remaining admin is refused
    (SQLSTATE `DC001`), under an advisory lock, so two admins cannot each
    delete themselves at once and leave the cafe without one.
-3. **Signs this browser out, then deletes the auth user** through the admin
+4. **Signs this browser out, then deletes the auth user** through the admin
    API. That ends every other session, and `profiles` cascades away from
    `auth.users`. If this last call fails, the tombstone keeps the account
    locked out, and the next sign-in attempt with the right password finishes
    the deletion.
-4. **Redirects to `/?account=deleted`**, and Home confirms it.
+5. **Redirects to `/?account=deleted`**, and Home confirms it.
 
 `order_items` are left as they are. They are the immutable snapshot of what
 was sold (`freeze_order_items`) and carry no contact details.
@@ -221,9 +231,9 @@ deleted from the Supabase dashboard around the anonymising step; the FK's
 same for catering, and the customer insert policy forbids setting
 `anonymized_at`.
 
-> **Phase 4 follow-up:** once payments exist, an order cancelled here after
-> payment cleared needs a refund. Refund `cancelled` orders that have a
-> `succeeded` payment as part of the cancellation flow.
+A payment that lands *after* the deletion (the customer paid in another tab a
+moment before) finds its order cancelled; the webhook refunds it (see
+"Checkout and payments").
 
 ---
 
@@ -307,8 +317,11 @@ select.
 
 ## Pricing
 
-All of it lands in one pure function, `calculateOrderTotal` (Phase 4), with unit
-tests covering modifiers, promos, rewards, tax and tips.
+All of it lands in one pure function, `calculateOrderTotal`
+(`src/lib/pricing/order-total.ts`), with unit tests covering modifiers, promos,
+rewards, tax, tips and rounding. The checkout page's quote and the order
+`createCheckout` writes both come from it, so what the customer is shown is
+what they are charged.
 
 ```
   line unit price  = size price (or product base price)
@@ -318,10 +331,12 @@ tests covering modifiers, promos, rewards, tax and tips.
   line total       = unit price × quantity             (quantity 1–99)
 
   subtotal         = Σ line totals
-  discount         = promo + reward, capped at the subtotal
-  taxable base     = subtotal − discount
-  tax (GET)        = round(taxable base × tax_rate)
-  tip              = round(subtotal × tip_percent)   ← pre-tax, post-discount
+  promo            = evaluatePromo(...)                 capped at the subtotal
+  reward           = Phase 7 slot                       capped at what is left
+  taxable base     = subtotal − promo − reward
+  tax (GET)        = round(taxable base × tax_rate)     rounded once, per order
+  tip              = preset % of the taxable base, or a custom amount
+                     (custom: $0 up to min($100, 100% of subtotal), from settings)
   total            = taxable base + tax + tip
 ```
 
@@ -333,10 +348,24 @@ Three decisions worth stating explicitly:
 - **Tip is calculated on the pre-tax, post-discount subtotal**, which is what
   customers expect and keeps the tip stable if the tax rate changes.
 
-Rounding uses `roundCents()`, which rounds **half away from zero** — what a
-till does. `Math.round()` rounds half *up*, so `-0.5` becomes `-0`; that
-asymmetry would quietly favour one side on refunds and negative modifier
-deltas.
+**Rounding.** Everything is integer cents, and the engine never multiplies
+money by a float. `src/lib/pricing/rounding.ts`:
+
+- A tax rate becomes an integer number of hundred-thousandths
+  (`0.04712` → `4712`), a percentage an integer number of hundredths
+  (`18` → `1800`, `12.5` → `1250`).
+- `divideRounded(numerator, denominator)` does the one division, rounding
+  **half away from zero**, which is what a till does.
+- So GET is `divideRounded(taxable × 4712, 100000)`: $12.35 at 4.712% is
+  58.1932¢ → **58¢**; an exact half cent (e.g. 50¢ at 1%) rounds up to 1¢.
+- Tax is rounded **once, on the order**, never per line: per-line rounding
+  can drift a cent from what the GET return expects.
+- A percentage promo or tip is rounded the same way, then capped.
+
+`roundCents()` in `src/lib/money.ts` follows the same half-away-from-zero rule
+for the few places outside the engine that round. `Math.round()` rounds half
+*up*, so `-0.5` becomes `-0`; that asymmetry would quietly favour one side on
+refunds and negative modifier deltas.
 
 `orders.tax_rate` stores the rate in force at the time of the order, so editing
 the GET setting in admin never rewrites old receipts.
@@ -358,19 +387,32 @@ Next.js or Supabase code can creep in.
 
 `calculateLinePrice` takes the *resolved* selection rather than raw ids, so a
 price can only come from the catalogue: the client sends ids and quantities,
-never amounts. Phase 4's `calculateOrderTotal` should be, per cart line,
-`validateSelection` → `resolveSelection` → `calculateLinePrice`, built from
-the same `buildProductDetail` mapping the product page uses
-(`src/lib/menu/model.ts`). That mapping is where per-product overrides,
-sold-out flags and event menus are applied.
+never amounts. `calculateOrderTotal` runs, per cart line,
+`validateSelection` → `resolveSelection` → `calculateLinePrice`, on lines
+built from the same `buildProductDetail` mapping the product page uses
+(`src/lib/menu/model.ts`), read live rather than from the 60-second cache
+(`getLiveCatalog`). That mapping is where per-product overrides, sold-out
+flags and event menus are applied.
+
+| Also in the engine | Job |
+| ------------------ | --- |
+| `calculateOrderTotal(input)` | The whole order, in the order above; `invalid_lines` / `invalid_tip` instead of a total when something is wrong |
+| `evaluatePromo(promo, …)` | Active, started, not expired, total and per-customer limits, value, minimum spend, cap |
+| `calculateTip(choice, …)` | Presets only from settings; custom within the cap |
+| `divideRounded`, `percentOf`, `taxRateUnits` | The integer rounding above |
 
 ### What checkout re-validates
 
-Menu-page state is not trusted at checkout. Before payment the server
-re-verifies: the location is open and not paused, an event is inside its
-window, every product and modifier option is still available at that location,
-the promo is valid for this user and spend, the reward is affordable, and the
-scheduled slot is still within opening hours.
+Menu-page state is not trusted, at the cart or at checkout. On every cart
+load and change, every checkout quote, and again inside `createCheckout`, the
+server re-checks each line against the live catalogue for the **selected**
+location (from its cookie, never from the browser's claim): removed or
+inactive products, not on this location's menu, sold out, a selection that
+no longer validates, a changed price, a line added for another location. It
+also re-checks the location (paused and pop-ups outside their window block
+checkout; closed allows scheduling for the next open day), the pickup time,
+the promo for this customer and spend, and the tip. The payment webhook
+checks the location once more before placing the order.
 
 ---
 
@@ -444,7 +486,12 @@ no photo at all, shows a generated brand-coloured placeholder. A collection's
 (shop)/menu/@modal/(.)[slug]
                            the same product as a sheet / dialog when opened
                            from the menu (intercepting + parallel routes)
-(shop)/rewards, /orders, /cart   placeholders until their phases
+(shop)/cart                the cart; guests welcome
+(shop)/checkout            signed-in only; sends guests to /sign-in?next=/checkout
+(shop)/orders/[id]/confirmed   Stripe's return_url; owner only (404 otherwise)
+(shop)/rewards, /orders    placeholders until their phases
+api/webhooks/stripe        payment webhook (outside the proxy matcher)
+api/cron/expire-orders     unpaid-checkout expiry (outside the proxy matcher)
 ```
 
 Closing the sheet calls `router.back()`, so the menu keeps its scroll
@@ -452,16 +499,215 @@ position. Focus returns to the card that opened it (`useRouteDialogFocus`),
 because Radix would otherwise send focus to a `Dialog.Trigger` this route
 does not have.
 
-### Cart (Phase 3 scope)
+### Cart
 
 A Zustand store persisted to `localStorage` (`src/lib/cart/store.ts`). Each
 line holds the location id, product and size ids, the pruned modifier
 selection, special instructions and quantity, plus a display snapshot: names,
 a summary, and the unit price when it was added. The snapshot is only for
-display. Checkout re-validates and re-prices every line from the ids.
-Identical lines merge (capped at 99). Changing location keeps the cart but
-sets `needsRevalidation`; Phase 4's cart page acts on it. The store hydrates
-after the first render, so server and client HTML agree.
+display. The server re-validates and re-prices every line from the ids.
+Identical lines merge (capped at 99). The store hydrates after the first
+render, so server and client HTML agree. Because it lives in the browser, the
+cart survives signing in.
+
+The cart page (`src/components/cart/cart-view.tsx`) sends the lines to
+`checkCartAction` on load and after every change and shows what comes back
+per line. Price changes are applied to the stored lines automatically, with
+a notice ("$4.50 → $5.00 each"). Blocking problems (gone, sold out, invalid
+choices) must be fixed or removed before Checkout unlocks. Lines added for
+another location are flagged, with one button to re-home them to the
+selected one. **Edit** opens the same product sheet, prefilled from the line
+(`ProductCustomizer`'s `editing` mode), and replaces the line in place.
+
+The cart remembers the order it was checked out as (`pendingOrderId`) and
+empties only when the confirmation page sees that order **Placed**. A
+declined or abandoned payment leaves the cart as it was.
+
+---
+
+## Checkout and payments
+
+### The whole flow
+
+```
+ browser                          server                                     Stripe
+ ───────                          ──────                                     ──────
+ /checkout loads ── quoteCheckoutAction ─▶ re-check lines, pickup options,
+                                           promo, tip → calculateOrderTotal
+ Payment Element + Express Checkout Element render from the quoted amount
+ (deferred intent: no PaymentIntent exists yet)
+
+ tap Pay ─ elements.submit()  (is the card form complete?)
+         ─ createCheckoutAction(choices + idempotency key) ─▶
+                                  rate limit (user + IP), every check again,
+                                  create_checkout_order: pending_payment
+                                    order + snapshot lines, one transaction
+                                  create PaymentIntent (order id in metadata,
+                                    idempotency key) ─────────────────────────▶ PI
+                                  ◀── client secret (never stored)
+         ─ stripe.confirmPayment(return_url = /orders/{id}/confirmed) ───────────▶ charge,
+                                                                                  3-D Secure
+ redirected to /orders/{id}/confirmed: "Confirming your payment…", polling
+                                  ◀──────────── payment_intent.succeeded ─── webhook
+                                  mark_order_paid: Placed, placed_at,
+                                  payment, promo redemption (one transaction)
+ poll sees Placed → "Mahalo!", order number; the cart empties
+```
+
+**An order becomes Placed in the webhook and nowhere else.** A redirect back
+from Stripe proves nothing (anyone can type the URL), so the confirmation page
+only ever reads the order's status.
+
+### Before payment
+
+`src/lib/checkout/service.ts` has two entry points sharing one `prepare()`:
+`quote()` for the page and `createCheckout()` for Pay. Both take the location
+from the cookie, prices from the live catalogue, the promo from the database
+and the totals from `calculateOrderTotal`; the browser only ever sends ids,
+quantities and choices. `createCheckout` refuses a total under Stripe's 50¢
+minimum.
+
+The Pay button shows the quoted total. If the order `createCheckout` makes
+comes out different (a price changed between quote and tap), the browser
+does not confirm the payment: it re-quotes and asks the customer to tap Pay
+again. The amount charged is always the amount that was on the button.
+
+### Idempotency: one tap, one order
+
+- The browser makes one key per set of choices (lines, promo, tip, pickup,
+  cup name, notes, location). The same choices reuse the key, so a double
+  tap, a network retry or a retry after a declined card all land on **the
+  same order and the same PaymentIntent**. Changing anything starts a new
+  key; the abandoned order expires (below).
+- A ref, not React state, guards the button, so two taps in the same frame
+  cannot both start.
+- `create_checkout_order` inserts `on conflict (idempotency_key) do nothing`
+  and returns the existing order. `createCheckout` then compares
+  `checkout_fingerprint`, a SHA-256 of the server's own canonical form of the
+  request: a key reused for a different cart is refused (`changed`), and a
+  key belonging to another customer is refused outright.
+- The PaymentIntent is created with Stripe idempotency key `checkout-<key>`
+  and recorded in `payments`, so a retry retrieves it rather than making a
+  second one. An order whose intent was cancelled answers `expired`, and the
+  browser starts a fresh attempt.
+
+### The webhook (`/api/webhooks/stripe`)
+
+The route reads the **raw** body (`request.text()`) and verifies the
+signature with `constructEventAsync`; a bad or missing signature is a 400.
+`src/lib/payments/stripe.ts` turns the Stripe event into a provider-neutral
+`PaymentEvent`, and `src/lib/payments/webhook.ts` handles it.
+
+**Dedupe.** Each event id gets a `webhook_events` row. Processed already →
+200 `duplicate`. Another delivery mid-way (a `processing` claim under two
+minutes old) → 409, so Stripe tries again later. A failed or stale attempt is
+re-claimed with a compare-and-set on `attempts`, so only one delivery wins. A
+handler error → 500 and the row is marked `failed`; Stripe redelivers with
+backoff.
+
+| Event | What happens |
+| ----- | ------------ |
+| `payment_intent.succeeded` | The location is re-checked first. Paused, closed for the chosen time or a pop-up that has ended → the payment is recorded, the order cancelled with a reason the customer sees ("… You've been refunded in full.") and the whole amount refunded. Amount or currency not matching the order → payment recorded, order **not** placed, `flagged_for_review_at` + `review_reason` set and an error logged for an admin. Otherwise → Placed, `placed_at`, payment `succeeded` with its charge id, promo redemption recorded and counted. |
+| `payment_intent.payment_failed` | Payment `failed` with the decline code and message. The order stays `pending_payment`, so the same intent can be paid again. |
+| `payment_intent.canceled` | A pending order is cancelled ("The payment was cancelled before it completed."). Anything already placed is left alone. |
+| `charge.refunded` | Every refund on the charge is recorded (ours are matched by the `refund_row_id` metadata; ones made in the dashboard are added). `refunded_cents` is updated. Fully refunded → the order is cancelled if still running, then Refunded. |
+
+**Out of order and replayed.** Every SQL function locks the order or payment
+row and only moves forward. A replayed success is `already_placed` and counts
+the promo once (`unique (promo_id, order_id)`). A late failure never
+overwrites a success or a refund. A cancel never touches a placed order.
+Refund totals never go down. A success for an order already cancelled
+(expired, account deleted) is `not_pending`, and whatever has not already
+gone back is refunded.
+
+### The confirmation page (`/orders/[id]/confirmed`)
+
+Stripe's `return_url`, reached after a card payment, a 3-D Secure challenge
+or a redirect-based method. Only the order's owner can open it: the order is
+read under RLS **and** its `user_id` compared, so staff, who may read orders
+at their location, still get a 404. While the order is `pending_payment` it
+polls every 1.5 s (5 s after 45 s). Placed → order number, pickup place and
+time, items, totals, "Mahalo!", and the cart is emptied. A failed payment →
+"Try paying again" on the **same order**: `resumePaymentAction` fetches the
+intent's client secret from Stripe for the owner (it is never stored).
+Cancelled → the reason and any refund. The status shown is a snapshot; live
+tracking is Phase 5.
+
+### Pending orders that are never paid
+
+`GET /api/cron/expire-orders` (README, "Scheduled jobs"), with
+`Authorization: Bearer <CRON_SECRET>` compared in constant time. Orders older
+than `orders.pending_expiry_minutes` (30) are expired: the PaymentIntent is
+cancelled **first**, so an abandoned checkout can never be charged later; if
+Stripe says it has already succeeded or is processing, the order is left for
+the webhook. Flagged orders are never expired. Pending orders hold a pickup
+slot only while younger than the expiry window, so a late or missing cron
+run cannot fill the schedule with ghosts.
+
+### Refunds
+
+`PaymentProvider.refund(paymentId, amountCents?, reason)`, driven by
+`src/lib/payments/refunds.ts`:
+
+- A `refunds` row is written **before** Stripe is called. Its id goes to
+  Stripe as metadata and into the idempotency key
+  (`refund-<row>-<attempt>`), so a retried call cannot refund twice.
+- The amount is capped at what is still outstanding: the payment minus the
+  larger of `refunded_cents` and refunds already in flight.
+- A provider failure is recorded (`failed`, with the reason) and reported,
+  never thrown past the caller. `retryRefund()` is the admin retry (UI in
+  Phase 9).
+
+Callers today: the webhook (payment after pause or cancellation), account
+deletion, and `cancelOrderWithRefund()` (`src/lib/orders/cancel.ts`), which
+lets an admin, or staff rostered at the order's location, cancel a placed to
+ready order with a reason and refund it. Its buttons arrive in Phase 6.
+
+### Pickup times (`src/lib/checkout/pickup.ts`)
+
+Pure, all in Honolulu time, unit-tested at exact instants, and run for the
+quote, again at order creation and again in the webhook:
+
+- **ASAP**: now + prep time + `orders.queue_minutes_per_order` (2) × orders
+  already in the queue, rounded up to 5 minutes ("Ready around 9:40 AM").
+  Only while open, and only if that is before closing.
+- **Scheduled**: 15-minute slots, today only. The first is at least the prep
+  time away, the last starts `orders.last_slot_buffer_minutes` (15) before
+  closing. When closed now, the slots are the next open day's. Pop-ups offer
+  slots only inside their window. A slot holding `orders.max_orders_per_slot`
+  (8) orders shows as full.
+- **Blocked**: paused, the global switch off, or a pop-up outside its window.
+
+### Rate limiting
+
+`src/lib/rate-limit.ts`, a fixed-window counter in Postgres
+(`rate_limit_hit()`, one atomic upsert):
+
+| Limit | Per user | Per IP |
+| ----- | -------- | ------ |
+| `createCheckout` | 12 / 10 min | 40 / 10 min |
+| Promo codes that fail | 8 / 15 min | 25 / 15 min |
+
+Only failed codes count, and while over the limit a code is refused without
+being looked up, so guessing codes is slow. Minimum-spend answers do not
+count. The IP is the first `X-Forwarded-For` entry, which Vercel's edge sets.
+If the limiter itself errors, requests are allowed: an outage there must not
+stop the cafe taking orders.
+
+**Why Postgres, not Upstash Redis:** no new vendor, account or secret; the
+count is exact and shared by every serverless instance; and at one cafe's
+volume, one indexed upsert per checkout is nothing. Upstash would be faster
+and keep the write load off the database at chain scale. The limiter sits
+behind four functions in one file, so switching later touches nothing else.
+
+### The provider seam
+
+`PaymentProvider` (`src/lib/payments/types.ts`): `createPayment`,
+`retrievePayment`, `cancelPayment`, `refund` and `verifyWebhook`, which turns
+a signed request into a neutral `PaymentEvent`. Only
+`src/lib/payments/stripe.ts` imports the Stripe SDK. The secret key never
+leaves the server; the browser gets the publishable key and, for its own
+order only, a client secret.
 
 ---
 
@@ -569,7 +815,12 @@ possible:
 
 Known follow-ups for later phases:
 
-- **Refunds on cancellation** (Phase 4): see Account deletion above.
+- **Staff order updates** (Phase 6): the `orders_update_staff` policy lets
+  rostered staff update *any* column of an order at their location, totals
+  included. The transition trigger guards `status`, but nothing stops a
+  crafted request changing `total_cents`. Before the staff dashboard ships,
+  grant staff `UPDATE` on only the columns they need (status, cancellation
+  reason) or route their changes through a function.
 - **Condition cycles** (Phase 9 admin): the database accepts group A shown
   when B's option is chosen *and* B shown when A's option is chosen; the
   engine would then hide both. The menu editor should refuse cycles.
