@@ -521,6 +521,40 @@ Postgres has matching helpers: `cafe_date(instant)`, `cafe_today()` and
 
 ---
 
+## Dev server: the one-off 500
+
+Under `npm run dev`, opening `/menu/kona-drip-coffee` once returned a 500
+with `at matchAll.next` in the stack, then 200 on reload. Investigated in
+Phase 4 (Part 0); it is a development-server effect, not an application bug.
+
+- **Where it comes from.** `matchAll` is Next's route matcher, an async
+  generator walked in `base-server.js` (`renderToResponseImpl`). In dev,
+  `DevRouteMatcherManager.matchAll` compiles each route on first request
+  (`ensure`) and reloads the route table before yielding. Anything thrown
+  there becomes a 500 with that frame. Our page code runs *after* the match,
+  so an error in it would not show `matchAll.next`.
+- **What triggers it.** An on-demand compile that runs while a source file is
+  being written: an editor save, a `git stash` or checkout swapping files, or
+  generated types being rewritten. Reproduced on a cold dev server by
+  truncating `src/lib/menu/model.ts` mid-request: 500 while the file was
+  half-written (`Expected '}', got '<eof>'`), 200 on the next request. The
+  reported 500 happened while the dev server was running during Phase 3/4
+  file changes.
+- **What does not trigger it.** A stable tree: three cold dev starts loading
+  the URL in a real browser, and six different routes requested concurrently
+  on a cold dev server, all returned 200.
+- **Why production is immune.** `next build` compiles every route ahead of
+  time, and `next start` loads the route table once at startup; the
+  production matcher never compiles or reloads per request. Three cold
+  `next start` runs, each opening the product URL first, returned 200.
+  `e2e/cold-start.spec.ts` keeps it that way: it starts a fresh production
+  server and makes the product page its very first request.
+
+If it appears in dev, reload. If it persists, the terminal shows a real
+compile error to fix.
+
+---
+
 ## Deliberately deferred
 
 Third-party delivery, native apps, gift cards, POS integration and
