@@ -1,17 +1,16 @@
 import "server-only";
 
 /**
- * Cancel an order and give the money back -- for the staff queue and admin
- * (Phase 6 wires this to buttons).
+ * Cancel a paid order and give the money back -- for the staff queue and
+ * admin (Phase 6 wires this to buttons). The only way to cancel an order that
+ * holds money: advance_order_status() refuses those.
  *
- * Authorisation is checked here, not only in whatever page calls it: the
- * actor must be an admin, or staff rostered to the order's location.
+ * Authorisation is checked here and again in cancel_order_for_refund(), not
+ * only in whatever page calls it: the actor must be an admin, or staff
+ * rostered to the order's location.
  */
 import { refundOrder, type RefundOutcome } from "@/lib/payments/refunds";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-/** States an order can still be cancelled from (before pickup). */
-const CANCELLABLE = ["placed", "accepted", "preparing", "ready"] as const;
 
 export type CancelResult =
   | { ok: true; refund: RefundOutcome }
@@ -31,35 +30,29 @@ export async function cancelOrderWithRefund({
     return { ok: false, code: "reason_required", message: "Give a reason for cancelling." };
   }
 
+  // The actor, their roster and the order's state are checked inside
+  // cancel_order_for_refund under the order's row lock, and the staff member
+  // is recorded in the status history.
   const db = createAdminClient();
-  const [{ data: order }, { data: actor }] = await Promise.all([
-    db.from("orders").select("id, status, location_id").eq("id", orderId).maybeSingle(),
-    db.from("profiles").select("id, role, deleted_at").eq("id", actorId).maybeSingle(),
-  ]);
-  if (!order) return { ok: false, code: "not_found", message: "Order not found." };
-  if (!actor || actor.deleted_at || actor.role === "customer") {
-    return { ok: false, code: "forbidden", message: "Only staff can cancel orders." };
-  }
-  if (actor.role === "staff") {
-    const { data: roster } = await db
-      .from("staff_locations")
-      .select("profile_id")
-      .eq("profile_id", actorId)
-      .eq("location_id", order.location_id)
-      .maybeSingle();
-    if (!roster) return { ok: false, code: "forbidden", message: "You're not rostered to this location." };
-  }
-
-  if (!(CANCELLABLE as readonly string[]).includes(order.status)) {
-    return { ok: false, code: "not_cancellable", message: `An order that is ${order.status} can't be cancelled.` };
-  }
-
-  const { error } = await db
-    .from("orders")
-    .update({ status: "cancelled", cancellation_reason: trimmed })
-    .eq("id", orderId)
-    .in("status", [...CANCELLABLE]);
+  const { data: outcome, error } = await db.rpc("cancel_order_for_refund", {
+    p_order_id: orderId,
+    p_reason: trimmed,
+    p_actor_id: actorId,
+  });
   if (error) throw new Error(`Could not cancel order ${orderId}: ${error.message}`);
+
+  switch (outcome) {
+    case "cancelled":
+      break;
+    case "not_found":
+      return { ok: false, code: "not_found", message: "Order not found." };
+    case "forbidden":
+      return { ok: false, code: "forbidden", message: "Only staff rostered to this location can cancel its orders." };
+    case "reason_required":
+      return { ok: false, code: "reason_required", message: "Give a reason for cancelling." };
+    default:
+      return { ok: false, code: "not_cancellable", message: "This order can no longer be cancelled." };
+  }
 
   // Cancelled first, then refunded: if the refund fails the order is still
   // off the queue and the failed refund row is waiting for an admin.

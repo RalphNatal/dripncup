@@ -1703,6 +1703,61 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advance_order_status: {
+        Args: {
+          p_new_status: Database["public"]["Enums"]["order_status"]
+          p_order_id: string
+          p_reason?: string
+        }
+        Returns: {
+          accepted_at: string | null
+          anonymized_at: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          checkout_fingerprint: string | null
+          created_at: string
+          customer_email: string | null
+          customer_first_name: string | null
+          customer_phone: string | null
+          discount_cents: number
+          estimated_ready_at: string | null
+          flagged_for_review_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          id: string
+          idempotency_key: string
+          location_id: string
+          notes: string | null
+          order_number: string
+          picked_up_at: string | null
+          pickup_type: Database["public"]["Enums"]["pickup_type"]
+          placed_at: string | null
+          points_earned: number
+          points_redeemed: number
+          preparing_at: string | null
+          promo_code: string | null
+          promo_id: string | null
+          ready_at: string | null
+          review_reason: string | null
+          reward_id: string | null
+          reward_name: string | null
+          scheduled_for: string | null
+          status: Database["public"]["Enums"]["order_status"]
+          subtotal_cents: number
+          tax_cents: number
+          tax_rate: number
+          taxable_base_cents: number
+          tip_cents: number
+          total_cents: number
+          updated_at: string
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       apply_refund_state: {
         Args: {
           p_payment_intent_id: string
@@ -1721,6 +1776,10 @@ export type Database = {
       can_access_location: {
         Args: { target_location_id: string }
         Returns: boolean
+      }
+      cancel_order_for_refund: {
+        Args: { p_actor_id: string; p_order_id: string; p_reason: string }
+        Returns: string
       }
       create_checkout_order: {
         Args: { p_items: Json; p_order: Json }
@@ -1769,6 +1828,10 @@ export type Database = {
         Returns: number
       }
       next_order_number: { Args: { as_of?: string }; Returns: string }
+      order_has_captured_payment: {
+        Args: { p_order_id: string }
+        Returns: boolean
+      }
       rate_limit_hit: {
         Args: {
           p_cost?: number

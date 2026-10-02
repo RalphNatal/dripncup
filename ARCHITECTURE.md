@@ -144,6 +144,19 @@ Three guardrails sit alongside the policies:
   toggle goes through `set_location_accepting_orders()`, a definer RPC that
   exposes exactly that one column, so a barista cannot edit addresses or prep
   times.
+- **Nobody but the service role writes orders.** `anon` and `authenticated`
+  have no INSERT, UPDATE or DELETE privilege on `orders`, `order_items`,
+  `order_status_history`, `payments` or `refunds` (revoked, not just
+  missing a policy, so a future permissive policy cannot reopen it). Staff
+  move an order along with `advance_order_status(order_id, new_status,
+  reason?)`, a definer function that checks the caller is an admin or
+  rostered to the order's location, allows only Accepted → Preparing → Ready
+  → Picked Up and Cancelled, enforces the transition table, and writes the
+  status, its timestamp and a cancel reason and nothing else. It refuses to
+  cancel an order that holds money (`DC002`): that goes through
+  `cancelOrderWithRefund()` on the server, which cancels with the
+  service-role `cancel_order_for_refund()` and then refunds. Both record
+  the staff member in `order_status_history.changed_by`.
 
 `/staff` and `/admin` are also gated in `src/proxy.ts` before any page code
 runs. That check reads the database rather than a JWT claim, so a role change
@@ -282,7 +295,10 @@ Enforcement is layered:
 - `ORDER_TRANSITIONS` in `src/lib/order-status.ts` mirrors it so the UI can grey
   out impossible buttons without a round trip. A unit test parses the migration
   and asserts the two are identical — they cannot drift silently.
-- `record_order_status_change()` writes `order_status_history` automatically.
+- `record_order_status_change()` writes `order_status_history` automatically,
+  with the actor: `auth.uid()`, or the staff member a service-role function
+  names in the transaction-local `app.order_status_actor` setting, or null
+  for the webhook and expiry job (the system).
 - `freeze_order_items()` blocks updates and deletes to `order_items` once the
   parent order has left `pending_payment`.
 
@@ -815,12 +831,6 @@ possible:
 
 Known follow-ups for later phases:
 
-- **Staff order updates** (Phase 6): the `orders_update_staff` policy lets
-  rostered staff update *any* column of an order at their location, totals
-  included. The transition trigger guards `status`, but nothing stops a
-  crafted request changing `total_cents`. Before the staff dashboard ships,
-  grant staff `UPDATE` on only the columns they need (status, cancellation
-  reason) or route their changes through a function.
 - **Condition cycles** (Phase 9 admin): the database accepts group A shown
   when B's option is chosen *and* B shown when A's option is chosen; the
   engine would then hide both. The menu editor should refuse cycles.

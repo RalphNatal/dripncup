@@ -142,8 +142,8 @@ select is(
 );
 select is(
   pg_temp.try_as('authenticated', $$update public.orders set status = 'placed' where user_id = auth.uid()$$),
-  'ok',
-  'a customer update on their own order is a no-op, not an error (no policy matches)'
+  '42501',
+  'a customer cannot update their own order (no UPDATE privilege)'
 );
 
 reset request.jwt.claims;

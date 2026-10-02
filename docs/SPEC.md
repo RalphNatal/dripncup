@@ -183,7 +183,9 @@ Rules:
 8. **Catering, events & seasonal collections:** customer flows and admin management
 9. **Admin dashboard:** remaining CRUD screens, settings, and reports
 10. **Polish:** PWA, accessibility pass, loading/empty/error states, performance (Lighthouse 90+ on mobile)
-11. **Testing & deploy:** unit + Playwright e2e for the main order flow, Vercel deployment, hosted Supabase auth settings, Apple Pay domain verification in Stripe
+11. **Testing & deploy:** unit + Playwright e2e for the main order flow, Vercel deployment, hosted Supabase auth settings, Apple Pay domain verification in Stripe. Checklist added along the way:
+    - **Auth rate limits:** move to Supabase's new API keys, forward each customer's IP with `Sb-Forwarded-For`, and add our own per-IP and per-email sign-in limits with the Postgres limiter (`rate_limit_hit`). No CAPTCHA unless abuse appears
+    - **Scheduled jobs:** Vercel Hobby only allows daily crons. Evaluate running the jobs (`/api/cron/expire-orders` every 5 minutes, and the email outbox sender) from Supabase `pg_cron` + `pg_net` calling our routes with the cron secret, versus upgrading to Vercel Pro
 
 ## 16. Deliverables
 - Clean, typed, commented code with a clear folder structure
@@ -259,5 +261,16 @@ Decisions made during development. These override the sections above where they 
 - **Phone testing on the LAN:** `npm run dev:lan` binds to 0.0.0.0 and `allowedDevOrigins` allows private-network addresses (README)
 - **Auth rate limits (proposed, not built):** Supabase Auth limits sign-ins/sign-ups and token refreshes per IP, and our sign-in and session refresh run on the server, so every customer shares the server's allowance. Proposal: before launch, move to the new API keys and forward the customer's IP with `Sb-Forwarded-For`, and add our own per-IP/per-email sign-in limit with the Postgres limiter
 
+### Phase 5, Part 0
+- **Staff change orders only through `advance_order_status(order_id, new_status, reason?)`**, a definer function: the caller must be an admin or staff rostered to the order's location (anyone else, and an unknown order id, get the same 42501); only Accepted, Preparing, Ready, Picked Up and Cancelled are reachable; the move must pass `is_valid_order_transition`; it writes the status, its timestamp and a cancel reason and nothing else. The `orders_update_staff` policy is gone, and `anon`/`authenticated` have no INSERT, UPDATE or DELETE on `orders`, `order_items`, `order_status_history`, `payments` or `refunds` (privileges revoked, not just policies)
+- **Paid orders are cancelled only with a refund.** `advance_order_status` refuses to cancel an order holding captured money (SQLSTATE `DC002`); `cancelOrderWithRefund()` cancels through the service-role function `cancel_order_for_refund` (which re-checks the actor and roster under the row lock) and then refunds. A cancel reason is required (3+ characters)
+- **Status history records the actor:** `auth.uid()` for the staff function; the staff member for cancel-with-refund (passed through a transaction-local setting); no actor for webhook and expiry changes (the system)
+- **Auth rate limits accepted:** the proposal above (`Sb-Forwarded-For` plus our own per-IP and per-email sign-in limits on the Postgres limiter; no CAPTCHA unless abuse appears) is built in Phase 11 and on its checklist
+- **Expiry cron:** Vercel Hobby allows daily crons only. Phase 11 evaluates a 5-minute schedule from Supabase `pg_cron` calling our secured route versus Vercel Pro (on the Phase 11 checklist)
+
 ### Pending client confirmation
-Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, whether flavors are charged once or per pump, whether customers may order ahead while the cafe is closed, and the checkout timings (30-minute unpaid expiry, 2 minutes per queued order, 8 orders per slot, last slot 15 minutes before closing, $100 custom tip cap).
+Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, the checkout timings (30-minute unpaid expiry, 2 minutes per queued order, 8 orders per slot, last slot 15 minutes before closing, $100 custom tip cap).
+
+Open questions for the owner:
+- **Allow ordering ahead while closed?** Today a cart built earlier can be scheduled for the next open day at checkout, but the menu blocks adding while closed
+- **Flavors charged per pump or once?** Seeded as once per flavour, any number of pumps (`modifier_groups.charge_per_quantity`)
