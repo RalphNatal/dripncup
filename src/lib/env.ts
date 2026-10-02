@@ -38,7 +38,12 @@ const serverSchema = z.object({
   STRIPE_WEBHOOK_SECRET: trimmed().optional(),
   /** Vercel Cron sends it as `Authorization: Bearer <secret>`. */
   CRON_SECRET: trimmed().optional(),
+  /** Set → emails go through Resend. Unset → the local Mailpit (development). */
   RESEND_API_KEY: trimmed().optional(),
+  /** "Drincup Cafe <orders@your-domain>"; the domain must be verified in Resend. */
+  EMAIL_FROM: trimmed().optional(),
+  /** Mailpit's web/API address; the local Supabase stack serves it on 54324. */
+  MAILPIT_URL: trimmed().pipe(z.string().url()).default("http://127.0.0.1:54324"),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -77,6 +82,8 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
     CRON_SECRET: process.env.CRON_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
+    EMAIL_FROM: process.env.EMAIL_FROM,
+    MAILPIT_URL: process.env.MAILPIT_URL,
   });
 
   if (!parsed.success) {

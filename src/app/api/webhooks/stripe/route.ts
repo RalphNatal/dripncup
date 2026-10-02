@@ -6,9 +6,14 @@
  * signature (Stripe does not retry), 409 while another delivery of the same
  * event is being handled and 500 if handling failed (Stripe retries both with
  * backoff; handlers are idempotent), 200 otherwise.
+ *
+ * Emails the change owes (receipt, cancellation) were queued in the outbox by
+ * the database in the same transaction; they are sent after the response, so
+ * an email problem can never fail the webhook.
  */
 import { NextResponse } from "next/server";
 
+import { kickOutbox } from "@/lib/email/outbox";
 import { WebhookSignatureError, paymentProvider } from "@/lib/payments";
 import { processPaymentEvent } from "@/lib/payments/webhook";
 
@@ -28,6 +33,7 @@ export async function POST(request: Request) {
 
   try {
     const outcome = await processPaymentEvent(event);
+    if (outcome === "processed") kickOutbox();
     // Another delivery is mid-way through this event: a non-2xx makes Stripe
     // try again later, by which time it is done (or needs doing again).
     if (outcome === "in_progress") return NextResponse.json({ received: false, outcome }, { status: 409 });
