@@ -350,6 +350,68 @@ export type Database = {
         }
         Relationships: []
       }
+      email_outbox: {
+        Row: {
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          id: string
+          kind: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          order_id: string | null
+          provider: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          kind: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          order_id?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          kind?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          order_id?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_outbox_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_menu_items: {
         Row: {
           created_at: string
@@ -395,6 +457,7 @@ export type Database = {
           product_id: string
           product_size_id: string | null
           quantity: number
+          size_name: string | null
           special_instructions: string | null
           updated_at: string
           user_id: string
@@ -407,6 +470,7 @@ export type Database = {
           product_id: string
           product_size_id?: string | null
           quantity?: number
+          size_name?: string | null
           special_instructions?: string | null
           updated_at?: string
           user_id: string
@@ -419,6 +483,7 @@ export type Database = {
           product_id?: string
           product_size_id?: string | null
           quantity?: number
+          size_name?: string | null
           special_instructions?: string | null
           updated_at?: string
           user_id?: string
@@ -1077,6 +1142,9 @@ export type Database = {
           failure_code: string | null
           failure_message: string | null
           id: string
+          method_brand: string | null
+          method_last4: string | null
+          method_wallet: string | null
           order_id: string
           provider: string
           provider_charge_id: string | null
@@ -1095,6 +1163,9 @@ export type Database = {
           failure_code?: string | null
           failure_message?: string | null
           id?: string
+          method_brand?: string | null
+          method_last4?: string | null
+          method_wallet?: string | null
           order_id: string
           provider?: string
           provider_charge_id?: string | null
@@ -1113,6 +1184,9 @@ export type Database = {
           failure_code?: string | null
           failure_message?: string | null
           id?: string
+          method_brand?: string | null
+          method_last4?: string | null
+          method_wallet?: string | null
           order_id?: string
           provider?: string
           provider_charge_id?: string | null
@@ -1781,6 +1855,32 @@ export type Database = {
         Args: { p_actor_id: string; p_order_id: string; p_reason: string }
         Returns: string
       }
+      claim_email_outbox: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          id: string
+          kind: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          order_id: string | null
+          provider: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "email_outbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_checkout_order: {
         Args: { p_items: Json; p_order: Json }
         Returns: {
@@ -1809,6 +1909,29 @@ export type Database = {
           to_status: Database["public"]["Enums"]["order_status"]
         }
         Returns: boolean
+      }
+      list_my_orders: {
+        Args: {
+          p_before_created_at?: string
+          p_before_id?: string
+          p_limit?: number
+          p_scope: string
+        }
+        Returns: {
+          created_at: string
+          estimated_ready_at: string
+          id: string
+          items: Json
+          location_id: string
+          location_name: string
+          order_number: string
+          pickup_type: Database["public"]["Enums"]["pickup_type"]
+          placed_at: string
+          ready_at: string
+          scheduled_for: string
+          status: Database["public"]["Enums"]["order_status"]
+          total_cents: number
+        }[]
       }
       mark_order_paid: {
         Args: {
