@@ -2,8 +2,11 @@ import { CalendarDays, CupSoda } from "lucide-react";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
+import { FavoritesRow } from "@/components/favorites/favorites-list";
 import { CollectionBanner, OrderingUnavailableBanner } from "@/components/menu/banners";
 import { MenuBrowser } from "@/components/menu/menu-browser";
+import { getCurrentProfile } from "@/lib/auth/dal";
+import { listFavorites } from "@/lib/favorites/queries";
 import { getMenuPageData } from "@/lib/menu/queries";
 
 export const metadata: Metadata = { title: "Menu" };
@@ -13,7 +16,8 @@ export const metadata: Metadata = { title: "Menu" };
  * cache; the location's status and sold-out list are read fresh each request.
  */
 export default async function MenuPage() {
-  const data = await getMenuPageData();
+  const [data, profile] = await Promise.all([getMenuPageData(), getCurrentProfile()]);
+  const favorites = profile && data?.menu.menuPublished ? await listFavorites() : null;
 
   if (!data) {
     return (
@@ -33,6 +37,8 @@ export default async function MenuPage() {
       </div>
 
       <OrderingUnavailableBanner location={location} />
+
+      {favorites ? <FavoritesRow list={favorites} /> : null}
 
       {!menu.menuPublished ? (
         <EmptyState icon={CalendarDays} title="This pop-up's menu is coming soon">

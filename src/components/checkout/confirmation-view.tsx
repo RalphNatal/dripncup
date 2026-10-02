@@ -4,7 +4,8 @@
  * After payment. The order only becomes Placed when Stripe's webhook says the
  * money arrived, so this page shows "Confirming your payment…" and checks
  * back until it does. A failed payment can be retried here, on the same
- * order. The status shown is a snapshot; live tracking is Phase 5.
+ * order. Once it is Placed, "Track your order" leads to the live tracker
+ * (/orders/[id]).
  */
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { CircleX, LoaderCircle, MapPin, PartyPopper, RotateCcw } from "lucide-react";
@@ -228,12 +229,21 @@ export function ConfirmationView({
       </section>
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <Link
-          href="/orders"
-          className="focus-ring flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-teal-deep px-5 font-bold text-white hover:bg-brand-teal-deep/90"
-        >
-          Your orders
-        </Link>
+        {phase === "placed" ? (
+          <Link
+            href={`/orders/${order.id}`}
+            className="focus-ring flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-teal-deep px-5 font-bold text-white hover:bg-brand-teal-deep/90"
+          >
+            Track your order
+          </Link>
+        ) : (
+          <Link
+            href="/orders"
+            className="focus-ring flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-teal-deep px-5 font-bold text-white hover:bg-brand-teal-deep/90"
+          >
+            Your orders
+          </Link>
+        )}
         <Link
           href="/menu"
           className="focus-ring flex min-h-12 flex-1 items-center justify-center rounded-full border bg-card px-5 font-bold hover:bg-muted"

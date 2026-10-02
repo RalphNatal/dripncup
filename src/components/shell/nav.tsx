@@ -2,13 +2,16 @@
 
 /**
  * The five customer tabs: a bottom tab bar on phones, links in the header
- * from `md` up. One list, two presentations.
+ * from `md` up. One list, two presentations. Orders carries a live dot
+ * while one of the customer's orders is on its way (useActiveOrders: the
+ * same subscription the Home cards use).
  */
 import { CircleUserRound, CupSoda, Gift, House, Receipt, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { CUSTOMER_TABS } from "@/lib/brand";
+import { useActiveOrders } from "@/lib/orders/live";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<(typeof CUSTOMER_TABS)[number]["href"], LucideIcon> = {
@@ -23,8 +26,28 @@ function isActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function BottomTabs() {
+/** True while an order is between Placed and Ready. */
+function useOrderInProgress(userId: string | null): { inProgress: boolean; ready: boolean } {
+  const orders = useActiveOrders(userId);
+  return { inProgress: orders.length > 0, ready: orders.some((o) => o.status === "ready") };
+}
+
+function OrderDot({ ready, className }: { ready: boolean; className?: string }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        data-testid="orders-dot"
+        className={cn("size-2.5 rounded-full ring-2 ring-background", ready ? "bg-brand-magenta-deep" : "bg-brand-teal", className)}
+      />
+      <span className="sr-only">{ready ? " (order ready)" : " (order in progress)"}</span>
+    </>
+  );
+}
+
+export function BottomTabs({ userId }: { userId: string | null }) {
   const pathname = usePathname();
+  const orders = useOrderInProgress(userId);
 
   return (
     <nav
@@ -47,11 +70,14 @@ export function BottomTabs() {
               >
                 <span
                   className={cn(
-                    "flex h-7 w-12 items-center justify-center rounded-full transition-colors",
+                    "relative flex h-7 w-12 items-center justify-center rounded-full transition-colors",
                     active && "bg-brand-teal-soft",
                   )}
                 >
                   <Icon className="size-5" aria-hidden="true" />
+                  {href === "/orders" && orders.inProgress ? (
+                    <OrderDot ready={orders.ready} className="absolute top-0 right-2.5" />
+                  ) : null}
                 </span>
                 {label}
               </Link>
@@ -63,8 +89,9 @@ export function BottomTabs() {
   );
 }
 
-export function DesktopNav({ className }: { className?: string }) {
+export function DesktopNav({ userId, className }: { userId: string | null; className?: string }) {
   const pathname = usePathname();
+  const orders = useOrderInProgress(userId);
 
   return (
     <nav aria-label="Main" className={className}>
@@ -77,11 +104,12 @@ export function DesktopNav({ className }: { className?: string }) {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "focus-ring inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold",
+                  "focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold",
                   active ? "bg-brand-teal-soft text-brand-teal-deep" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}
+                {href === "/orders" && orders.inProgress ? <OrderDot ready={orders.ready} /> : null}
               </Link>
             </li>
           );

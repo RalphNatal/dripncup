@@ -143,6 +143,19 @@ async function handleSucceeded(event: Extract<PaymentEvent, { type: "payment.suc
   });
   if (error) throw new Error(`mark_order_paid failed for ${order.id}: ${error.message}`);
 
+  // For the receipt. Best effort: a receipt without the card is still a receipt.
+  if (event.method) {
+    const { error: methodError } = await db
+      .from("payments")
+      .update({
+        method_brand: event.method.brand,
+        method_last4: event.method.last4 && /^\d{4}$/.test(event.method.last4) ? event.method.last4 : null,
+        method_wallet: event.method.wallet,
+      })
+      .eq("provider_payment_intent_id", event.paymentId);
+    if (methodError) console.warn(`Could not record the payment method for ${order.id}: ${methodError.message}`);
+  }
+
   switch (outcome) {
     case "rejected":
       await ensureFullyRefunded(order.id, rejectReason ?? "Order could not be fulfilled");

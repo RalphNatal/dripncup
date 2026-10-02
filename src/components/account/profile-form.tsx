@@ -73,6 +73,7 @@ export function ProfileForm({ defaults }: { defaults: ProfileFormDefaults }) {
           <CheckboxField
             name="orderReadyEmail"
             label="Email me when my order is ready"
+            description="Off by default: the order page alerts you in the app. Receipts and refunds are always emailed."
             defaultChecked={checked("orderReadyEmail")}
           />
           <CheckboxField

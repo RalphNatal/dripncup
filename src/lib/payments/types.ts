@@ -54,6 +54,15 @@ export interface ProviderRefund {
   failureReason: string | null;
 }
 
+/** How the customer paid, as a receipt shows it. Never more than brand and last four. */
+export interface PaymentMethodSummary {
+  /** "visa", "mastercard", "amex"; null for a non-card method. */
+  brand: string | null;
+  last4: string | null;
+  /** "apple_pay", "google_pay", "link"; null for a typed-in card. */
+  wallet: string | null;
+}
+
 /** A verified webhook event, reduced to what order handling needs. */
 export type PaymentEvent =
   | {
@@ -64,6 +73,8 @@ export type PaymentEvent =
       amountCents: number;
       currency: string;
       chargeId: string | null;
+      /** Null when the provider could not say (the order is still placed). */
+      method: PaymentMethodSummary | null;
     }
   | {
       id: string;

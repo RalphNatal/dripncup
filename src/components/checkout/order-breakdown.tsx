@@ -2,7 +2,7 @@
  * Subtotal, discounts, GET, tip and total -- the order calculateOrderTotal
  * works them out in. Shared by checkout and the confirmation page.
  */
-import { formatCents } from "@/lib/money";
+import { formatCents, formatTaxRate } from "@/lib/money";
 
 export interface BreakdownValues {
   subtotalCents: number;
@@ -15,18 +15,13 @@ export interface BreakdownValues {
   totalCents: number;
 }
 
-/** 0.04712 -> "4.712%" */
-function formatRate(rate: number): string {
-  return `${Number((rate * 100).toFixed(4))}%`;
-}
-
 export function OrderBreakdown({ values, totalLabel = "Total" }: { values: BreakdownValues; totalLabel?: string }) {
   const rows: { label: string; cents: number; negative?: boolean }[] = [{ label: "Subtotal", cents: values.subtotalCents }];
   if (values.promoDiscountCents > 0) {
     rows.push({ label: values.promoCode ? `Promo (${values.promoCode})` : "Promo", cents: values.promoDiscountCents, negative: true });
   }
   if (values.rewardDiscountCents > 0) rows.push({ label: "Reward", cents: values.rewardDiscountCents, negative: true });
-  rows.push({ label: `GET (${formatRate(values.taxRate)})`, cents: values.taxCents });
+  rows.push({ label: `Tax (GET ${formatTaxRate(values.taxRate)})`, cents: values.taxCents });
   rows.push({ label: "Tip", cents: values.tipCents });
 
   return (

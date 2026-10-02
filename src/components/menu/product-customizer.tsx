@@ -17,6 +17,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { SaveFavoriteFromSheet } from "@/components/favorites/save-favorite";
 import { DietaryChips, allergenSentence } from "@/components/menu/dietary";
 import { ProductImage } from "@/components/menu/product-image";
 import { useCartStore, type NewCartLine } from "@/lib/cart/store";
@@ -414,6 +415,28 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded,
             </span>
           </p>
         </div>
+
+        {!editing ? (
+          <SaveFavoriteFromSheet
+            productName={product.name}
+            prepare={() => {
+              // A favourite must be a drink that can be made: same checks as
+              // Add, except that sold out today is fine.
+              const blocking = errors.filter((e) => e.code !== "product_sold_out" && e.code !== "option_sold_out");
+              if (blocking.length > 0) {
+                setAttempted(true);
+                focusFirstProblem();
+                return null;
+              }
+              return {
+                productId: product.id,
+                sizeId: size?.id ?? null,
+                selection: pruneSelection(groups, modifiers),
+                specialInstructions: instructions.trim(),
+              };
+            }}
+          />
+        ) : null}
       </div>
     </>
   );

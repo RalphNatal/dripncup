@@ -86,6 +86,11 @@ export function calculateTipFromPercent(subtotalCents: Cents, percent: number): 
 }
 
 /** Clamps a value into a range; used by quantity steppers. */
+/** A tax rate as a percentage: 0.04712 -> "4.712%". */
+export function formatTaxRate(rate: number): string {
+  return `${Number((rate * 100).toFixed(4))}%`;
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }

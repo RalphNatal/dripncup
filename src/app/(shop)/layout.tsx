@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AppHeader } from "@/components/shell/app-header";
 import { CartSync } from "@/components/shell/cart-sync";
 import { BottomTabs } from "@/components/shell/nav";
+import { getCurrentProfile } from "@/lib/auth/dal";
 import { getStorefront } from "@/lib/locations/storefront";
 
 /**
@@ -11,7 +12,9 @@ import { getStorefront } from "@/lib/locations/storefront";
  * /staff, /admin and the sign-in pages have their own frames.
  */
 export default async function ShopLayout({ children }: { children: ReactNode }) {
-  const storefront = await getStorefront();
+  const [storefront, profile] = await Promise.all([getStorefront(), getCurrentProfile()]);
+  // Drives the live "order in progress" dot on the Orders tab.
+  const userId = profile?.id ?? null;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -21,11 +24,11 @@ export default async function ShopLayout({ children }: { children: ReactNode }) 
       >
         Skip to content
       </a>
-      <AppHeader storefront={storefront} />
+      <AppHeader storefront={storefront} userId={userId} />
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 pb-tabbar outline-none md:pt-8 md:pb-16">
         {children}
       </main>
-      <BottomTabs />
+      <BottomTabs userId={userId} />
       <CartSync locationId={storefront.selected?.id ?? null} />
     </div>
   );

@@ -99,6 +99,10 @@ export const formatCafeMonthDay = (date: Date): string =>
 export const formatCafeWeekdayShort = (date: Date): string =>
   formatter({ weekday: "short" }).format(date);
 
+/** "Sep 23, 2026" -- order history rows. */
+export const formatCafeDateWithYear = (date: Date): string =>
+  formatter({ month: "short", day: "numeric", year: "numeric" }).format(date);
+
 /** "Sep 23, 2:45 PM" -- the compact stamp used on order cards. */
 export const formatCafeDateTime = (date: Date): string =>
   formatter({ month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);

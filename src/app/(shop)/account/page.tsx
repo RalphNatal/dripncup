@@ -1,4 +1,4 @@
-import { ChevronRight, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
+import { ChevronRight, Heart, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -60,6 +60,9 @@ export default async function AccountPage() {
             Admin dashboard
           </LinkRow>
         ) : null}
+        <LinkRow href="/account/favorites" icon={<Heart aria-hidden="true" />}>
+          Favorites
+        </LinkRow>
         <LinkRow href="/account/password" icon={<KeyRound aria-hidden="true" />}>
           Change password
         </LinkRow>
@@ -76,7 +79,8 @@ export default async function AccountPage() {
             phone: profile.phone ?? "",
             marketingOptIn: profile.marketing_opt_in,
             smsOptIn: profile.sms_opt_in,
-            orderReadyEmail: prefs.order_ready_email ?? true,
+            // Off unless the customer turns it on; the in-app alert covers it.
+            orderReadyEmail: prefs.order_ready_email === true,
           }}
         />
       </section>

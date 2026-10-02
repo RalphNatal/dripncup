@@ -15,6 +15,7 @@ import {
   WebhookSignatureError,
   type CreatePaymentInput,
   type PaymentEvent,
+  type PaymentMethodSummary,
   type PaymentProvider,
   type PaymentStatus,
   type ProviderPayment,
@@ -67,6 +68,27 @@ function toRefund(refund: Stripe.Refund): ProviderRefund & { refundRowId: string
 
 const idOf = (value: string | { id: string } | null | undefined) =>
   value == null ? null : typeof value === "string" ? value : value.id;
+
+/**
+ * Brand, last four and wallet from the charge, for the receipt. Webhook
+ * payloads carry only the charge id, so this is one extra call; if it fails
+ * the order is placed anyway and the receipt just omits the card.
+ */
+async function methodOfCharge(chargeId: string | null): Promise<PaymentMethodSummary | null> {
+  if (!chargeId) return null;
+  try {
+    const charge = await stripe().charges.retrieve(chargeId);
+    const details = charge.payment_method_details;
+    if (!details) return null;
+    if (details.card) {
+      return { brand: details.card.brand ?? null, last4: details.card.last4 ?? null, wallet: details.card.wallet?.type ?? null };
+    }
+    return { brand: null, last4: null, wallet: details.type ?? null };
+  } catch (error) {
+    console.warn(`Could not read the payment method of charge ${chargeId}`, error);
+    return null;
+  }
+}
 
 export const stripeProvider: PaymentProvider = {
   name: "stripe",
@@ -130,6 +152,7 @@ export const stripeProvider: PaymentProvider = {
     switch (event.type) {
       case "payment_intent.succeeded": {
         const intent = event.data.object;
+        const chargeId = idOf(intent.latest_charge);
         return {
           id: event.id,
           type: "payment.succeeded",
@@ -137,7 +160,8 @@ export const stripeProvider: PaymentProvider = {
           orderId: intent.metadata?.order_id ?? null,
           amountCents: intent.amount_received || intent.amount,
           currency: intent.currency,
-          chargeId: idOf(intent.latest_charge),
+          chargeId,
+          method: await methodOfCharge(chargeId),
         };
       }
       case "payment_intent.payment_failed": {
