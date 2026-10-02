@@ -103,9 +103,10 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `STRIPE_SECRET_KEY` | **secret** | Phase 4 | Stripe test-mode secret key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | public | Phase 4 | Payment Element |
 | `STRIPE_WEBHOOK_SECRET` | **secret** | Phase 4 | Verifies webhook signatures |
-| `CRON_SECRET` | **secret** | Phase 4 | Guards `/api/cron/expire-orders` (Vercel Cron sends it) |
-| `RESEND_API_KEY` | **secret** | Phase 5 | Transactional email |
-| `EMAIL_FROM` | config | Phase 5 | Verified sender address |
+| `CRON_SECRET` | **secret** | Phase 4 | Guards `/api/cron/expire-orders` and `/api/cron/send-emails` (Vercel Cron sends it) |
+| `RESEND_API_KEY` | **secret** | production | Set → emails go through Resend. Leave empty locally: emails go to Mailpit |
+| `EMAIL_FROM` | config | production | Sender, e.g. `Drincup Cafe <orders@your-domain>`; the domain must be verified in Resend |
+| `MAILPIT_URL` | config | no | Local Mailpit address; defaults to `http://127.0.0.1:54324` |
 
 `.env*` is gitignored. Never commit real keys — `.env.example` is the template.
 
@@ -192,10 +193,35 @@ project, set these by hand in the dashboard under **Authentication**:
 
 ### Local email
 
-Locally, confirmation and password-reset emails never leave your machine. Open
-Mailpit at <http://127.0.0.1:54324> to read them and click the links. The local
-stack allows only two auth emails per hour (`[auth.rate_limit]` in
-`config.toml`).
+Locally, no email leaves your machine. Open **Mailpit** at
+<http://127.0.0.1:54324> (part of `npm run db:start`) to read:
+
+- **Auth emails** (confirmation, password reset): click the links from there.
+  The local stack allows only two auth emails per hour (`[auth.rate_limit]`
+  in `config.toml`).
+- **Order emails** (Phase 5): the receipt when an order is Placed, the
+  cancellation / refund email, and the opt-in "ready" email. With
+  `RESEND_API_KEY` empty, the app sends them to Mailpit through its HTTP API,
+  so no account or SMTP setup is needed.
+
+**How order emails are sent.** A status change writes the email it owes into
+the `email_outbox` table in the same transaction (a database trigger). The
+outbox sender (`src/lib/email/outbox.ts`) delivers due rows afterwards:
+
+- right after the response, from the Stripe webhook and the staff cancel
+  endpoint, so a receipt lands within a second or two of payment
+- every 15 seconds while `npm run dev` is running (`src/instrumentation.ts`),
+  so emails owed by a change you make in Supabase Studio go out too. A
+  production build (`npm start`) does not run this sweep
+- on demand: `GET /api/cron/send-emails` with the cron secret:
+
+  ```powershell
+  curl.exe -H "Authorization: Bearer $env:CRON_SECRET" http://localhost:3000/api/cron/send-emails
+  ```
+
+A failed send is retried after 1, 5, 15, 60 and 240 minutes, then left as
+`failed` (Studio → `email_outbox`; the admin screen is Phase 9). Replayed
+webhooks never send a second receipt.
 
 ---
 
@@ -231,6 +257,11 @@ db:start`, `npm run db:reset`, `npm run db:seed`).
   fixtures around real PaymentIntents) and deliver them to the webhook
   themselves. If `stripe listen` is also forwarding to your dev server on the
   same database, that is harmless: every event is handled idempotently.
+- **Tracking tests** (`e2e/tracking.spec.ts`) move orders along as the
+  seeded barista (a real signed-in Supabase client calling
+  `advance_order_status`), listen on real Realtime sockets, and read the
+  receipt and cancellation emails from Mailpit, so the local stack must be
+  running with Mailpit (it is by default).
 
 ---
 
@@ -320,9 +351,17 @@ On Vercel, set `CRON_SECRET` in the project's environment variables and add a
 
 ```json
 {
-  "crons": [{ "path": "/api/cron/expire-orders", "schedule": "*/10 * * * *" }]
+  "crons": [
+    { "path": "/api/cron/expire-orders", "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/send-emails", "schedule": "*/5 * * * *" }
+  ]
 }
 ```
+
+`/api/cron/send-emails` only matters for retries: emails are normally sent
+straight after the webhook or staff action that owes them. Which scheduler
+runs these every few minutes (Supabase `pg_cron` or Vercel Pro) is decided in
+Phase 11.
 
 Vercel sends the secret itself. **The Hobby plan only allows daily cron
 jobs** (a 10-minute schedule fails the deploy), so on Hobby either use a daily
@@ -334,6 +373,57 @@ webhook. Locally, call it by hand:
 ```powershell
 curl.exe -H "Authorization: Bearer $env:CRON_SECRET" http://localhost:3000/api/cron/expire-orders
 ```
+
+---
+
+## Order tracking (trying it by hand)
+
+Watch an order move without reloading:
+
+1. `npm run dev` (and `stripe listen …` from "Payments" if you pay through
+   checkout), sign in as `customer@drincup.test` and place an order. On the
+   confirmation page, tap **Track your order** (`/orders/<id>`). Tap the page
+   once so the browser allows the Ready sound, and optionally **Notify me when
+   it's ready**.
+2. Move it along as the barista. Either:
+   - **Supabase Studio** → SQL editor (<http://127.0.0.1:54323>), signed in as
+     the barista so the real staff function and its checks run:
+
+     ```sql
+     -- the order id is in the tracker's URL
+     begin;
+     select set_config('request.jwt.claims',
+       json_build_object('role', 'authenticated', 'sub',
+         (select id from profiles where email = 'barista@drincup.test'))::text, true);
+     set local role authenticated;
+     select status from advance_order_status('<order id>', 'accepted');
+     commit;
+     ```
+
+     Run it again with `'preparing'`, `'ready'` and `'picked_up'` (one step
+     at a time; skipping a step is refused).
+   - or **Table editor** → `orders` → change `status` on the row (as the
+     postgres superuser this skips the staff checks, but the transition rules
+     still apply and the tracker updates the same way).
+3. The tracker, the Home card and the dot on **Orders** change within a
+   second. At **ready** you get the banner, the chime, a vibration on phones,
+   the tab title "🎉 Ready!", and a notification if you allowed them.
+4. To see a cancellation with refund on a paid (Stripe) order, as the barista
+   in the browser console of a signed-in barista tab:
+
+   ```js
+   await fetch("/api/staff/orders/<order id>/cancel", {
+     method: "POST", headers: { "content-type": "application/json" },
+     body: JSON.stringify({ reason: "Out of oat milk" }),
+   }).then((r) => r.json());
+   ```
+
+   The customer's tracker shows **Refunded** with the reason, and the
+   cancellation email appears in Mailpit.
+
+Turn off Wi-Fi briefly (or block the websocket in DevTools) to see the
+fallback: the tracker says "Reconnecting…", checks every 15 seconds, and
+catches up as soon as it reconnects or the tab is shown again.
 
 ---
 
@@ -376,14 +466,17 @@ src/
   app/                 App Router pages, layouts, route handlers
     (auth)/            Sign-in, sign-up, forgot-password (shared layout)
     (shop)/            Customer app: header, bottom tab bar, pickup location
-      page.tsx         Home (placeholder)
+      page.tsx         Home: active-order cards, favourites, order again
       menu/            Menu, /menu/[slug] full page, @modal/(.)[slug] sheet
-      account/         Profile, preferences, change password, delete account
+      account/         Profile, preferences, favourites, password, delete account
       cart/ checkout/  Cart (re-validated on the server) and checkout
+      orders/          History (active + past), /orders/[id] live tracker
       orders/[id]/confirmed/  Confirmation, after Stripe's redirect
-      rewards/ orders/ Placeholders until their phases
+      rewards/         Placeholder until Phase 7
     api/webhooks/stripe/     Stripe webhook (raw body, signature checked)
     api/cron/expire-orders/  Cancels unpaid checkouts (Vercel Cron)
+    api/cron/send-emails/    Delivers due emails from the outbox
+    api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (Phase 6 UI)
     auth/callback/     Landing route for emailed confirmation / reset links
     staff/ admin/      Dashboards (own plain frame, no customer tab bar)
   components/
@@ -395,6 +488,8 @@ src/
     menu/              Menu browser, product card + customiser + sheet, banners
     cart/              Cart page, quantity stepper, edit-in-place sheet
     checkout/          Checkout, Stripe Elements, pickup/tip/promo, confirmation
+    orders/            Tracker, timeline, Ready alert, order lists, reorder dialog
+    favorites/         Save-as-favourite form, favourites row and manager
     ui/                shadcn/ui primitives
     providers.tsx      TanStack Query + Tooltip + Toaster
   lib/
@@ -404,7 +499,10 @@ src/
     cart/              Zustand cart store (persisted)
     checkout/          Cart re-check, quote, createCheckout, pickup slots, settings
     payments/          PaymentProvider interface, Stripe, webhook handling, refunds
-    orders/            Confirmation data, expiry job, staff cancel, deletion refunds
+    orders/            Order detail + timeline, live hooks (Realtime), history,
+                       reorder review, expiry job, staff cancel, deletion refunds
+    favorites/         Favourite rules, queries and Server Actions
+    email/             EmailProvider (Resend / Mailpit), outbox sender, dev sweep
     rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
     client-id.ts       Browser ids / idempotency keys (works over plain HTTP)
     auth/
@@ -425,6 +523,8 @@ src/
       server.ts        Server Components / Actions / Route Handlers
       admin.ts         Service role — bypasses RLS, server only
       session.ts       Cookie refresh + /staff and /admin gating
+  emails/              React Email templates (receipt, cancelled/refunded, ready)
+  instrumentation.ts   Starts the dev-only email outbox sweep
   types/database.ts    Generated database types
   proxy.ts             Next 16 proxy (formerly middleware)
 supabase/
@@ -484,7 +584,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 2. ✅ **Auth & roles** — sign-up/in/out, password reset, account page, account deletion, role-gated `/staff` and `/admin`
 3. ✅ **Menu & customisation** — app shell, pickup locations and live status, menu, product sheet with data-driven modifiers, shared pricing engine, cart store
 4. ✅ **Cart & checkout** — server-validated cart with edit in place, checkout with pickup slots, promos and tips, Stripe Payment + Express Checkout Elements, webhook-driven order placement, refunds, pending-order expiry
-5. ⬜ Order tracking & history
+5. ✅ **Order tracking & history** — live tracker with Ready alerts, active-order cards and tab dot, history with pagination, reorder, favourites, email outbox (receipt, cancellation/refund, opt-in ready)
 6. ⬜ Staff dashboard
 7. ⬜ Rewards
 8. ⬜ Catering, events & seasonal collections

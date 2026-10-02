@@ -2,7 +2,7 @@
 
 > **Source of truth for every phase.** Read this in full before starting any phase. Decisions made during development are recorded in the **Decisions Log** at the end; where the log and the original spec differ, **the log wins**.
 >
-> **Status:** Phases 1–4 complete (Foundation; Auth & roles, including account deletion and the timezone test; Menu & customization; Cart & checkout with Stripe test mode). Next: Phase 5.
+> **Status:** Phases 1–5 complete (Foundation; Auth & roles, including account deletion and the timezone test; Menu & customization; Cart & checkout with Stripe test mode; Order tracking, emails, history, reorder & favorites, with the Part 0 staff lock-down). Next: Phase 6.
 
 You are a senior full-stack engineer building a production-quality, mobile-first order-ahead web app for **Drincup Cafe**, an independent drink and food cafe at **1221 Kapiolani Blvd, Site 112A, Honolulu, HI 96814**. The experience should rival a major coffee chain's app (browse → customize → pay → pick up → earn rewards) but with Drincup's own warm, community-focused identity. Do not copy any other company's names, colors, logos, icons, copy, or layouts.
 
@@ -177,7 +177,7 @@ Rules:
 2. ✅ **Auth & roles:** sign up/in (email + password), profiles, role-based route protection, account deletion, timezone regression test
 3. ✅ **Menu & customization:** app shell, location handling, menu, product detail with data-driven modifiers, shared pricing engine, live pricing, minimal cart store
 4. ✅ **Cart & checkout:** cart page, promos, tax, tips, pickup slot logic, server-side pricing, Stripe test integration + webhook
-5. **Order tracking & history:** realtime status, emails, history, reorder, favorites
+5. ✅ **Order tracking & history:** realtime status, emails, history, reorder, favorites
 6. **Staff dashboard:** live queue, alerts, status updates, sold-out and pause toggles
 7. **Rewards:** earning, redemption, activity log, member QR
 8. **Catering, events & seasonal collections:** customer flows and admin management
@@ -267,6 +267,19 @@ Decisions made during development. These override the sections above where they 
 - **Status history records the actor:** `auth.uid()` for the staff function; the staff member for cancel-with-refund (passed through a transaction-local setting); no actor for webhook and expiry changes (the system)
 - **Auth rate limits accepted:** the proposal above (`Sb-Forwarded-For` plus our own per-IP and per-email sign-in limits on the Postgres limiter; no CAPTCHA unless abuse appears) is built in Phase 11 and on its checklist
 - **Expiry cron:** Vercel Hobby allows daily crons only. Phase 11 evaluates a 5-minute schedule from Supabase `pg_cron` calling our secured route versus Vercel Pro (on the Phase 11 checklist)
+
+### Phase 5
+- **Tracker** at `/orders/[id]`, owner only (404 for anyone else, staff included); an unpaid order redirects to its confirmation page, which links to the tracker once Placed. Payment method shown as brand + last four (+ wallet), copied from the Stripe charge into `payments.method_brand/last4/wallet` by the webhook (best effort; the order is placed regardless)
+- **Realtime design:** `postgres_changes` on `orders` filtered by `id` (tracker) or `user_id` (Home cards and the Orders tab dot), one shared channel per filter, joined with the customer's token. Events only trigger a refetch through RLS. Refetch also on (re)join, on Realtime's "Postgres listener ready" system message, on tab visible and on reconnecting to the network; poll every 15 s while not joined
+- **Ready alert:** banner, synthesised chime only after the customer has interacted with the page (mute remembered in `localStorage`), vibration, tab title while Ready, and a browser notification if allowed through an in-page button (never asked on load). On Android Chrome page notifications need a service worker, so they arrive with the PWA (Phase 10)
+- **History:** `list_my_orders()` (definer, `auth.uid()` filter), keyset pagination on `(created_at, id)`, 10 per page. Past = picked up, cancelled or refunded orders that were paid for; abandoned checkouts are not listed. Dates in Honolulu time
+- **Reorder and favourites share one check** (`reviewSavedLine`): the snapshot's product, size and option ids are re-validated and re-priced against the live menu at the **selected** location. An unavailable option skips the whole line (never silently swapped for another). Price changes are shown; snapshot prices are never reused. A different original location is noted, with a switch button only if it is still offered. A non-empty cart asks "Add to my cart" or "Replace my cart". Adding respects the location's ordering state, like the menu
+- **Favourites:** saved as the order-line snapshot shape; names 1–40 characters, unique per customer ignoring case; 50 per customer, enforced by trigger (`DC003`) and explained in the UI. Saved with quantity 1. A favourite whose drink is sold out today can still be saved; it just can't be added until it is back
+- **Emails use an outbox:** a trigger on `orders` writes `email_outbox` rows in the status change's transaction (receipt on Placed; cancellation on a cancel after money was taken; refund on picked-up → refunded; ready only when opted in). `dedupe_key` per order and kind. Sent after the response from the webhook and staff cancel, by `GET /api/cron/send-emails`, and every 15 s under `npm run dev`. Retries after 1, 5, 15, 60, 240 minutes, then `failed`. Recipient and content are read at send time, so a deleted account gets nothing
+- **Providers:** Resend when `RESEND_API_KEY` is set (fetch, outbox id as idempotency key); otherwise Mailpit's HTTP send API at `MAILPIT_URL` (default `http://127.0.0.1:54324`). Templates use `react-email` (the `@react-email/components` packages are deprecated). The "Ready" email preference now defaults to off for everyone
+- **Cancel with refund for staff:** `POST /api/staff/orders/:id/cancel` (session, same-origin JSON, staff/admin, re-checked in SQL), ready for the Phase 6 dashboard
+- **Labels:** the tax line reads "Tax (GET 4.712%)" everywhere (checkout, receipts, emails)
+- **SMS:** not built; the opt-in preference stays. Added to the post-launch list in ARCHITECTURE.md
 
 ### Pending client confirmation
 Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, the checkout timings (30-minute unpaid expiry, 2 minutes per queued order, 8 orders per slot, last slot 15 minutes before closing, $100 custom tip cap).

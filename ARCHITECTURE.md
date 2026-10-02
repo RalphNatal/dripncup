@@ -24,7 +24,7 @@ Four rules explain most of the design decisions below.
 
 ## Data model
 
-28 tables in `public`. Grouped by what they are for:
+32 tables in `public`. Grouped by what they are for:
 
 ### People and places
 
@@ -79,10 +79,11 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | `orders` | One per checkout. Holds the full money breakdown plus the tax rate in force at the time. `user_id` is null only after an account deletion (`anonymized_at` set). |
 | `order_items` | Immutable snapshot lines. `modifiers` is JSONB. |
 | `order_status_history` | Append-only audit, written by a trigger on every status change. |
-| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. Never stores a client secret. Records the last failure (`failure_code`, `failure_message`) and the running `refunded_cents`. |
+| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. Never stores a client secret. Records the last failure (`failure_code`, `failure_message`), the running `refunded_cents`, and for the receipt the card brand, last four and wallet (`method_*`, copied from the charge by the webhook). |
 | `refunds` | One row per refund attempt, written **before** the provider is called, so a crash or a decline still leaves a record. `failed` rows are the admin retry queue. Customers can read refunds on their own orders. |
 | `webhook_events` | One row per provider event id: the dedupe log. Service role only. |
 | `rate_limit_hits` | Fixed-window counters for checkout and promo-code limits. Service role only. |
+| `email_outbox` | Customer emails owed by order status changes, written by trigger in the same transaction and delivered by the server-side sender. Unique `dedupe_key` (kind + order). Admins can read it; only the server writes. |
 
 ### Money and loyalty
 
@@ -91,7 +92,7 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | `promos` / `promo_redemptions` | Codes and their usage. `unique (promo_id, order_id)` stops a retried checkout double-counting a limited code. |
 | `rewards` | Overflow Rewards tiers. |
 | `loyalty_transactions` | Append-only points ledger. `profiles.loyalty_points` is a cached sum kept in step by trigger. |
-| `favorites` | "My usual" — a named, fully customised drink. |
+| `favorites` | "My usual" — a named, fully customised drink, stored as the same modifier snapshot an order line keeps. Names 1–40 characters, unique per customer ignoring case; at most 50 per customer (trigger, `DC003`). Private to the owner (RLS). |
 
 ### Catering and configuration
 
@@ -323,11 +324,11 @@ though: an explicit `as_of` from `anon` or `authenticated` is refused, so an
 account cannot fill `daily_counters` with a row for every date.
 
 **Realtime.** `orders`, `order_status_history` and `location_availability` are
-in the `supabase_realtime` publication, and `orders` is set to
-`REPLICA IDENTITY FULL` so the payload carries the previous row — that is how
-the client distinguishes "status changed" from any other update. RLS applies to
-realtime payloads, so a customer only receives changes to orders they may
-select.
+in the `supabase_realtime` publication, and `orders` has `REPLICA IDENTITY
+FULL`. RLS applies to Realtime: for every subscription, Realtime re-reads the
+changed row by primary key *as that subscriber* (`realtime.apply_rls`), so a
+customer only receives changes to orders they may select. See "Order
+tracking" below for how the app uses it.
 
 ---
 
@@ -496,7 +497,7 @@ no photo at all, shows a generated brand-coloured placeholder. A collection's
 
 ```
 (shop)/layout.tsx          header (location + cart), tab bar, cart sync
-(shop)/page.tsx            Home (placeholder)
+(shop)/page.tsx            Home: active-order cards, favourites row, order again
 (shop)/menu/page.tsx       the menu, server-rendered
 (shop)/menu/[slug]         full product page: shared links, refreshes
 (shop)/menu/@modal/(.)[slug]
@@ -504,10 +505,15 @@ no photo at all, shows a generated brand-coloured placeholder. A collection's
                            from the menu (intercepting + parallel routes)
 (shop)/cart                the cart; guests welcome
 (shop)/checkout            signed-in only; sends guests to /sign-in?next=/checkout
+(shop)/orders              history: active (live) + past (keyset "Load more")
+(shop)/orders/[id]         live tracker; owner only (404 otherwise)
 (shop)/orders/[id]/confirmed   Stripe's return_url; owner only (404 otherwise)
-(shop)/rewards, /orders    placeholders until their phases
+(shop)/account/favorites   favourites: rename, delete, add to cart
+(shop)/rewards             placeholder until Phase 7
 api/webhooks/stripe        payment webhook (outside the proxy matcher)
 api/cron/expire-orders     unpaid-checkout expiry (outside the proxy matcher)
+api/cron/send-emails       email outbox sweep (outside the proxy matcher)
+api/staff/orders/[id]/cancel   cancel-with-refund for staff (session + same-origin JSON)
 ```
 
 Closing the sheet calls `router.back()`, so the menu keeps its scroll
@@ -646,8 +652,8 @@ polls every 1.5 s (5 s after 45 s). Placed → order number, pickup place and
 time, items, totals, "Mahalo!", and the cart is emptied. A failed payment →
 "Try paying again" on the **same order**: `resumePaymentAction` fetches the
 intent's client secret from Stripe for the owner (it is never stored).
-Cancelled → the reason and any refund. The status shown is a snapshot; live
-tracking is Phase 5.
+Cancelled → the reason and any refund. Once Placed, **Track your order**
+leads to the live tracker (`/orders/[id]`).
 
 ### Pending orders that are never paid
 
@@ -724,6 +730,150 @@ a signed request into a neutral `PaymentEvent`. Only
 `src/lib/payments/stripe.ts` imports the Stripe SDK. The secret key never
 leaves the server; the browser gets the publishable key and, for its own
 order only, a client secret.
+
+---
+
+## Order tracking
+
+### Who can change an order
+
+Only the service role writes `orders`. Staff use `advance_order_status()`
+(see "Security model"); a paid order is cancelled only by
+`cancelOrderWithRefund()`, exposed to staff as
+`POST /api/staff/orders/:id/cancel` (session-authenticated, same-origin JSON
+only, re-checked in SQL). The staff dashboard (Phase 6) builds on these.
+
+### One order shape
+
+`src/lib/orders/detail.ts` holds the select and the mapper (`toOrderDetail`)
+that every reader uses: the server-rendered tracker (customer session, RLS,
+plus an owner check so staff get a 404), the browser refetch (customer
+session, RLS), the confirmation page and the email sender (service role). The
+tracker, the receipt and the email therefore cannot disagree.
+
+### Realtime: subscription, reconnect, polling fallback
+
+`src/lib/orders/live.ts`, used by the tracker, the Home cards and the Orders
+tab dot:
+
+- **Filters.** The tracker subscribes to `orders` with `id=eq.<order>`; the
+  active list and the dot with `user_id=eq.<customer>`. One channel per
+  filter is shared by every component that asks for it (a small ref-counted
+  registry) and removed when the last one unmounts, so the header and Home do
+  not open two channels for the same thing.
+- **Auth.** Before joining, the channel is given the customer's access token
+  (`realtime.setAuth`); otherwise Realtime treats the socket as a guest and
+  RLS sends nothing.
+- **Events are signals, not data.** A change invalidates the TanStack Query
+  key, and the data is refetched through RLS like any other query. Nothing
+  rendered comes from the event payload.
+- **Never miss an update.** A refetch also runs when the channel (re)joins,
+  when Realtime reports its Postgres listener running (it acknowledges the
+  join slightly earlier, and a change in that gap would otherwise be lost),
+  when the tab becomes visible, and when the browser comes back online.
+- **Fallback.** While the channel is not joined, the same queries poll every
+  15 seconds; the tracker says "Reconnecting…".
+
+Isolation is tested twice: `supabase/tests/realtime_isolation.test.sql` feeds
+`realtime.apply_rls` a change to one customer's order with subscriptions from
+the owner, another customer (even one filtered on the owner's order id), a
+guest and staff; `e2e/tracking.spec.ts` does the same over real sockets.
+
+### The tracker and the Ready alert
+
+`buildTimeline()` (`src/lib/orders/timeline.ts`, pure, unit-tested) turns the
+status and its timestamps into Placed → Accepted → Preparing → Ready → Picked
+Up with times, and a cancelled or refunded order into the steps it reached
+plus the reason in plain language and what happened to the money. On the
+change to Ready (not on opening a page that is already Ready) the tracker
+shows a banner, plays a synthesised chime if the customer has tapped the page
+(browsers block audio otherwise; mute is remembered in `localStorage`),
+vibrates, retitles the tab while ready, and shows a browser notification if
+the customer allowed it from the in-page prompt. Permission is never asked on
+page load. On Android Chrome a page notification needs a service worker,
+which arrives with the PWA (Phase 10).
+
+### History
+
+`list_my_orders(scope, before_created_at, before_id, limit)` returns the
+caller's active or past orders, newest first, with keyset pagination on
+`(created_at, id)`. It is `SECURITY DEFINER` with an `auth.uid()` filter, so a
+past pop-up whose location is now hidden from customers still shows its name.
+"Past" includes only orders that were paid for.
+
+---
+
+## Email
+
+### Outbox
+
+Emails are owed by status changes, so the database writes them: the
+`orders_enqueue_emails` trigger inserts into `email_outbox` in the same
+transaction as the change.
+
+| Change | Email |
+| ------ | ----- |
+| → placed | receipt |
+| → cancelled, after money was taken | cancellation, with the refund |
+| picked_up → refunded | refund |
+| → ready | only if the customer turned it on (`notification_prefs.order_ready_email`, off by default) |
+
+An unpaid checkout that expires owes nothing; cancelled → refunded owes
+nothing more. `dedupe_key` (`kind:order_id`) is unique, and a replayed webhook
+never changes the status, so a replay can never send a second receipt.
+
+The sender (`src/lib/email/outbox.ts`) claims due rows with
+`claim_email_outbox()` (`FOR UPDATE SKIP LOCKED`, so two runs never send the
+same row), builds each email from the order **as it is now**, sends it and
+marks it `sent`. If the email is no longer owed (no recipient after an
+account deletion, ready email turned off, order no longer ready) it is
+`skipped`. A failure is retried after 1, 5, 15, 60 and 240 minutes, then left
+`failed` for the admin screen (Phase 9). The outbox row id is the provider
+idempotency key, so a crash between sending and marking sent does not
+duplicate the email with Resend.
+
+It runs after the response (`after()`) from the payment webhook and the staff
+cancel endpoint; from `GET /api/cron/send-emails` (cron secret); and every 15
+seconds under `npm run dev` (`src/instrumentation.ts`). A webhook never fails
+because of email.
+
+### Providers and templates
+
+`EmailProvider.send()` (`src/lib/email/provider.ts`) has two
+implementations: **Resend** when `RESEND_API_KEY` is set, otherwise the local
+Supabase stack's **Mailpit** through its HTTP send API, so development needs
+no account. Templates are React Email components in `src/emails/`: the
+lowercase wordmark on a deep-teal header (logo placeholder), deep magenta
+accents, near-black text, all AA. Every value arrives preformatted, and each
+email has a plain-text version built from the same data. Receipts and refund
+emails are transactional and always sent.
+
+---
+
+## Reorder and favourites: re-validating saved drinks
+
+A past order line and a favourite are both a *saved drink*: product, size and
+the modifier snapshot. `reviewSavedLine()` (`src/lib/orders/reorder.ts`,
+pure, unit-tested) rebuilds the selection from the snapshot and puts it
+through the same engine as the product sheet and checkout, against the live
+catalogue and sold-out list at the **selected** location
+(`loadReviewContext`):
+
+- gone, not on this location's menu, sold out, size removed, an option
+  removed or sold out, or a selection that no longer validates (e.g. a newly
+  required group) → **unavailable**, with the reason, and skipped. An
+  unavailable option skips the whole line rather than silently changing the
+  drink
+- otherwise → a cart line priced from today's catalogue; for order lines, a
+  different price is flagged ("$6.30 → $6.55 each")
+
+Snapshot prices are never reused; the cart and checkout re-price on the
+server as for any line. **Order again** shows the review first, notes when the
+order was from another location (offering to switch if it is still offered),
+and, if the cart already has items, asks whether to add or replace.
+**Favourites** are re-checked the same way when listed (cached menu, display
+only) and again, live, the moment one is added to the cart; an unavailable
+favourite stays saved and says why it can't be added.
 
 ---
 
@@ -844,8 +994,17 @@ Known follow-ups for later phases:
 
 ## Post-launch
 
-Agreed for after launch (Decisions Log, Phase 2). v1 auth is email + password
-only.
+Agreed for after launch (Decisions Log, Phases 2 and 5). v1 auth is email +
+password only, and order updates are in-app and by email only.
+
+### SMS order updates
+
+The `sms_opt_in` preference exists (off by default; the account page needs a
+phone number to turn it on) and is kept, but nothing sends texts in v1. To
+add it: an `SmsProvider` beside `EmailProvider`, an `sms` channel on the
+outbox (same trigger, retries and dedupe), STOP / HELP handling with opt-outs
+synced from the provider's webhook, and the 10DLC registration US carriers
+require for business texting.
 
 ### Changing email address
 
