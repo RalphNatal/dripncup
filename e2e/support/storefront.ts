@@ -11,7 +11,7 @@ export interface StorefrontSnapshot {
   hours: Tables<"location_hours">[];
   closures: Tables<"closures">[];
   availability: Tables<"location_availability">[];
-  accepting: { id: string; accepting_orders: boolean }[];
+  accepting: { id: string; accepting_orders: boolean; paused_until: string | null }[];
 }
 
 export async function snapshotStorefront(): Promise<StorefrontSnapshot> {
@@ -19,7 +19,7 @@ export async function snapshotStorefront(): Promise<StorefrontSnapshot> {
     db().from("location_hours").select("*"),
     db().from("closures").select("*"),
     db().from("location_availability").select("*"),
-    db().from("locations").select("id, accepting_orders"),
+    db().from("locations").select("id, accepting_orders, paused_until"),
   ]);
   return {
     hours: must(hours, "snapshot hours"),
@@ -37,7 +37,7 @@ export async function restoreStorefront(snapshot: StorefrontSnapshot) {
   if (snapshot.closures.length) await db().from("closures").insert(snapshot.closures);
   if (snapshot.availability.length) await db().from("location_availability").insert(snapshot.availability);
   for (const row of snapshot.accepting) {
-    await db().from("locations").update({ accepting_orders: row.accepting_orders }).eq("id", row.id);
+    await db().from("locations").update({ accepting_orders: row.accepting_orders, paused_until: row.paused_until }).eq("id", row.id);
   }
 }
 
@@ -64,7 +64,7 @@ export async function makeCafeAlwaysOpen() {
   );
   await db().from("closures").delete().not("id", "is", null);
   await db().from("location_availability").delete().not("id", "is", null);
-  await db().from("locations").update({ accepting_orders: true }).not("id", "is", null);
+  await db().from("locations").update({ accepting_orders: true, paused_until: null }).not("id", "is", null);
 }
 
 /** Today's date in Honolulu, as closures store it. */

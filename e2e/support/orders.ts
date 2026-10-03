@@ -22,6 +22,7 @@ export interface ArrangedLine {
   sizeName?: string;
   options?: { groupSlug: string; name: string; quantity?: number }[];
   quantity?: number;
+  specialInstructions?: string;
   /** What one cost at the time; defaults to the current catalogue price. */
   unitPriceCents?: number;
 }
@@ -79,7 +80,7 @@ async function snapshotLine(line: ArrangedLine) {
     unit_price_cents: unit,
     quantity,
     line_total_cents: unit * quantity,
-    special_instructions: "",
+    special_instructions: line.specialInstructions ?? "",
   };
 }
 
@@ -88,10 +89,17 @@ export async function arrangePlacedOrder({
   userId,
   lines,
   locationSlug = SEEDED.cafeSlug,
+  scheduledFor,
+  cupName = "Kai",
+  notes,
 }: {
   userId: string;
   lines: ArrangedLine[];
   locationSlug?: string;
+  /** A scheduled pickup instead of ASAP. */
+  scheduledFor?: Date;
+  cupName?: string;
+  notes?: string;
 }) {
   const locationId = await locationIdBySlug(locationSlug);
   const items = await Promise.all(lines.map(snapshotLine));
@@ -103,9 +111,9 @@ export async function arrangePlacedOrder({
       p_order: {
         user_id: userId,
         location_id: locationId,
-        pickup_type: "asap",
-        scheduled_for: null,
-        estimated_ready_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        pickup_type: scheduledFor ? "scheduled" : "asap",
+        scheduled_for: scheduledFor?.toISOString() ?? null,
+        estimated_ready_at: (scheduledFor ?? new Date(Date.now() + 10 * 60_000)).toISOString(),
         subtotal_cents: subtotal,
         discount_cents: 0,
         taxable_base_cents: subtotal,
@@ -113,7 +121,8 @@ export async function arrangePlacedOrder({
         tax_cents: 0,
         tip_cents: 0,
         total_cents: subtotal,
-        customer_first_name: "Kai",
+        customer_first_name: cupName,
+        notes: notes ?? null,
         idempotency_key: key,
         checkout_fingerprint: key,
       },
