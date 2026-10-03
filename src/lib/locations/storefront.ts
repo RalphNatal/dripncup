@@ -17,6 +17,7 @@ import { cafeDateKey, addDays } from "@/lib/time";
 import { LOCATION_COOKIE } from "./cookie";
 import {
   getLocationStatus,
+  isAcceptingOrders,
   orderingUnavailableReason,
   statusDetail,
   statusLabel,
@@ -71,6 +72,7 @@ type LocationRow = {
   pickup_instructions: string | null;
   prep_time_minutes: number;
   accepting_orders: boolean;
+  paused_until: string | null;
   starts_at: string | null;
   ends_at: string | null;
   sort_order: number;
@@ -91,7 +93,7 @@ function toView(
   const location = {
     id: row.id,
     type: row.type,
-    acceptingOrders: row.accepting_orders,
+    acceptingOrders: isAcceptingOrders(row.accepting_orders, row.paused_until, now),
     startsAt: row.starts_at,
     endsAt: row.ends_at,
   };
@@ -142,7 +144,7 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
     db
       .from("locations")
       .select(
-        "id, slug, type, name, description, address_line1, address_line2, city, state, postal_code, latitude, longitude, pickup_instructions, prep_time_minutes, accepting_orders, starts_at, ends_at, sort_order",
+        "id, slug, type, name, description, address_line1, address_line2, city, state, postal_code, latitude, longitude, pickup_instructions, prep_time_minutes, accepting_orders, paused_until, starts_at, ends_at, sort_order",
       )
       .eq("is_active", true)
       .order("sort_order"),

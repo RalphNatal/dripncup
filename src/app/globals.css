@@ -297,3 +297,124 @@
       0 0 0 5px color-mix(in oklab, var(--brand-teal-deep) 70%, transparent);
   }
 }
+
+/* ==========================================================================
+   Staff dashboard: printed tickets and cup labels (src/components/staff/
+   print.tsx). The print view only exists while printing; everything else on
+   the page is hidden for that print. Black on white, no colour, sizes in
+   points so they come out the same on any printer.
+   ========================================================================== */
+#staff-print {
+  display: none;
+}
+
+@media print {
+  body.staff-printing > :not(#staff-print) {
+    display: none !important;
+  }
+
+  body.staff-printing {
+    background: #fff !important;
+    min-height: 0 !important;
+  }
+
+  body.staff-printing #staff-print {
+    display: block;
+    color: #000;
+    font-family: var(--font-inter), Arial, sans-serif;
+  }
+
+  #staff-print p {
+    margin: 0;
+  }
+
+  #staff-print hr {
+    border: 0;
+    border-top: 1px dashed #000;
+    margin: 2mm 0;
+  }
+
+  .print-ticket {
+    box-sizing: border-box;
+    padding: 3mm 4mm;
+    font-size: 10pt;
+    line-height: 1.3;
+  }
+
+  .print-number {
+    font-size: 16pt;
+    font-weight: 800;
+  }
+
+  .print-cup {
+    font-size: 20pt;
+    font-weight: 800;
+  }
+
+  .print-strong {
+    font-weight: 700;
+  }
+
+  .print-small {
+    font-size: 8pt;
+  }
+
+  .print-line {
+    padding-left: 2mm;
+  }
+
+  .print-note {
+    margin-top: 1mm !important;
+    padding: 1mm;
+    border: 1.5px solid #000;
+    font-weight: 700;
+  }
+
+  .print-item {
+    margin-bottom: 2mm;
+  }
+
+  .print-label {
+    box-sizing: border-box;
+    padding: 1.5mm 2mm;
+    overflow: hidden;
+    font-size: 7.5pt;
+    line-height: 1.2;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-label:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .print-label-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: 700;
+  }
+
+  .print-label-cup {
+    font-size: 12pt;
+    font-weight: 800;
+  }
+}
+
+/* Staff dashboard: a new, unacknowledged ticket flashes its outline (not its
+   content, which must stay readable). Reduced motion leaves a steady ring. */
+@keyframes staff-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px var(--brand-magenta);
+  }
+  50% {
+    box-shadow: 0 0 0 9px color-mix(in oklab, var(--brand-magenta) 30%, transparent);
+  }
+}
+
+.staff-flash {
+  box-shadow: 0 0 0 4px var(--brand-magenta);
+  animation: staff-flash 1.1s ease-in-out infinite;
+}

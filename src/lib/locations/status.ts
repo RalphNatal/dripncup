@@ -72,6 +72,18 @@ interface Interval {
   end: Date;
 }
 
+/**
+ * Whether the staff pause toggle lets orders through at `now`. A pause with
+ * `paused_until` in the past has run out: it resumes by itself, without a
+ * job flipping the column back, so every reader must ask through here.
+ */
+export function isAcceptingOrders(acceptingOrders: boolean, pausedUntil: string | null, now: Date): boolean {
+  if (acceptingOrders) return true;
+  if (!pausedUntil) return false;
+  const until = new Date(pausedUntil).getTime();
+  return !Number.isNaN(until) && until <= now.getTime();
+}
+
 /** How far ahead to look for the next opening before just saying "Closed". */
 const LOOKAHEAD_DAYS = 14;
 

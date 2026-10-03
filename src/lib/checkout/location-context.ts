@@ -9,7 +9,7 @@ import "server-only";
 import { z } from "zod";
 
 import type { PickupContext, PickupSettings } from "@/lib/checkout/pickup";
-import type { Closure, WeeklyHours } from "@/lib/locations/status";
+import { isAcceptingOrders, type Closure, type WeeklyHours } from "@/lib/locations/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addDays, cafeDateKey } from "@/lib/time";
 
@@ -41,7 +41,7 @@ export async function loadLocationSnapshot(locationId: string, now: Date = new D
     db
       .from("locations")
       .select(
-        "id, name, type, accepting_orders, is_active, starts_at, ends_at, prep_time_minutes, pickup_instructions, address_line1, address_line2, city, state, postal_code",
+        "id, name, type, accepting_orders, paused_until, is_active, starts_at, ends_at, prep_time_minutes, pickup_instructions, address_line1, address_line2, city, state, postal_code",
       )
       .eq("id", locationId)
       .maybeSingle(),
@@ -66,7 +66,7 @@ export async function loadLocationSnapshot(locationId: string, now: Date = new D
       id: row.id,
       name: row.name,
       type: row.type,
-      acceptingOrders: row.accepting_orders,
+      acceptingOrders: isAcceptingOrders(row.accepting_orders, row.paused_until, now),
       isActive: row.is_active,
       startsAt: row.starts_at,
       endsAt: row.ends_at,

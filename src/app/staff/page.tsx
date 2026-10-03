@@ -1,46 +1,61 @@
 import type { Metadata } from "next";
 
-import { PageShell } from "@/components/page-shell";
-import { Card, CardContent } from "@/components/ui/card";
+import { StaffDashboard } from "@/components/staff/staff-dashboard";
+import { StaffNotice } from "@/components/staff/staff-notice";
 import { requireRole } from "@/lib/auth/dal";
-import { createClient } from "@/lib/supabase/server";
+import { getStaffLocationOptions, loadStaffLocationContext, resolveStaffLocation } from "@/lib/staff/locations";
 
 export const metadata: Metadata = { title: "Staff" };
 
-/** Placeholder until the live order queue lands in Phase 6. */
-export default async function StaffPage() {
+type SearchParams = Promise<{ location?: string | string[] }>;
+
+/**
+ * The barista dashboard. The proxy already keeps customers out; this checks
+ * the role again and picks the counter: `?location=` (a deep link), else the
+ * one remembered on this device, else the first the staff member works.
+ * Everything live happens in the client component, under the barista's own
+ * session and RLS.
+ */
+export default async function StaffPage({ searchParams }: { searchParams: SearchParams }) {
   const profile = await requireRole(["staff", "admin"], "/staff");
+  const { location } = await searchParams;
+  const requested = typeof location === "string" ? location : undefined;
 
-  // RLS scopes this to the staff member's roster; admins see every location.
-  const supabase = await createClient();
-  const { data: rostered } = await supabase
-    .from("staff_locations")
-    .select("location:locations(id, name)")
-    .eq("profile_id", profile.id);
+  const options = await getStaffLocationOptions(profile);
+  const resolved = await resolveStaffLocation(options, requested);
 
-  const locations = (rostered ?? []).flatMap((row) => (row.location ? [row.location] : []));
+  if (resolved.kind === "forbidden") {
+    return (
+      <StaffNotice
+        title="Not your counter"
+        body="You're not rostered at that location today, so its queue isn't available. Ask an admin if this is wrong."
+        actionHref="/staff"
+        actionLabel="Open my queue"
+      />
+    );
+  }
+  if (resolved.kind === "none") {
+    return (
+      <StaffNotice
+        title="No counter to show"
+        body="You're not rostered at a location that's open today. Ask an admin to add you."
+        actionHref="/account"
+        actionLabel="Back to my account"
+      />
+    );
+  }
+
+  const context = await loadStaffLocationContext(resolved.locationId);
+  if (!context) {
+    return <StaffNotice title="Location not found" body="That location no longer exists." actionHref="/staff" actionLabel="Open my queue" />;
+  }
 
   return (
-    <PageShell title="Staff" backHref="/account" backLabel="Account">
-      <Card className="rounded-2xl">
-        <CardContent className="space-y-2 p-5">
-          <p className="text-base">
-            Signed in as <span className="font-semibold">{profile.first_name ?? profile.email}</span>.
-          </p>
-          {profile.role === "admin" ? (
-            <p className="text-sm text-muted-foreground">As an admin you can see every location&apos;s queue.</p>
-          ) : locations.length > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Rostered at: {locations.map((l) => l.name).join(", ")}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              You are not rostered to a location yet. Ask an admin to add you.
-            </p>
-          )}
-          <p className="text-sm text-muted-foreground">The live order queue arrives in Phase 6.</p>
-        </CardContent>
-      </Card>
-    </PageShell>
+    <StaffDashboard
+      key={context.id}
+      location={context}
+      options={options}
+      viewer={{ id: profile.id, name: profile.first_name ?? profile.full_name ?? profile.email ?? "Staff", role: profile.role }}
+    />
   );
 }
