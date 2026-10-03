@@ -262,6 +262,13 @@ db:start`, `npm run db:reset`, `npm run db:seed`).
   `advance_order_status`), listen on real Realtime sockets, and read the
   receipt and cancellation emails from Mailpit, so the local stack must be
   running with Mailpit (it is by default).
+- **Staff dashboard tests** (`e2e/staff.spec.ts`) run on a third Playwright
+  project, `tablet` (1280×800 landscape, tests tagged `@tablet`), plus a
+  phone-width check on `mobile`. They open real customer and barista
+  windows side by side, wait on real timers (the undo window, the repeating
+  chime, which the suite shortens to 5 seconds, and a scheduled order falling
+  due about 20 seconds after it is placed), cancel a real sandbox payment,
+  and stub `window.print` to count what would have printed.
 
 ---
 
@@ -332,11 +339,9 @@ With `npm run dev` and `stripe listen` running:
    applied.").
 6. Refund from the Stripe dashboard (Payments → the payment → Refund): the
    order turns Refunded once `charge.refunded` arrives.
-7. Pause the location (until the staff toggle arrives in Phase 6: set
-   `locations.accepting_orders` to false in Supabase Studio,
-   http://127.0.0.1:54323) and try to pay: checkout refuses. A payment already
-   in flight when you pause is refunded automatically, and the confirmation
-   page says why.
+7. Pause the location (as the barista on `/staff`: **Pause online orders**)
+   and try to pay: checkout refuses. A payment already in flight when you
+   pause is refunded automatically, and the confirmation page says why.
 
 ### Scheduled jobs
 
@@ -427,6 +432,134 @@ catches up as soon as it reconnects or the tab is shown again.
 
 ---
 
+## Staff dashboard (`/staff`)
+
+The barista screen, built for a landscape tablet on the counter (1024–1366 px
+wide) and usable on a phone. Sign in as `barista@drincup.test` (or the admin)
+and open `/staff`.
+
+### Using it
+
+- **Start shift.** The queue appears after one tap on **Start shift**. That
+  tap turns on the new-order sound (browsers block sound until you tap),
+  keeps the screen awake, and goes fullscreen if you tick the box (the choice
+  is remembered on the device). After reloading the page, tap Start shift
+  again.
+- **Location.** The top line shows the counter, whether it is open, closed or
+  paused, and today's hours. If you work more than one counter (the cafe and
+  a pop-up running today), pick it from the menu there; the device remembers
+  it. Admins see every location.
+- **Columns.** **Upcoming** (scheduled orders not due yet), **New**, **In
+  progress** (Accepted or Preparing, shown on the ticket) and **Ready**. A
+  scheduled order moves from Upcoming to New at pickup time minus the
+  location's prep time, and rings like a new order. On a phone the columns
+  are tabs.
+- **One tap per step.** New → **Accept** → **Start** → **Ready** → **Picked
+  up**. Ready and Picked up wait five seconds with a big **Undo** before they
+  are sent, so a mis-tap never reaches the customer. If someone else already
+  moved the order on another screen you'll see "Already updated" and the
+  ticket refreshes.
+- **Tickets** show the cup name, order number, ASAP or the pickup time, and a
+  timer since the order was placed. They turn amber 5 minutes and red 10
+  minutes past the estimated ready time (settings `staff.ticket_warning_minutes`
+  and `staff.ticket_late_minutes`). Notes and special instructions are boxed
+  in pink; allergens are flagged in red.
+- **Tap a ticket** for the full order, its history (who did what, when),
+  **Print ticket**, **Print cup labels** and **Cancel order**. Cancelling asks
+  for a reason and says exactly how much will be refunded before anything
+  happens; the customer's tracker and the cancellation email follow
+  automatically.
+- **New-order alert.** A chime that repeats every 15 seconds
+  (`staff.new_order_repeat_seconds`) until you open the order or tap
+  **Acknowledge**, a flashing outline, and the count in the tab title. The
+  speaker button mutes it; the slider sets the volume. Both are remembered on
+  the device.
+- **Pause online orders** for a rush: 15, 30 or 60 minutes, or until you
+  resume. A banner counts down while paused; customers can browse but not
+  check out. It resumes by itself when the time is up.
+- **Sold out**: search any drink, food item or option (milks, syrups…) and
+  switch it off, **until end of day** (it comes back at the next day's opening,
+  Honolulu time) or **until I turn it back on**. The menu and every cart see
+  it straight away. Who changed what is recorded (`location_availability_log`).
+- **Catering**: today's confirmed catering orders for this counter, as a prep
+  list (read-only for now).
+- **Completed**: today's picked-up and cancelled orders, searchable by order
+  number or cup name.
+- **Offline.** A red "Offline — reconnecting…" banner means new orders may be
+  missing; taps fail with a message instead of being saved for later. It
+  catches up by itself when the connection is back.
+
+### Two windows by hand (customer and barista)
+
+1. `npm run dev` (plus `stripe listen …` from "Payments" if you pay through
+   checkout).
+2. **Window A** (normal): sign in as `customer@drincup.test`. **Window B**
+   (InPrivate / a second browser, so the sessions don't mix): sign in as
+   `barista@drincup.test`, open `/staff`, tap **Start shift**.
+3. In A, place an order and open its tracker (tap the page once so it may
+   play the Ready sound). In B it appears under **New** within a second or
+   two, ringing and flashing.
+4. In B: **Accept** → **Start** → **Ready** (watch the five-second Undo) →
+   **Picked up**. A follows each step; at Ready it shows the banner and plays
+   its chime.
+5. Try **Undo** during the Ready countdown: the order stays Preparing and A
+   hears nothing.
+6. Place another order; in B open it, **Cancel order**, pick a reason: A shows
+   Refunded and the cancellation email lands in Mailpit.
+7. Mark the Latte sold out in B, then open the menu and the cart in A.
+8. Pause for 15 minutes in B and try to check out in A.
+9. Open `/staff` in a third window (as the admin) on the same order and tap
+   the same buttons in both: no errors, both end up right.
+
+### Recommended tablet settings
+
+- Plugged in on the counter; screen timeout set to **never** (or "while
+  charging"). The dashboard also asks the browser to keep the screen awake,
+  but a system timeout can still win, and some browsers don't support it (a
+  note appears on the dashboard).
+- Landscape, rotation locked; brightness high, auto-brightness off.
+- Media volume up and not on silent / Do Not Disturb, or the chime is muted
+  by the system.
+- One app only: Android **screen pinning** (or Chrome kiosk mode below), iPad
+  **Guided Access**.
+- Chrome on Android or Windows, or Safari on iPad (iPadOS 16.4+ for the
+  wake lock). Allow sound for the site if the browser asks.
+- Turn off battery saver: it can stop the wake lock and throttle the timers.
+
+### Kiosk printing (silent printing on the counter device)
+
+Browsers always show a print dialog unless Chrome is started in kiosk mode
+with kiosk printing. On a Windows counter PC or tablet:
+
+1. Install the receipt printer (80 mm) and/or label printer driver and print a
+   test page from Windows.
+2. Make the printer you want the dashboard to use the **Windows default**
+   (Settings → Bluetooth & devices → Printers & scanners; turn off "Let
+   Windows manage my default printer").
+3. Set its paper in the driver: 80 mm roll for tickets, or the label size
+   (57 × 32 mm by default; change `staff.label_width_mm` /
+   `staff.label_height_mm` to match your labels). Margins: none.
+4. Make a desktop shortcut whose target is:
+
+   ```
+   "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --kiosk-printing https://<your-domain>/staff
+   ```
+
+   `--kiosk` opens full screen with no browser UI (Alt+F4 closes it);
+   `--kiosk-printing` sends every print straight to the default printer
+   without a dialog.
+5. Open it once, print a ticket from the dashboard with the dialog off, and
+   check the layout. If Chrome keeps using the wrong printer, set the policy
+   `PrintPreviewUseSystemDefaultPrinter` to true
+   (`chrome://policy` shows it once set via the registry or Group Policy).
+6. To start it with Windows, put the shortcut in `shell:startup`.
+
+Kiosk printing uses one printer per Chrome window. With a receipt printer and
+a label printer on the same device, run the dashboard on one device per
+printer (or keep one of them on the normal print dialog). Chrome on Android
+and Safari on iPad have no silent printing: they always show the system print
+dialog, where you pick the printer and paper.
+
 ## Testing on a phone
 
 To try checkout on a real phone on the same Wi-Fi as your PC:
@@ -476,9 +609,10 @@ src/
     api/webhooks/stripe/     Stripe webhook (raw body, signature checked)
     api/cron/expire-orders/  Cancels unpaid checkouts (Vercel Cron)
     api/cron/send-emails/    Delivers due emails from the outbox
-    api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (Phase 6 UI)
+    api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (the dashboard calls it)
     auth/callback/     Landing route for emailed confirmation / reset links
-    staff/ admin/      Dashboards (own plain frame, no customer tab bar)
+    staff/             Barista dashboard (own plain frame, no customer tab bar)
+    admin/             Admin dashboard (Phase 9)
   components/
     account/           Profile form, delete-account form
     auth/              Auth forms, shared form fields, sign-out
@@ -490,6 +624,7 @@ src/
     checkout/          Checkout, Stripe Elements, pickup/tip/promo, confirmation
     orders/            Tracker, timeline, Ready alert, order lists, reorder dialog
     favorites/         Save-as-favourite form, favourites row and manager
+    staff/             Barista dashboard: queue, tickets, alerts, sold out, pause, printing
     ui/                shadcn/ui primitives
     providers.tsx      TanStack Query + Tooltip + Toaster
   lib/
@@ -502,6 +637,8 @@ src/
     orders/            Order detail + timeline, live hooks (Realtime), history,
                        reorder review, expiry job, staff cancel, deletion refunds
     favorites/         Favourite rules, queries and Server Actions
+    staff/             Queue columns and lateness, sold-out reset time, ticket layout
+                       (pure, tested); counter access; dashboard reads and writes
     email/             EmailProvider (Resend / Mailpit), outbox sender, dev sweep
     rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
     client-id.ts       Browser ids / idempotency keys (works over plain HTTP)
@@ -585,7 +722,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 3. ✅ **Menu & customisation** — app shell, pickup locations and live status, menu, product sheet with data-driven modifiers, shared pricing engine, cart store
 4. ✅ **Cart & checkout** — server-validated cart with edit in place, checkout with pickup slots, promos and tips, Stripe Payment + Express Checkout Elements, webhook-driven order placement, refunds, pending-order expiry
 5. ✅ **Order tracking & history** — live tracker with Ready alerts, active-order cards and tab dot, history with pagination, reorder, favourites, email outbox (receipt, cancellation/refund, opt-in ready)
-6. ⬜ Staff dashboard
+6. ✅ **Staff dashboard** — live queue with alerts and undo, tickets and printing, cancel with refund, sold out, pause with auto-resume, catering prep list
 7. ⬜ Rewards
 8. ⬜ Catering, events & seasonal collections
 9. ⬜ Admin dashboard

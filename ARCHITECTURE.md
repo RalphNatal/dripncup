@@ -24,7 +24,7 @@ Four rules explain most of the design decisions below.
 
 ## Data model
 
-32 tables in `public`. Grouped by what they are for:
+33 tables in `public`. Grouped by what they are for:
 
 ### People and places
 
@@ -32,7 +32,7 @@ Four rules explain most of the design decisions below.
 | ----- | ------- |
 | `profiles` | One row per `auth.users` row. Carries `role`, loyalty balance, member code, notification preferences. |
 | `staff_locations` | Which baristas see which queues. Admins bypass it. |
-| `locations` | The Kapiolani cafe (`type = 'cafe'`) and pop-up booths (`type = 'event'`, with `starts_at`/`ends_at`). |
+| `locations` | The Kapiolani cafe (`type = 'cafe'`) and pop-up booths (`type = 'event'`, with `starts_at`/`ends_at`). The staff pause toggle is `accepting_orders`, with `paused_until` (automatic resume), `paused_at` and `paused_by`. |
 | `location_hours` | Weekly opening hours. Multiple rows per day allow split service. |
 | `closures` | One-off closures and holiday-hour overrides. A null `location_id` applies everywhere. |
 
@@ -46,7 +46,8 @@ Four rules explain most of the design decisions below.
 | `modifier_groups` | Reusable customisation groups: Milk, Syrups, Sweetness, Ice. `quantity_unit` names one unit ("pump", "shot"); `charge_per_quantity` says whether a delta is charged per unit (extra shots) or once (a flavour at any number of pumps). |
 | `modifier_options` | The choices inside a group, each with a `price_delta_cents`. |
 | `product_modifier_groups` | Links products to groups, with optional per-product overrides of required/min/max, and `visible_when_option_id` for conditional groups. |
-| `location_availability` | Sold-out overrides. **A row exists only when something is unavailable** — no row means available. |
+| `location_availability` | Sold-out overrides. **A row exists only when something is unavailable** — no row means available. `available_from` is the automatic reset ("until end of day"); null means until someone turns it back on. Written only through `set_sold_out()`. |
+| `location_availability_log` | Append-only: who marked what sold out or back on, where and when (trigger on `location_availability`). Readable by staff of that location. |
 | `event_menu_items` | The subset of the catalog a pop-up booth carries. |
 | `collections` / `collection_products` | Seasonal ranges, shown and hidden purely by date window. |
 
@@ -98,7 +99,7 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 
 | Table | Purpose |
 | ----- | ------- |
-| `catering_requests` / `catering_request_items` | Enquiries and their line items. Contact fields and `user_id` are cleared by account deletion (`anonymized_at` set). |
+| `catering_requests` / `catering_request_items` | Enquiries and their line items. `location_id` is the counter that prepares it (defaults to the cafe). Contact fields and `user_id` are cleared by account deletion (`anonymized_at` set). |
 | `settings` | Admin-editable key/value config. `is_public` decides anonymous readability. |
 | `daily_counters` | Backs the human-readable `DC-260923-0042` order numbers. Not client-readable. |
 
@@ -129,9 +130,12 @@ service role.
 
 Permission checks run through four `SECURITY DEFINER` helpers — `auth_role()`,
 `is_admin()`, `is_staff()`, `can_access_location()` — so policies never query
-`profiles` inline, which would recurse against that table's own policy.
+`profiles` inline, which would recurse against that table's own policy. A
+deleted profile has no role, and a `staff_locations` row counts only while
+the profile is still `staff`: demoting a barista to customer ends their access
+to the counter at once, even if the roster row is left behind.
 
-Three guardrails sit alongside the policies:
+Guardrails alongside the policies:
 
 - `guard_profile_role_change()` rejects a non-admin changing `profiles.role`.
   Without it, a customer who can edit their own profile could promote
@@ -142,9 +146,21 @@ Three guardrails sit alongside the policies:
   without the column grant a customer could set their own `loyalty_points` or
   `member_code`. The ledger trigger writes points as the table owner.
 - Staff are deliberately **not** granted `UPDATE` on `locations`. The pause
-  toggle goes through `set_location_accepting_orders()`, a definer RPC that
-  exposes exactly that one column, so a barista cannot edit addresses or prep
-  times.
+  toggle goes through `set_location_accepting_orders(location, accepting,
+  resume_at?)`, a definer RPC that exposes exactly the pause columns, so a
+  barista cannot edit addresses or prep times.
+- **Sold out is changed only through `set_sold_out()`.** Clients have no
+  write privilege on `location_availability`; the function checks the caller
+  works that counter, and a trigger logs every change with its actor in
+  `location_availability_log`.
+- **Staff-only views are functions, not table grants.** The catering prep
+  list (`staff_catering_prep`) and a ticket's history with names and its
+  refundable amount (`staff_order_activity`) hand out just those fields for
+  the caller's own counters; staff still cannot read `catering_requests`,
+  `profiles` or `payments`.
+- `get_setting()` reads any setting (it is how triggers read admin-only
+  keys), so clients cannot call it. Staff read the `staff.*` settings through
+  the `settings` policy.
 - **Nobody but the service role writes orders.** `anon` and `authenticated`
   have no INSERT, UPDATE or DELETE privilege on `orders`, `order_items`,
   `order_status_history`, `payments` or `refunds` (revoked, not just
@@ -514,6 +530,7 @@ api/webhooks/stripe        payment webhook (outside the proxy matcher)
 api/cron/expire-orders     unpaid-checkout expiry (outside the proxy matcher)
 api/cron/send-emails       email outbox sweep (outside the proxy matcher)
 api/staff/orders/[id]/cancel   cancel-with-refund for staff (session + same-origin JSON)
+staff                      the barista dashboard (staff and admins; ?location= deep link)
 ```
 
 Closing the sheet calls `router.back()`, so the menu keeps its scroll
@@ -683,7 +700,7 @@ run cannot fill the schedule with ghosts.
 Callers today: the webhook (payment after pause or cancellation), account
 deletion, and `cancelOrderWithRefund()` (`src/lib/orders/cancel.ts`), which
 lets an admin, or staff rostered at the order's location, cancel a placed to
-ready order with a reason and refund it. Its buttons arrive in Phase 6.
+ready order with a reason and refund it, from the staff dashboard (below).
 
 ### Pickup times (`src/lib/checkout/pickup.ts`)
 
@@ -741,7 +758,7 @@ Only the service role writes `orders`. Staff use `advance_order_status()`
 (see "Security model"); a paid order is cancelled only by
 `cancelOrderWithRefund()`, exposed to staff as
 `POST /api/staff/orders/:id/cancel` (session-authenticated, same-origin JSON
-only, re-checked in SQL). The staff dashboard (Phase 6) builds on these.
+only, re-checked in SQL). The staff dashboard builds on these (see "Staff dashboard").
 
 ### One order shape
 
@@ -800,6 +817,153 @@ caller's active or past orders, newest first, with keyset pagination on
 `(created_at, id)`. It is `SECURITY DEFINER` with an `auth.uid()` filter, so a
 past pop-up whose location is now hidden from customers still shows its name.
 "Past" includes only orders that were paid for.
+
+---
+
+## Staff dashboard
+
+`/staff` is one client component (`src/components/staff/staff-dashboard.tsx`)
+over a server page that decides which counter to show. Everything it reads
+and writes goes through the barista's own session, so RLS and the definer
+functions are the real boundary; the page only arranges the work.
+
+### Which counter
+
+`src/lib/staff/locations.ts` lists what the viewer may open: an admin, every
+location; staff, their `staff_locations` rows. Only the cafe and pop-ups whose
+window touches today (Honolulu date) are offered. The choice is `?location=`
+(a deep link), else the `dc_staff_location` cookie (set by the switcher's
+Server Action after checking the roster), else the first offered. A location
+outside that list shows "Not your counter"; even reached some other way, its
+orders, pause toggle and sold-out flags are refused by the database.
+
+### Start shift
+
+The queue appears only after a tap on **Start shift**, because browsers allow
+sound only after a user gesture. The same tap asks for a Screen Wake Lock
+(asked again whenever the tab becomes visible, since browsers drop it while
+hidden; a note appears where it is unsupported) and, if ticked (remembered on
+the device), fullscreen.
+
+### The queue
+
+`src/lib/staff/queue.ts` is pure and unit-tested; the dashboard runs it every
+second against the orders it holds, so nothing waits on the server to move a
+ticket between columns or change its colour.
+
+| Column | Orders |
+| ------ | ------ |
+| Upcoming | Placed, scheduled, and not yet due: due = pickup time − the location's prep time |
+| New | Placed: ASAP at once; scheduled once due |
+| In progress | Accepted and Preparing (a badge says which) |
+| Ready | Ready |
+
+Within a column, tickets sort by pickup time, ASAP orders by when they were
+placed. A ticket turns amber, then red, `staff.ticket_warning_minutes` (5) and
+`staff.ticket_late_minutes` (10) after its estimated ready time (the scheduled
+time, or the ASAP estimate from checkout) while it is still being made, with a
+"Running behind" / "LATE" label so colour is never the only signal. Each
+selection gets its own line in build order (temperature, milk, shots,
+flavours, sweetness, ice, toppings, then the rest), decided by the modifier
+group's slug or name (`src/lib/staff/ticket.ts`). Special instructions and
+order notes are boxed; allergens are the product's plus every chosen option's.
+
+The data is one query: orders for the location that are on the queue, or were
+placed, picked up or cancelled today (for the summary and the completed
+drawer). It is kept fresh by the same `useOrderChanges` hook as the customer
+tracker, filtered `location_id=eq.<location>`: Realtime events (which carry
+RLS-checked rows only) trigger a refetch, as do (re)joining, the listener
+becoming ready, the tab becoming visible and coming back online; while not
+joined it polls every 15 seconds. The pause state is re-read every 20
+seconds and after each change.
+
+**Summary strip:** orders placed today, the average minutes from entering New
+to Ready (placed, or due for a scheduled order, so a pickup booked last night
+is not a 12-hour wait), and how many are in New or In progress. No money.
+
+On a phone (narrower than 1024 px) the four columns become tabs with counts.
+Only one layout is rendered at a time.
+
+### One-tap actions and the undo window
+
+New → **Accept**, Accepted → **Start**, Preparing → **Ready**, Ready →
+**Picked up**, all through `advance_order_status()`. Accept and Start are sent
+at once. Ready (which alerts the customer) and Picked up (which closes the
+order and, from Phase 7, credits points) are held for five seconds with a big
+"Marking ready… Undo" bar on the ticket and at the bottom of the screen; only
+when the time runs out is the call made. Undo simply cancels the timer, so
+nothing reached the database or the customer. Closing the tab inside those
+five seconds drops the action: the order stays where it was, which is the safe
+way round. The database transition rules are unchanged.
+
+**Two devices.** Before calling, the browser re-reads the order's status. If
+it is no longer what the barista saw (another device got there first, or it
+was cancelled), nothing is sent: the screen says "Already updated" and
+refreshes. If two devices pass that check at the same moment, the second call
+asks for the status the order already has, which `advance_order_status()`
+treats as a no-op: no error, no second history row, no second email. A move
+that has become impossible (Accept on an order already Preparing) is still
+refused by the transition rules and shown as "Already updated".
+
+**Offline.** "Offline — reconnecting…" shows while the browser is offline or
+after Realtime drops. A tap while offline, or one whose request fails, says
+so and changes nothing; actions are never queued for later.
+
+### Cancel
+
+From the ticket's detail view: a preset reason (Out of ingredient, Customer
+request, Duplicate order, Unable to fulfill) or Other with a few words, then a
+confirmation that states the refund in dollars before anything happens (the
+refundable amount comes from `staff_order_activity`). It always posts to
+`/api/staff/orders/:id/cancel` (cancel-with-refund); the tracker and the
+cancellation email follow from the status change. A 409 (already cancelled
+or picked up elsewhere) is "Already updated".
+
+### Alerts
+
+`use-new-order-alerts.ts`: an order in New that this device has not
+acknowledged rings a synthesised chime at once, flashes its outline, shows a
+banner with **Acknowledge**, and puts the count of New orders in the tab
+title. The chime repeats every `staff.new_order_repeat_seconds` (15) until
+every New order is acknowledged, by opening it, by Acknowledge, or by
+accepting it. Scheduled orders alert when they fall due. Acknowledgements are
+kept in `localStorage` per location, so a reload does not ring again for
+orders already seen; volume and mute are remembered per device too.
+
+### Sold out and the end-of-day reset
+
+`set_sold_out(location, product | option, sold_out, until)`. "Until end of
+day" (the default) stores `available_from` = the start of the location's next
+trading day: the first opening on a later Honolulu date than today, with
+closures and holiday hours applied (`endOfDayResetAt`, unit-tested). Marked
+at 2 PM or at 6 AM before opening, it lasts until tomorrow's opening; the
+afternoon half of a split day does not reset it. Pop-ups reset at the next
+Honolulu midnight. "Until I turn it back on" stores null. Nothing runs at the
+reset time: every reader already treats a flag whose `available_from` has
+passed as gone, so the menu and cart checks (read live, never cached) change
+the moment it is set and the moment it lapses.
+
+### Pause
+
+`set_location_accepting_orders(location, false, resume_at?)` with 15, 30 or 60
+minutes, or until resumed (at most 12 hours ahead). Auto-resume is lazy, like
+the sold-out reset: `isAcceptingOrders()` treats a pause whose `paused_until`
+has passed as over, and the storefront, checkout and the payment webhook all
+read the toggle through it. The dashboard shows a banner with a countdown and
+**Resume now** while paused.
+
+### Catering and printing
+
+**Today's catering** lists confirmed requests at this counter for today
+(`staff_catering_prep`): time, headcount, items, pickup or delivery, contact
+name and phone, notes. Read-only until Phase 8.
+
+**Printing** renders a print view into a portal only while printing; a
+`staff-printing` class on `<body>` hides the rest of the page, and an `@page`
+rule is added for that one print: the label size (`staff.label_width_mm` ×
+`staff.label_height_mm`, 57 × 32 mm) for cup labels, one label per drink; for
+tickets zero margins and a `staff.receipt_width_mm` (80 mm) column. Silent
+printing needs Chrome's kiosk mode (README, "Kiosk printing").
 
 ---
 

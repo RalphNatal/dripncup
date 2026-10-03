@@ -2,7 +2,7 @@
 
 > **Source of truth for every phase.** Read this in full before starting any phase. Decisions made during development are recorded in the **Decisions Log** at the end; where the log and the original spec differ, **the log wins**.
 >
-> **Status:** Phases 1–5 complete (Foundation; Auth & roles, including account deletion and the timezone test; Menu & customization; Cart & checkout with Stripe test mode; Order tracking, emails, history, reorder & favorites, with the Part 0 staff lock-down). Next: Phase 6.
+> **Status:** Phases 1–6 complete (Foundation; Auth & roles, including account deletion and the timezone test; Menu & customization; Cart & checkout with Stripe test mode; Order tracking, emails, history, reorder & favorites, with the Part 0 staff lock-down; Staff dashboard). Next: Phase 7.
 
 You are a senior full-stack engineer building a production-quality, mobile-first order-ahead web app for **Drincup Cafe**, an independent drink and food cafe at **1221 Kapiolani Blvd, Site 112A, Honolulu, HI 96814**. The experience should rival a major coffee chain's app (browse → customize → pay → pick up → earn rewards) but with Drincup's own warm, community-focused identity. Do not copy any other company's names, colors, logos, icons, copy, or layouts.
 
@@ -178,7 +178,7 @@ Rules:
 3. ✅ **Menu & customization:** app shell, location handling, menu, product detail with data-driven modifiers, shared pricing engine, live pricing, minimal cart store
 4. ✅ **Cart & checkout:** cart page, promos, tax, tips, pickup slot logic, server-side pricing, Stripe test integration + webhook
 5. ✅ **Order tracking & history:** realtime status, emails, history, reorder, favorites
-6. **Staff dashboard:** live queue, alerts, status updates, sold-out and pause toggles
+6. ✅ **Staff dashboard:** live queue, alerts, status updates, sold-out and pause toggles
 7. **Rewards:** earning, redemption, activity log, member QR
 8. **Catering, events & seasonal collections:** customer flows and admin management
 9. **Admin dashboard:** remaining CRUD screens, settings, and reports
@@ -281,8 +281,25 @@ Decisions made during development. These override the sections above where they 
 - **Labels:** the tax line reads "Tax (GET 4.712%)" everywhere (checkout, receipts, emails)
 - **SMS:** not built; the opt-in preference stays. Added to the post-launch list in ARCHITECTURE.md
 
+### Phase 6
+- **Columns:** Upcoming (scheduled, not yet due) · New (Placed) · In progress (Accepted and Preparing, with a badge) · Ready, replacing the three columns in section 8. A scheduled order is due at pickup time − the location's prep time; it then moves to New and alerts. Within a column: pickup time, ASAP orders by placed time. Columns become tabs below 1024 px
+- **Undo window (client only):** Ready and Picked up are held five seconds with Undo and sent only when the time runs out; Accept and Start are sent at once. Closing the tab inside the window drops the action. Database transition rules are unchanged
+- **Repeats are no-ops:** `advance_order_status()` returns the order untouched when asked for the status it already has (no error, no history row, no email). The dashboard re-reads the status first and shows "Already updated" if it moved; a move that has become impossible is still refused (`23514`) and shown the same way
+- **Ticket lateness:** amber and red at `staff.ticket_warning_minutes` (5) and `staff.ticket_late_minutes` (10) past the estimated ready time (scheduled time, or the ASAP estimate from checkout), with a text label as well as colour. Selections are listed in build order (temperature, milk, shots, flavours, sweetness, ice, toppings, then the rest), by modifier group slug or name
+- **Alerts:** chime on arrival, repeated every `staff.new_order_repeat_seconds` (15) until the order is opened, acknowledged or accepted; acknowledgements, volume, mute and the fullscreen choice are per device (`localStorage`). Sound starts only after **Start shift**, which also requests a Screen Wake Lock (re-requested when the tab is visible again)
+- **Sold out:** only through `set_sold_out()`; clients lost write access to `location_availability`. "Until end of day" (default) resets at the start of the next trading day: the first opening on a later Honolulu date, closures and holiday hours applied; pop-ups at the next Honolulu midnight. Stored as `available_from`, which readers already honour, so no job runs. Every change is logged with its actor in `location_availability_log`
+- **Pause with auto-resume:** `set_location_accepting_orders(location, accepting, resume_at?)` (15/30/60 minutes or until resumed, at most 12 hours) adds `locations.paused_until/paused_at/paused_by`. Auto-resume is lazy: `isAcceptingOrders()` treats a pause past `paused_until` as over in the storefront, checkout and the payment webhook
+- **Catering location:** `catering_requests.location_id` (defaults to the cafe by trigger; existing rows backfilled). Staff read the prep list only through `staff_catering_prep()` (confirmed, today, their counter, no money or email)
+- **Ticket history and refund amount** come from `staff_order_activity()` (staff cannot read profiles or payments)
+- **Counter choice:** `?location=` deep link, else the `dc_staff_location` cookie, else the first offered; offered = the cafe plus pop-ups whose window touches today. Admins can open any location
+- **Printing:** in-page print view with an `@page` rule per print: cup labels one per drink at `staff.label_width_mm` × `staff.label_height_mm` (57 × 32 mm), tickets at `staff.receipt_width_mm` (80 mm) with zero margins. Silent printing needs Chrome `--kiosk --kiosk-printing` (README); one printer per Chrome window
+- **Summary strip:** orders placed today, average minutes from entering New (placed, or due for scheduled orders) to Ready, and how many are in New or In progress. No revenue
+- **Offline:** banner while offline or after Realtime drops; writes fail with a message and are never queued
+- **Security fixes:** `can_access_location()` now requires the caller to still be staff (a demoted barista's leftover roster row granted access), and `auth_role()` ignores deleted profiles; `get_setting()` (definer, reads every setting) is no longer callable by `anon`/`authenticated`. The `settings` policy lets staff read `staff.*` keys
+- **Schema:** migration `20260101000022_staff_dashboard`. Tests: `supabase/tests/staff_dashboard.test.sql`, `src/lib/staff/*.test.ts`, `e2e/staff.spec.ts` (new Playwright `tablet` project)
+
 ### Pending client confirmation
-Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, the checkout timings (30-minute unpaid expiry, 2 minutes per queued order, 8 orders per slot, last slot 15 minutes before closing, $100 custom tip cap).
+Real menu and prices, categories, trading hours, pickup instructions, logo files, official brand colors and fonts, About copy, social/contact links, GET rate, whether tips are taxed, whether catering delivery is offered, rewards earn rate, which POS the cafe uses, product photography, the checkout timings (30-minute unpaid expiry, 2 minutes per queued order, 8 orders per slot, last slot 15 minutes before closing, $100 custom tip cap), the counter hardware (tablet model, receipt and label printers, label stock size; seeded 80 mm and 57 × 32 mm) and the ticket lateness thresholds (5 and 10 minutes).
 
 Open questions for the owner:
 - **Allow ordering ahead while closed?** Today a cart built earlier can be scheduled for the next open day at checkout, but the menu blocks adding while closed
