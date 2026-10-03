@@ -97,6 +97,8 @@ const WIPE_ORDER = [
   "collections",
   "event_menu_items",
   "location_availability",
+  // After location_availability: clearing it writes log rows.
+  "location_availability_log",
   "product_modifier_groups",
   "modifier_options",
   "modifier_groups",
@@ -1100,7 +1102,7 @@ async function seedAccounts(cafeId: string, eventId: string) {
   return ids;
 }
 
-async function seedCatering(customerId: string, productIds: Map<string, string>) {
+async function seedCatering(customerId: string, cafeId: string, productIds: Map<string, string>) {
   const inTwoWeeks = new Date();
   inTwoWeeks.setDate(inTwoWeeks.getDate() + 14);
 
@@ -1168,6 +1170,62 @@ async function seedCatering(customerId: string, productIds: Map<string, string>)
       .select(),
     "insert catering items",
   );
+
+  await seedTodaysCatering(customerId, cafeId, productIds);
+}
+
+/**
+ * A confirmed request for today at noon (Honolulu), so the staff screen's
+ * "Today's catering" prep list has something on it. The lead-time trigger
+ * only checks inserts, so it is created next week, then moved to today and
+ * walked through quoted → confirmed the way an admin would.
+ */
+async function seedTodaysCatering(customerId: string, cafeId: string, productIds: Map<string, string>) {
+  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const request = ok(
+    await db
+      .from("catering_requests")
+      .insert({
+        user_id: customerId,
+        location_id: cafeId,
+        contact_name: "Malia Office Manager",
+        contact_email: "customer@drincup.test",
+        contact_phone: "+18085550123",
+        event_at: nextWeek.toISOString(),
+        headcount: 12,
+        fulfillment: "pickup",
+        notes: "Team meeting. Please label each drink with the name on the list we emailed.",
+        status: "submitted",
+      })
+      .select()
+      .single(),
+    "insert today's catering request",
+  );
+
+  ok(
+    await db
+      .from("catering_request_items")
+      .insert([
+        { catering_request_id: request.id, product_id: productIds.get("latte")!, product_name: "Latte", quantity: 6, notes: "3 oat, 3 whole" },
+        { catering_request_id: request.id, product_id: productIds.get("pog-refresher")!, product_name: "POG Refresher", quantity: 6 },
+      ])
+      .select(),
+    "insert today's catering items",
+  );
+
+  // Noon today in Honolulu: the HST date, then 12:00 at UTC-10.
+  const hstDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Honolulu" }).format(new Date());
+  const noonToday = new Date(`${hstDate}T12:00:00-10:00`).toISOString();
+  for (const update of [
+    { event_at: noonToday },
+    { status: "quoted" as const, quote_amount_cents: 9600 },
+    { status: "confirmed" as const },
+  ]) {
+    ok(
+      await db.from("catering_requests").update(update).eq("id", request.id).select().single(),
+      "confirm today's catering request",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1196,7 +1254,7 @@ async function main() {
   const ids = await seedAccounts(cafe.id, event.id);
   console.log("  test accounts");
 
-  await seedCatering(ids.customer, productIds);
+  await seedCatering(ids.customer, cafe.id, productIds);
   console.log("  catering requests");
 
   console.log("\nDone. Test accounts (password for all: " + TEST_PASSWORD + "):");

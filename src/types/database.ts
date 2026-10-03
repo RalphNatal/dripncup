@@ -133,6 +133,7 @@ export type Database = {
           fulfillment: Database["public"]["Enums"]["fulfillment_type"]
           headcount: number
           id: string
+          location_id: string | null
           notes: string | null
           payment_link_url: string | null
           quote_amount_cents: number | null
@@ -160,6 +161,7 @@ export type Database = {
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           headcount: number
           id?: string
+          location_id?: string | null
           notes?: string | null
           payment_link_url?: string | null
           quote_amount_cents?: number | null
@@ -187,6 +189,7 @@ export type Database = {
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           headcount?: number
           id?: string
+          location_id?: string | null
           notes?: string | null
           payment_link_url?: string | null
           quote_amount_cents?: number | null
@@ -198,6 +201,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "catering_requests_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "catering_requests_user_id_fkey"
             columns: ["user_id"]
@@ -580,6 +590,68 @@ export type Database = {
           },
         ]
       }
+      location_availability_log: {
+        Row: {
+          action: string
+          actor: string | null
+          created_at: string
+          id: string
+          location_id: string
+          modifier_option_id: string | null
+          product_id: string | null
+          until: string | null
+        }
+        Insert: {
+          action: string
+          actor?: string | null
+          created_at?: string
+          id?: string
+          location_id: string
+          modifier_option_id?: string | null
+          product_id?: string | null
+          until?: string | null
+        }
+        Update: {
+          action?: string
+          actor?: string | null
+          created_at?: string
+          id?: string
+          location_id?: string
+          modifier_option_id?: string | null
+          product_id?: string | null
+          until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_availability_log_actor_fkey"
+            columns: ["actor"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_availability_log_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_availability_log_modifier_option_id_fkey"
+            columns: ["modifier_option_id"]
+            isOneToOne: false
+            referencedRelation: "modifier_options"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "location_availability_log_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       location_hours: {
         Row: {
           closes_at: string
@@ -633,6 +705,9 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           name: string
+          paused_at: string | null
+          paused_by: string | null
+          paused_until: string | null
           phone: string | null
           pickup_instructions: string | null
           postal_code: string | null
@@ -659,6 +734,9 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           name: string
+          paused_at?: string | null
+          paused_by?: string | null
+          paused_until?: string | null
           phone?: string | null
           pickup_instructions?: string | null
           postal_code?: string | null
@@ -685,6 +763,9 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           name?: string
+          paused_at?: string | null
+          paused_by?: string | null
+          paused_until?: string | null
           phone?: string | null
           pickup_instructions?: string | null
           postal_code?: string | null
@@ -697,7 +778,15 @@ export type Database = {
           type?: Database["public"]["Enums"]["location_type"]
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "locations_paused_by_fkey"
+            columns: ["paused_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       loyalty_transactions: {
         Row: {
@@ -1969,7 +2058,11 @@ export type Database = {
         Returns: boolean
       }
       set_location_accepting_orders: {
-        Args: { accepting: boolean; target_location_id: string }
+        Args: {
+          accepting: boolean
+          resume_at?: string
+          target_location_id: string
+        }
         Returns: {
           accepting_orders: boolean
           address_line1: string | null
@@ -1984,6 +2077,9 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           name: string
+          paused_at: string | null
+          paused_by: string | null
+          paused_until: string | null
           phone: string | null
           pickup_instructions: string | null
           postal_code: string | null
@@ -2003,6 +2099,33 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      set_sold_out: {
+        Args: {
+          p_location_id: string
+          p_modifier_option_id?: string
+          p_product_id?: string
+          p_sold_out?: boolean
+          p_until?: string
+        }
+        Returns: undefined
+      }
+      staff_catering_prep: {
+        Args: { p_day?: string; p_location_id: string }
+        Returns: {
+          contact_name: string
+          contact_phone: string
+          custom_drink_request: string
+          delivery_address: string
+          event_at: string
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          items: Json
+          notes: string
+          request_number: string
+        }[]
+      }
+      staff_order_activity: { Args: { p_order_id: string }; Returns: Json }
     }
     Enums: {
       allergen:
