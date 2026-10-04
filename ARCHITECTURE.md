@@ -91,8 +91,10 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | Table | Purpose |
 | ----- | ------- |
 | `promos` / `promo_redemptions` | Codes and their usage. `unique (promo_id, order_id)` stops a retried checkout double-counting a limited code. |
-| `rewards` | Overflow Rewards tiers. |
-| `loyalty_transactions` | Append-only points ledger. `profiles.loyalty_points` is a cached sum kept in step by trigger. |
+| `rewards` | Overflow Rewards tiers: `free_item` / `free_modifier` / `amount_off`, points cost, eligibility (products, categories, add-on groups), value cap, active and sort order. |
+| `loyalty_transactions` | Append-only points ledger. `profiles.loyalty_points` is a cached sum kept in step by trigger, and may be negative. |
+| `loyalty_reservations` | Points a checkout holds: held → redeemed (paid) or released. One per order. |
+| `order_rewards` | Snapshot of the rewards an order used: name, cost, discount, line, free add-on. |
 | `favorites` | "My usual" — a named, fully customised drink, stored as the same modifier snapshot an order line keeps. Names 1–40 characters, unique per customer ignoring case; at most 50 per customer (trigger, `DC003`). Private to the owner (RLS). |
 
 ### Catering and configuration
@@ -365,7 +367,7 @@ what they are charged.
 
   subtotal         = Σ line totals
   promo            = evaluatePromo(...)                 capped at the subtotal
-  reward           = Phase 7 slot                       capped at what is left
+  reward           = applyRewards(...)                  capped at what is left (see Overflow Rewards)
   taxable base     = subtotal − promo − reward
   tax (GET)        = round(taxable base × tax_rate)     rounded once, per order
   tip              = preset % of the taxable base, or a custom amount
@@ -525,9 +527,10 @@ no photo at all, shows a generated brand-coloured placeholder. A collection's
 (shop)/orders/[id]         live tracker; owner only (404 otherwise)
 (shop)/orders/[id]/confirmed   Stripe's return_url; owner only (404 otherwise)
 (shop)/account/favorites   favourites: rename, delete, add to cart
-(shop)/rewards             placeholder until Phase 7
+(shop)/rewards             Overflow Rewards; public (guests get the programme explained)
 api/webhooks/stripe        payment webhook (outside the proxy matcher)
 api/cron/expire-orders     unpaid-checkout expiry (outside the proxy matcher)
+api/cron/expire-points     points expiry, off by default (outside the proxy matcher)
 api/cron/send-emails       email outbox sweep (outside the proxy matcher)
 api/staff/orders/[id]/cancel   cancel-with-refund for staff (session + same-origin JSON)
 staff                      the barista dashboard (staff and admins; ?location= deep link)
@@ -889,7 +892,7 @@ Only one layout is rendered at a time.
 New → **Accept**, Accepted → **Start**, Preparing → **Ready**, Ready →
 **Picked up**, all through `advance_order_status()`. Accept and Start are sent
 at once. Ready (which alerts the customer) and Picked up (which closes the
-order and, from Phase 7, credits points) are held for five seconds with a big
+order and credits points) are held for five seconds with a big
 "Marking ready… Undo" bar on the ticket and at the bottom of the screen; only
 when the time runs out is the call made. Undo simply cancels the timer, so
 nothing reached the database or the customer. Closing the tab inside those
@@ -1063,21 +1066,155 @@ Request numbers follow the order-number pattern: `CAT-260923-004`.
 
 ---
 
-## Loyalty
+## Overflow Rewards
 
-`loyalty_transactions` is an append-only signed ledger; `profiles.loyalty_points`
-is a cached sum maintained by an `AFTER INSERT OR DELETE` trigger. The ledger is
-always the truth.
+Every rule the cafe has not confirmed is a setting or a data row, so their
+answers are a settings change, not a code change (all `NEEDS_CONFIRMATION`):
 
-| Type | Sign | When |
-| ---- | ---- | ---- |
-| `earn` | + | Order marked **picked_up** — not at payment |
-| `redeem` | − | Points spent on a reward |
-| `reverse` | − | Clawback after a cancellation or refund |
-| `adjust` | ± | Manual admin correction |
+| Setting | Default | Meaning |
+| ------- | ------- | ------- |
+| `loyalty.points_per_dollar` | 1 | Points per dollar of the eligible amount, up to two decimals |
+| `loyalty.catering_earns_points` | false | Read by `pointsForOrder(…, "catering")` when catering payments arrive (Phase 8) |
+| `loyalty.points_expire_after_months` | 0 | 0 = never. Expiry is built and runs from the ledger alone |
+| `loyalty.max_rewards_per_order` | 1 | The engine, the schema and the picker all handle more |
+| `loyalty.allow_promo_with_reward` | false | One discount per order: a promo or a reward |
 
-A partial unique index allows only one `earn` row per order, so a replayed
-Stripe webhook cannot double-credit.
+Tiers are rows in `rewards` (seeded 50 / 150 / 250 points; see the seed).
+
+### The ledger
+
+`loyalty_transactions` is append-only and signed; `profiles.loyalty_points` is
+a cached sum kept by an `AFTER INSERT OR DELETE` trigger. Every balance on
+every page is that cached sum, read on the server; nothing adds points up in
+the browser. Nobody but the SQL functions writes the ledger: `anon` and
+`authenticated` (admins included) have no INSERT, UPDATE or DELETE, and a
+trigger refuses any UPDATE except a reference going null (`ON DELETE SET NULL`
+when an admin's account or a reward is deleted). A correction is a new
+`adjust` row.
+
+| Type | Sign | Written by | When |
+| ---- | ---- | ---------- | ---- |
+| `earn` | + | `sync_order_loyalty` | The order is picked up. One per order (unique index) |
+| `redeem` | − | `create_checkout_order` | Checkout creates an order with a reward. One per reservation |
+| `release` | + | `sync_order_loyalty` | A reservation is given back. One per reservation |
+| `reverse` | − | `sync_order_loyalty` | A refund after pickup (topped up as further refunds arrive) |
+| `adjust` | ± | `admin_adjust_points` | An admin correction: reason required, admin recorded in `created_by` |
+| `expire` | − | `expire_loyalty_points` | Points past the expiry age, when expiry is on |
+
+The activity log (`list_my_points_activity`) shows a `redeem` row as
+**Reserved** until its order is paid and **Redeemed** after.
+
+### Earning
+
+`pointsForOrder` (`src/lib/pricing/points.ts`) works the points out at
+checkout from the breakdown's `taxableCents`: the subtotal after the promo
+and the reward, before GET and tip, so the part a reward paid for earns
+nothing. Rounded down to a whole point. The order stores it
+(`orders.points_earned`); receipts say "You'll earn N points when you pick
+this up"; the database credits it at pickup. An order cancelled before pickup
+earns nothing. The rate in force at checkout is the one used.
+
+### Reservations
+
+`create_checkout_order` writes the order, its lines, the `order_rewards`
+snapshot and the reservation in one transaction. It locks the customer's
+`profiles` row (`FOR UPDATE`) before checking the balance, so two checkouts
+racing for the same points run one after the other and the second sees what
+the first spent: it fails with `DC004` and its order rolls back.
+`supabase/tests/points_race.concurrent.mjs` proves this with real sessions.
+
+```
+held ──(order Placed: payment, or a $0.00 order placed at once)──▶ redeemed
+  │                                                                    │
+  └──(expired / payment cancelled / order cancelled)──▶ released ◀──(fully refunded)
+```
+
+- The points leave the balance when the reservation is made, so the
+  customer cannot spend them twice while paying.
+- A payment that fails is retried on the same order and the points stay held.
+  If the customer changes their order after submitting it, the new attempt
+  names the old one (`replacesIdempotencyKey`); checkout cancels that unpaid
+  order (PaymentIntent first) and its points come back before the new
+  reservation is made. Points held by a checkout in another tab show on the
+  picker with a button to cancel it, and otherwise come back when the expiry
+  job cancels it.
+- A **partial refund never returns redeemed points**; only a full refund (or
+  a cancellation) does.
+
+### One reconcile for every path
+
+`sync_order_loyalty(order)` makes the ledger agree with one order. Triggers
+run it after every status change on `orders` and every change to
+`payments.refunded_cents`, so it holds whatever moved the order: the webhook,
+the staff screen, the expiry job, a refund, account deletion or psql. It only
+appends what is missing, and the unique indexes make a repeat a no-op, so a
+replayed or out-of-order webhook cannot credit, redeem or return points twice
+(on top of the Phase 4 event dedupe).
+
+### Refunds and negative balances
+
+The reversal is the earned points times the share of the payment refunded so
+far, **rounded down**; all of them once the order is fully refunded. A second
+partial refund tops it up against the running total. `pointsToReverse` in
+TypeScript mirrors the SQL and the two test suites use the same cases.
+
+If the customer has already spent the points, the reversal still happens and
+the balance goes below zero (the old `>= 0` check is gone). The ledger stays
+exact, and a negative balance simply cannot redeem anything until new orders
+bring it back up. The rewards page says so.
+
+### Redemption at checkout
+
+`applyRewards` (`src/lib/pricing/rewards.ts`) runs inside
+`calculateOrderTotal`'s reward slot, after the promo and before GET:
+
+- **free_item**: one unit of an eligible line free, worth at most the cap
+  (`value_cents`). By default (`covers_modifiers = false`) the cap covers the
+  size price and add-ons are charged; with `covers_modifiers` the add-ons
+  count towards the cap.
+- **free_modifier**: one unit of one priced add-on from the listed groups
+  (one shot, or one flavour's single charge), capped likewise.
+- **amount_off**: a fixed amount off the order.
+
+Eligibility is data: product and category lists (both empty = anything), and
+for add-ons the modifier groups. Item rewards go on the line where they are
+worth most (the highest-priced eligible line; ties go to the higher unit
+price, then cart order), or a line the customer picks. Several rewards never
+free the same unit twice, no line goes below zero, and together they never
+exceed the subtotal less the promo. A reward that cannot be used is refused
+with a reason and its points are not spent. The 250-point tier is an
+amount off ($12.50) rather than "a drink and a pastry": one reward row is one
+discount, and a bundle would need two lines and two caps.
+
+A reward that pays for the whole order makes it $0.00: checkout places it
+through `place_free_order` (no card), the only path to Placed besides
+`mark_order_paid`. Between $0.01 and $0.49 Stripe's minimum applies and the
+customer is asked to add a tip or an item.
+
+Receipts, the tracker, emails and the staff ticket read `order_rewards`
+(name, cost, discount, the line, the free add-on), so "Free drink: Latte,
+−$5.75" is printed from the order, not recomputed.
+
+### Member codes
+
+`profiles.member_code` is 12 random characters from Crockford's base 32 (60
+bits); it holds nothing personal and `regenerate_member_code()` retires it at
+once. `staff_lookup_member(code)` (staff and admins) forgives case, spaces,
+dashes and the look-alikes O/I/L, and returns only a first name and a
+balance. The QR (drawn with `uqr` as an inline SVG) encodes the bare code.
+
+### Expiry (off)
+
+`expire_loyalty_points()`, via `GET /api/cron/expire-points`, expires the
+oldest points first using the ledger alone: credits older than the cutoff
+minus every debit ever (a released redeem and its release cancel out). With
+the setting at 0 it does nothing, so the job can be scheduled now.
+
+### Account deletion
+
+Cancelling the open orders releases any held points (the trigger), then the
+whole ledger and every reservation are deleted with the account.
+`order_rewards` stay with the anonymised orders: they hold no personal data.
 
 ---
 
@@ -1158,8 +1295,20 @@ Known follow-ups for later phases:
 
 ## Post-launch
 
-Agreed for after launch (Decisions Log, Phases 2 and 5). v1 auth is email +
-password only, and order updates are in-app and by email only.
+Agreed for after launch (Decisions Log, Phases 2, 5 and 7). v1 auth is email +
+password only, order updates are in-app and by email only, and points are
+earned online only.
+
+### In-store scanning and POS point earning
+
+The member QR on `/rewards` and `/account` encodes an opaque code, and
+`staff_lookup_member(code)` already returns the member's first name and
+balance to staff. Still to build: a scanner on the staff screen (camera via
+`BarcodeDetector`, or a USB scanner typing into a field), crediting in-store
+purchases (a staff `earn` path keyed to a till receipt, so one purchase cannot
+be credited twice, with a daily per-member cap), redeeming at the counter, and
+a POS integration if the cafe's POS can send sales (`NEEDS_CONFIRMATION`:
+which POS). Rate-limit lookups per staff member before it ships.
 
 ### SMS order updates
 

@@ -103,7 +103,7 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `STRIPE_SECRET_KEY` | **secret** | Phase 4 | Stripe test-mode secret key |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | public | Phase 4 | Payment Element |
 | `STRIPE_WEBHOOK_SECRET` | **secret** | Phase 4 | Verifies webhook signatures |
-| `CRON_SECRET` | **secret** | Phase 4 | Guards `/api/cron/expire-orders` and `/api/cron/send-emails` (Vercel Cron sends it) |
+| `CRON_SECRET` | **secret** | Phase 4 | Guards the `/api/cron/*` jobs (Vercel Cron sends it) |
 | `RESEND_API_KEY` | **secret** | production | Set → emails go through Resend. Leave empty locally: emails go to Mailpit |
 | `EMAIL_FROM` | config | production | Sender, e.g. `Drincup Cafe <orders@your-domain>`; the domain must be verified in Resend |
 | `MAILPIT_URL` | config | no | Local Mailpit address; defaults to `http://127.0.0.1:54324` |
@@ -262,6 +262,16 @@ db:start`, `npm run db:reset`, `npm run db:seed`).
   `advance_order_status`), listen on real Realtime sockets, and read the
   receipt and cancellation emails from Mailpit, so the local stack must be
   running with Mailpit (it is by default).
+- **Concurrency tests** (`supabase/tests/*.concurrent.mjs`, run by
+  `npm run test:db`) cover what one transaction cannot: several real database
+  sessions at once. `points_race.concurrent.mjs` holds one checkout's
+  transaction open while another tries to spend the same points, then fires
+  five at once. They commit their own fixtures and delete them afterwards.
+- **Rewards tests** (`e2e/rewards.spec.ts`) give points with
+  `admin_adjust_points`, redeem in real checkouts (sandbox card, real
+  webhook), let a reserved checkout expire through the cron route, race two
+  browser sessions for the same points, refund through Stripe, and open the
+  staff ticket on a tablet-sized window.
 - **Staff dashboard tests** (`e2e/staff.spec.ts`) run on a third Playwright
   project, `tablet` (1280×800 landscape, tests tagged `@tablet`), plus a
   phone-width check on `mobile`. They open real customer and barista
@@ -358,10 +368,15 @@ On Vercel, set `CRON_SECRET` in the project's environment variables and add a
 {
   "crons": [
     { "path": "/api/cron/expire-orders", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/send-emails", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/send-emails", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/expire-points", "schedule": "0 13 * * *" }
   ]
 }
 ```
+
+`/api/cron/expire-points` (daily; 13:00 UTC is 3 AM in Honolulu) expires
+Overflow Rewards points past `loyalty.points_expire_after_months`. The
+setting is 0 (never), so it does nothing until the cafe decides otherwise.
 
 `/api/cron/send-emails` only matters for retries: emails are normally sent
 straight after the webhook or staff action that owes them. Which scheduler
@@ -429,6 +444,66 @@ Watch an order move without reloading:
 Turn off Wi-Fi briefly (or block the websocket in DevTools) to see the
 fallback: the tracker says "Reconnecting…", checks every 15 seconds, and
 catches up as soon as it reconnects or the tab is shown again.
+
+---
+
+## Overflow Rewards (trying it by hand)
+
+The rules (earn rate, stacking, rewards per order, catering, expiry) are
+settings, all awaiting the cafe's answers; see ARCHITECTURE.md, "Overflow
+Rewards", for how the ledger works.
+
+**Give the test customer points.** In Supabase Studio
+(http://127.0.0.1:54323 → SQL Editor), run:
+
+```sql
+select public.admin_adjust_points(
+  (select id from public.profiles where email = 'customer@drincup.test'),
+  300,
+  'Hand testing'
+);
+```
+
+A negative number takes points away. The reason is required, and it shows in
+the customer's activity log.
+
+1. **Rewards page.** Signed out, open `/rewards`: the programme, the three
+   tiers and "How it works" (its numbers come from the settings). Sign in as
+   `customer@drincup.test`: the balance, progress to the next tier, which
+   tiers you can afford, your member QR and the activity log (Honolulu
+   times). Home shows the balance and progress under the greeting.
+2. **Redeem.** Add a Latte and a Macadamia Nut Cookie, go to checkout, and
+   under **Use a reward** tap **Use** on *Free drink*. The totals show
+   "Free drink: Latte −$5.75", GET and the tip are worked out on what is
+   left, and "You'll earn 3 points when you pick this up." Pay with
+   `4242 4242 4242 4242` (with `stripe listen` running). The confirmation
+   and the receipt email (Mailpit, http://127.0.0.1:54324) show the reward,
+   and `/rewards` shows 150 points redeemed.
+3. **Staff ticket.** As `barista@drincup.test` on `/staff`, the latte carries
+   a magenta "REWARD · Free drink" tag (and the printed ticket says REWARD).
+   Walk it to **Picked up**: the customer's points arrive.
+4. **One discount per order.** With two lattes in the cart, apply
+   `MAHALO10`, then use a reward: the promo comes off with a message saying
+   why. Apply the code again and the reward comes off.
+5. **A free order.** A Latte alone with *Free drink* is $0.00: the card form
+   is replaced by **Place order · $0.00**.
+6. **Points held, then returned.** Use a reward and pay with the declined
+   card `4000 0000 0000 0002`. `/rewards` shows the points as held. Either
+   let the checkout expire (30 minutes, then call
+   `/api/cron/expire-orders` as under "Scheduled jobs") or, from checkout in
+   another tab, tap **Cancel that checkout and use them now**. The activity
+   log shows them returned.
+7. **Refunds.** Refund a picked-up order in the Stripe dashboard (with
+   `stripe listen` running): half the money reverses half its points
+   (rounded down); the rest reverses them all and returns any points spent
+   on a reward. If those points were already spent, the balance goes below
+   zero and rewards are paused until it is positive again.
+8. **Member code.** On `/rewards` or `/account`, **Regenerate code** →
+   **Yes, new code**: a new code and QR; the old one stops working. There is
+   no in-store scanner yet; `staff_lookup_member(code)` is ready for one and
+   returns only a first name and a balance, to signed-in staff only (so it
+   refuses a Studio session; `supabase/tests/overflow_rewards.test.sql`
+   covers it).
 
 ---
 
@@ -599,15 +674,16 @@ src/
   app/                 App Router pages, layouts, route handlers
     (auth)/            Sign-in, sign-up, forgot-password (shared layout)
     (shop)/            Customer app: header, bottom tab bar, pickup location
-      page.tsx         Home: active-order cards, favourites, order again
+      page.tsx         Home: points balance, active-order cards, favourites, order again
       menu/            Menu, /menu/[slug] full page, @modal/(.)[slug] sheet
       account/         Profile, preferences, favourites, password, delete account
       cart/ checkout/  Cart (re-validated on the server) and checkout
       orders/          History (active + past), /orders/[id] live tracker
       orders/[id]/confirmed/  Confirmation, after Stripe's redirect
-      rewards/         Placeholder until Phase 7
+      rewards/         Overflow Rewards: balance, tiers, member QR, activity, how it works
     api/webhooks/stripe/     Stripe webhook (raw body, signature checked)
     api/cron/expire-orders/  Cancels unpaid checkouts (Vercel Cron)
+    api/cron/expire-points/  Expires old points (off until the setting is turned on)
     api/cron/send-emails/    Delivers due emails from the outbox
     api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (the dashboard calls it)
     auth/callback/     Landing route for emailed confirmation / reset links
@@ -712,6 +788,15 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 - [ ] Ordering ahead while closed: a cart already built can be scheduled for the next open day at checkout, but the menu still blocks adding while closed. Allow adding too?
 - [ ] Checkout timings: unpaid checkouts expire after 30 minutes; the ASAP estimate adds 2 minutes per order in the queue; 8 orders per 15-minute slot; last slot 15 minutes before closing
 - [ ] Custom tip cap (seeded at $100 or 100% of the subtotal, whichever is lower)
+- [ ] **Overflow Rewards** (all settings or `rewards` rows, so answers are data changes):
+  - [ ] Earn rate (`loyalty.points_per_dollar`, seeded 1 point per $1, on the subtotal after discounts, before tax and tip)
+  - [ ] Tiers and costs: 50 free add-on (flavor, topping or extra shot), 150 free drink up to $7.50, 250 for $12.50 off
+  - [ ] Whether a free drink's cap covers add-ons (seeded no: size price up to the cap, add-ons charged; `rewards.covers_modifiers`)
+  - [ ] Rewards per order (`loyalty.max_rewards_per_order`, seeded 1)
+  - [ ] Promo code and reward on one order (`loyalty.allow_promo_with_reward`, seeded no)
+  - [ ] Whether catering earns points (`loyalty.catering_earns_points`, seeded no)
+  - [ ] Whether points expire (`loyalty.points_expire_after_months`, seeded 0 = never)
+  - [ ] Programme name ("Overflow Rewards", `loyalty.program_name` and `BRAND`)
 
 ---
 
@@ -723,7 +808,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 4. ✅ **Cart & checkout** — server-validated cart with edit in place, checkout with pickup slots, promos and tips, Stripe Payment + Express Checkout Elements, webhook-driven order placement, refunds, pending-order expiry
 5. ✅ **Order tracking & history** — live tracker with Ready alerts, active-order cards and tab dot, history with pagination, reorder, favourites, email outbox (receipt, cancellation/refund, opt-in ready)
 6. ✅ **Staff dashboard** — live queue with alerts and undo, tickets and printing, cancel with refund, sold out, pause with auto-resume, catering prep list
-7. ⬜ Rewards
+7. ✅ **Rewards** — points ledger with reservations, earning at pickup, refund reversals, data-driven reward tiers redeemed at checkout, rewards page with activity log, member QR, admin adjustments (data layer)
 8. ⬜ Catering, events & seasonal collections
 9. ⬜ Admin dashboard
 10. ⬜ Polish (PWA, a11y, performance)
