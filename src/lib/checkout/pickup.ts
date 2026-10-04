@@ -1,4 +1,23 @@
-
+/**
+ * Pickup times: the ASAP estimate and the 15-minute scheduled slots.
+ *
+ * Pure -- `now`, hours, closures, queue length and slot bookings are passed
+ * in -- so the rules are unit-tested at exact instants, and the same code
+ * runs when the checkout page loads, when the order is created, and when the
+ * payment webhook re-checks the order. All times are Pacific/Honolulu.
+ *
+ * Rules:
+ *   ASAP        ready = now + prep time + (minutes per queued order x queue),
+ *               rounded up to 5 minutes. Only while the location is open, and
+ *               only if that is before it closes.
+ *   Scheduled   15-minute slots, today only. The first is at least the prep
+ *               time from now; the last starts `lastSlotBufferMinutes` before
+ *               closing. If the location is closed right now, the slots are
+ *               the next open day's. Pop-ups: only inside the event window.
+ *               A slot with `maxOrdersPerSlot` orders already is full.
+ *   Paused, the global switch off, or a pop-up outside its window: no pickup
+ *   times at all -- checkout is blocked.
+ */
 import {
   getLocationStatus,
   nextOpening,
