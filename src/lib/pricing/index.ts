@@ -7,8 +7,10 @@
  */
 export * from "./constants";
 export * from "./order-total";
+export * from "./points";
 export * from "./price";
 export * from "./promo";
+export * from "./rewards";
 export * from "./rounding";
 export * from "./selection";
 export * from "./summary";

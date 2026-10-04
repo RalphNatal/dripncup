@@ -4,8 +4,8 @@
  *   1. Each line: validateSelection -> resolveSelection -> calculateLinePrice
  *      (the same functions the product sheet runs in the browser)
  *   2. subtotal  = sum of line totals
- *   3. discount  = promo, then reward (Phase 7), together never more than
- *                  the subtotal
+ *   3. discount  = promo, then rewards (applyRewards, ./rewards.ts),
+ *                  together never more than the subtotal
  *   4. taxable   = subtotal - discount
  *      tax (GET) = taxable x rate, rounded once for the whole order
  *   5. tip       = on `taxable` (post-discount, pre-tax); not taxed
@@ -18,6 +18,7 @@
  */
 import { calculateLinePrice } from "./price";
 import { evaluatePromo, type PromoEvaluation, type PromoRule } from "./promo";
+import { applyRewards, type RewardEvaluation, type RewardRequest } from "./rewards";
 import { divideRounded, TAX_RATE_SCALE, taxRateUnits } from "./rounding";
 import { resolveSelection } from "./selection";
 import { calculateTip, type TipChoice, type TipPolicy, type TipResult } from "./tip";
@@ -33,6 +34,10 @@ import type {
 import { validateSelection } from "./validate";
 
 export interface OrderLineInput {
+  /** The cart line's id, so a reward can name it. Defaults to the line's index. */
+  lineId?: string;
+  /** For reward eligibility ("any drink"). */
+  categoryId?: string | null;
   product: PricingProduct;
   groups: readonly PricingModifierGroup[];
   selection: LineSelection;
@@ -40,6 +45,8 @@ export interface OrderLineInput {
 }
 
 export interface PricedLine {
+  lineId: string;
+  categoryId: string | null;
   product: PricingProduct;
   size: PricingSize | null;
   /** The snapshot stored on order_items.modifiers. */
@@ -54,7 +61,6 @@ export interface PricedLine {
 export interface OrderBreakdown {
   subtotalCents: Cents;
   promoDiscountCents: Cents;
-  /** Phase 7 (rewards). Always 0 until then. */
   rewardDiscountCents: Cents;
   discountCents: Cents;
   taxableCents: Cents;
@@ -70,8 +76,8 @@ export interface OrderTotalInput {
   promo: PromoRule | null;
   /** This customer's uses of the promo (see evaluatePromo). */
   promoCustomerUses: number;
-  /** Phase 7: the value of a redeemed reward, before capping. */
-  rewardDiscountCents?: Cents;
+  /** Rewards to redeem, in the order the customer chose them. */
+  rewards?: readonly RewardRequest[];
   taxRate: number;
   tip: TipChoice;
   tipPolicy: TipPolicy;
@@ -85,6 +91,8 @@ export type OrderTotalResult =
       breakdown: OrderBreakdown;
       /** Null when no code was given. A failed code prices as no discount. */
       promo: PromoEvaluation | null;
+      /** One per requested reward. A reward that cannot be used prices as no discount. */
+      rewards: RewardEvaluation[];
     }
   | { ok: false; reason: "empty" }
   | { ok: false; reason: "invalid_lines"; lineErrors: { index: number; errors: SelectionError[] }[] }
@@ -107,6 +115,8 @@ export function calculateOrderTotal(input: OrderTotalInput): OrderTotalResult {
     const modifiers = resolveSelection(line.groups, line.selection.modifiers);
     const lineTotalCents = calculateLinePrice(line.product, size, modifiers, line.quantity);
     lines.push({
+      lineId: line.lineId ?? String(index),
+      categoryId: line.categoryId ?? null,
       product: line.product,
       size,
       modifiers,
@@ -123,15 +133,13 @@ export function calculateOrderTotal(input: OrderTotalInput): OrderTotalResult {
   // 2. Subtotal.
   const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
 
-  // 3. Discounts: promo first, then reward, never beyond the subtotal.
+  // 3. Discounts: promo first, then rewards, never beyond the subtotal.
   const promo = input.promo
     ? evaluatePromo(input.promo, { subtotalCents, now: input.now, customerUses: input.promoCustomerUses })
     : null;
   const promoDiscountCents = promo?.ok ? Math.min(promo.discountCents, subtotalCents) : 0;
-  const rewardDiscountCents = Math.max(
-    0,
-    Math.min(input.rewardDiscountCents ?? 0, subtotalCents - promoDiscountCents),
-  );
+  const rewards = applyRewards(lines, input.rewards ?? [], subtotalCents - promoDiscountCents);
+  const rewardDiscountCents = rewards.reduce((sum, r) => sum + (r.ok ? r.discountCents : 0), 0);
   const discountCents = promoDiscountCents + rewardDiscountCents;
 
   // 4. Tax on what is left, rounded once.
@@ -149,6 +157,7 @@ export function calculateOrderTotal(input: OrderTotalInput): OrderTotalResult {
     ok: true,
     lines,
     promo,
+    rewards,
     breakdown: {
       subtotalCents,
       promoDiscountCents,

@@ -75,7 +75,8 @@ export const SETTING_FALLBACKS = {
   tipPresets: [0, 15, 18, 20],
   defaultTipPreset: 18,
   cateringMinLeadTimeHours: 72,
-  pointsPerDollar: 2,
+  /** NEEDS_CONFIRMATION: Overflow Rewards earn rate (setting `loyalty.points_per_dollar`). */
+  pointsPerDollar: 1,
   schedulingSlotMinutes: 15,
   maxSchedulingDaysAhead: 7,
 } as const;
