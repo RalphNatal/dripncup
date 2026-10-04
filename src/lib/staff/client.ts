@@ -23,7 +23,8 @@ import type { LiveLocationState } from "./types";
 const ORDER_SELECT = `
   id, order_number, status, customer_first_name, notes, pickup_type, scheduled_for, estimated_ready_at,
   created_at, placed_at, accepted_at, preparing_at, ready_at, picked_up_at, cancelled_at, cancellation_reason,
-  order_items(id, product_id, product_name, size_name, quantity, modifiers, special_instructions, created_at)
+  order_items(id, product_id, product_name, size_name, quantity, modifiers, special_instructions, created_at),
+  order_rewards(reward_name, reward_type, order_item_id, option_name)
 `;
 
 type OrderRow = {
@@ -55,6 +56,7 @@ type OrderRow = {
         created_at: string;
       }[]
     | null;
+  order_rewards: { reward_name: string; reward_type: string; order_item_id: string | null; option_name: string | null }[] | null;
 };
 
 function toStaffOrder(row: OrderRow): StaffOrder {
@@ -87,6 +89,11 @@ function toStaffOrder(row: OrderRow): StaffOrder {
           ? (item.modifiers.filter((m) => m && typeof m === "object") as SnapshotModifier[])
           : [],
         specialInstructions: item.special_instructions?.trim() ? item.special_instructions.trim() : null,
+        rewards: (row.order_rewards ?? [])
+          .filter((reward) => reward.order_item_id === item.id)
+          .map((reward) =>
+            reward.reward_type === "free_modifier" && reward.option_name ? `${reward.reward_name}: ${reward.option_name}` : reward.reward_name,
+          ),
       })),
   };
 }

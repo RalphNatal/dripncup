@@ -12,17 +12,24 @@
  * PaymentIntent is only created when the customer taps Pay (or a wallet
  * button). One idempotency key per set of choices means a double tap, a
  * retry after a decline, or a network retry all land on the same order.
+ * Changing a choice after submitting starts a new attempt that replaces the
+ * old one (its unpaid order is cancelled and any points it held come back).
+ *
+ * Rewards: the customer picks from the quote's list; the one-discount rule
+ * (chooseDiscount) swaps a promo out for a reward or back, and says so. A
+ * reward that pays for the whole order makes it $0.00, placed without a card.
  */
 import { Elements, ExpressCheckoutElement, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { StripeError, StripeExpressCheckoutElementConfirmEvent } from "@stripe/stripe-js";
-import { CircleAlert, LoaderCircle, LockKeyhole, MapPin, ShoppingBag, TriangleAlert } from "lucide-react";
+import { CircleAlert, Gift, LoaderCircle, LockKeyhole, MapPin, ShoppingBag, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { OrderBreakdown } from "@/components/checkout/order-breakdown";
+import { OrderBreakdown, PointsNote } from "@/components/checkout/order-breakdown";
 import { PickupPicker } from "@/components/checkout/pickup-picker";
 import { PromoField } from "@/components/checkout/promo-field";
+import { RewardPicker, type RewardChoiceState } from "@/components/checkout/reward-picker";
 import { getStripe, stripeAppearance, stripeFonts } from "@/components/checkout/stripe";
 import { TipPicker, parseTipText, type TipMode } from "@/components/checkout/tip-picker";
 import { EmptyState } from "@/components/empty-state";
@@ -35,12 +42,19 @@ import type { CheckoutInput, QuoteInput } from "@/lib/checkout/schemas";
 import type { CheckoutQuote } from "@/lib/checkout/types";
 import { newClientId } from "@/lib/client-id";
 import { formatCents } from "@/lib/money";
-import type { TipChoice } from "@/lib/pricing";
+import { chooseDiscount, type DiscountPolicy, type TipChoice } from "@/lib/pricing";
+import { releaseHeldPointsAction } from "@/lib/rewards/actions";
 import { cn } from "@/lib/utils";
 
 /** Stripe's smallest USD charge; mirrors MINIMUM_CHARGE_CENTS on the server. */
 const MINIMUM_CHARGE_CENTS = 50;
 const REQUOTE_DELAY_MS = 300;
+/** Until the first quote says otherwise: the seeded one-discount rule. */
+const DEFAULT_DISCOUNT_POLICY: DiscountPolicy = { allowPromoWithReward: false, maxRewardsPerOrder: 1 };
+
+function namesOf(ids: readonly string[], names: ReadonlyMap<string, string>): string {
+  return ids.map((id) => names.get(id) ?? "your reward").join(" and ");
+}
 
 export interface CheckoutViewProps {
   publishableKey: string;
@@ -88,6 +102,11 @@ export function CheckoutView(props: CheckoutViewProps) {
   const [customTipText, setCustomTipText] = useState("");
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
+  const [rewardChoices, setRewardChoices] = useState<RewardChoiceState[]>([]);
+  const [rewardNotice, setRewardNotice] = useState<string | null>(null);
+  // The attempt this browser last submitted: its unpaid order may be holding
+  // points, which still count as the customer's for this order.
+  const [lastSubmittedKey, setLastSubmittedKey] = useState<string | null>(null);
   const [cupName, setCupName] = useState(props.defaultCupName);
   const [notes, setNotes] = useState("");
   const [nonce, setNonce] = useState(0);
@@ -104,7 +123,14 @@ export function CheckoutView(props: CheckoutViewProps) {
         : { kind: "custom", cents: customTipCents };
 
   const cartInput = lines.map(toCartInput);
-  const quoteInput: QuoteInput = { lines: cartInput, promoCode, tip: tip ?? { kind: "none" }, pickup };
+  const quoteInput: QuoteInput = {
+    lines: cartInput,
+    promoCode,
+    tip: tip ?? { kind: "none" },
+    pickup,
+    rewards: rewardChoices,
+    heldByKeys: lastSubmittedKey ? [lastSubmittedKey] : [],
+  };
   // One string for "what the quote is for": the effect below re-quotes when it changes.
   const quoteKey = `${nonce}:${JSON.stringify(quoteInput)}`;
 
@@ -146,6 +172,16 @@ export function CheckoutView(props: CheckoutViewProps) {
         }
       }
 
+      // A reward the server could not use comes off the order, with why.
+      const rejected = result.rewards?.rejected ?? [];
+      if (rejected.length > 0 && input.rewards?.length) {
+        const gone = new Set(rejected.map((r) => r.rewardId));
+        setRewardChoices((current) =>
+          current.filter((c) => !(gone.has(c.rewardId) && input.rewards!.some((r) => r.rewardId === c.rewardId))),
+        );
+        setRewardNotice(rejected.map((r) => r.message).join(" "));
+      }
+
       const changes = result.cart.lines.flatMap((line) =>
         line.issues
           .filter((issue) => issue.code === "price_changed" && issue.newPriceCents !== undefined)
@@ -167,10 +203,64 @@ export function CheckoutView(props: CheckoutViewProps) {
   // to what is being bought starts a new attempt.
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
   function buildInput(): CheckoutInput {
-    const base = { lines: cartInput, promoCode, tip: tip ?? { kind: "none" as const }, pickup: pickup!, cupName: cupName.trim(), notes: notes.trim() };
+    const base = {
+      lines: cartInput,
+      promoCode,
+      rewards: rewardChoices,
+      tip: tip ?? { kind: "none" as const },
+      pickup: pickup!,
+      cupName: cupName.trim(),
+      notes: notes.trim(),
+    };
     const fingerprint = JSON.stringify([location.id, base]);
     if (attempt.current?.fingerprint !== fingerprint) attempt.current = { fingerprint, key: newClientId() };
-    return { ...base, idempotencyKey: attempt.current.key };
+    const key = attempt.current.key;
+    const replaces = lastSubmittedKey && lastSubmittedKey !== key ? lastSubmittedKey : null;
+    setLastSubmittedKey(key);
+    return { ...base, idempotencyKey: key, replacesIdempotencyKey: replaces };
+  }
+
+  /**
+   * A quote that came back with a refused checkout. If rewards were refused
+   * (another checkout spent the points first), they come off the order and
+   * the reason stays on the page -- the payment panel it came from may be
+   * about to change, e.g. from "Place order" to a card form.
+   */
+  function serverQuote(next: CheckoutQuote, message: string) {
+    setQuoted({ key: quoteKey, quote: next });
+    const refused = new Set((next.rewards?.rejected ?? []).map((r) => r.rewardId));
+    if (refused.size > 0) {
+      setRewardChoices((current) => current.filter((c) => !refused.has(c.rewardId)));
+      setRewardNotice(message);
+    }
+  }
+
+  const policy = quoted?.quote.rewards?.policy ?? DEFAULT_DISCOUNT_POLICY;
+  const rewardNames = new Map((quoted?.quote.rewards?.options ?? []).map((o) => [o.id, o.name]));
+
+  function pickReward(rewardId: string) {
+    const next = chooseDiscount({ promoCode, rewards: rewardChoices }, { kind: "reward", reward: { rewardId, lineId: null } }, policy);
+    const notes: string[] = [];
+    if (next.removedPromo) notes.push(`We took off promo code ${next.removedPromo}: a promo code and a reward can't be used on the same order.`);
+    if (next.removedRewards.length > 0) {
+      notes.push(`${namesOf(next.removedRewards.map((r) => r.rewardId), rewardNames)} came off: only ${policy.maxRewardsPerOrder === 1 ? "one reward" : `${policy.maxRewardsPerOrder} rewards`} per order.`);
+    }
+    setPromoCode(next.promoCode);
+    setPromoMessage(null);
+    setRewardChoices([...next.rewards]);
+    setRewardNotice(notes.length ? notes.join(" ") : null);
+  }
+
+  function applyPromo(code: string) {
+    const next = chooseDiscount({ promoCode, rewards: rewardChoices }, { kind: "promo", code: code.toUpperCase() }, policy);
+    setPromoMessage(null);
+    setPromoCode(next.promoCode);
+    setRewardChoices([...next.rewards]);
+    setRewardNotice(
+      next.removedRewards.length > 0
+        ? `We took off ${namesOf(next.removedRewards.map((r) => r.rewardId), rewardNames)}: a promo code and a reward can't be used on the same order. You can switch back any time.`
+        : null,
+    );
   }
 
   if (!hydrated) {
@@ -218,9 +308,12 @@ export function CheckoutView(props: CheckoutViewProps) {
   else if (pickupError) blockedHint = pickupError;
   else if (tipError) blockedHint = tipError;
   else if (cupNameError) blockedHint = cupNameError;
-  else if (totalCents !== null && totalCents < MINIMUM_CHARGE_CENTS) blockedHint = `Card payments start at ${formatCents(MINIMUM_CHARGE_CENTS)}.`;
+  else if (totalCents !== null && totalCents > 0 && totalCents < MINIMUM_CHARGE_CENTS) {
+    blockedHint = `Card payments start at ${formatCents(MINIMUM_CHARGE_CENTS)}.${breakdown?.rewardDiscountCents ? " Add a tip or another item to pay the rest." : ""}`;
+  }
   else if (quote.problems.length > 0 && fresh) blockedHint = quote.problems[0];
   const canPay = Boolean(quote && fresh && !blockedHint && totalCents !== null);
+  const rewardsPending = rewardChoices.some((c) => !quote?.rewards?.applied.some((a) => a.rewardId === c.rewardId)) && !fresh;
 
   return (
     <div className="space-y-5">
@@ -321,10 +414,7 @@ export function CheckoutView(props: CheckoutViewProps) {
             }
             pending={promoCode !== null && !fresh ? promoCode : null}
             message={promoMessage}
-            onApply={(code) => {
-              setPromoMessage(null);
-              setPromoCode(code.toUpperCase());
-            }}
+            onApply={applyPromo}
             onRemove={() => {
               setPromoCode(null);
               setPromoMessage(null);
@@ -332,6 +422,36 @@ export function CheckoutView(props: CheckoutViewProps) {
           />
         </div>
       </Section>
+
+      {quote?.rewards && (quote.rewards.options.length > 0 || quote.rewards.balance !== 0) ? (
+        <Section title="Use a reward" icon={<Gift aria-hidden="true" />}>
+          <RewardPicker
+            rewards={quote.rewards}
+            choices={rewardChoices}
+            pending={rewardsPending}
+            notice={rewardNotice}
+            onUse={pickReward}
+            onRemove={(rewardId) => {
+              setRewardChoices((current) => current.filter((c) => c.rewardId !== rewardId));
+              setRewardNotice(null);
+            }}
+            onChooseLine={(rewardId, lineId) =>
+              setRewardChoices((current) => current.map((c) => (c.rewardId === rewardId ? { ...c, lineId } : c)))
+            }
+            onRelease={async () => {
+              const result = await releaseHeldPointsAction();
+              setRewardNotice(
+                !result.ok
+                  ? result.message
+                  : result.stillPaying > 0
+                    ? "One of those checkouts is still being paid, so its points stay with it."
+                    : "Done: those points are yours to use again.",
+              );
+              setNonce((n) => n + 1);
+            }}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Tip">
         <TipPicker
@@ -348,7 +468,14 @@ export function CheckoutView(props: CheckoutViewProps) {
       <Section title="Total">
         {breakdown ? (
           <div aria-busy={!fresh}>
-            <OrderBreakdown values={{ ...breakdown, promoCode: quote?.promo?.state === "applied" ? quote.promo.code : null }} />
+            <OrderBreakdown
+              values={{
+                ...breakdown,
+                promoCode: quote?.promo?.state === "applied" ? quote.promo.code : null,
+                rewards: quote?.rewards?.applied,
+              }}
+            />
+            {quote?.rewards ? <PointsNote points={quote.rewards.pointsToEarn} programName={quote.rewards.programName} state="upcoming" /> : null}
             {!fresh ? <p className="mt-2 text-sm text-muted-foreground">Updating…</p> : null}
           </div>
         ) : quoteError ? null : (
@@ -365,30 +492,122 @@ export function CheckoutView(props: CheckoutViewProps) {
       </Section>
 
       <Section title="Payment" icon={<LockKeyhole aria-hidden="true" />}>
-        <Elements
-          stripe={stripePromise}
-          options={{
-            mode: "payment",
-            currency: "usd",
-            // Elements needs a chargeable amount before the first quote lands.
-            amount: Math.max(totalCents ?? MINIMUM_CHARGE_CENTS, MINIMUM_CHARGE_CENTS),
-            appearance: stripeAppearance,
-            fonts: stripeFonts,
-          }}
-        >
-          <PaymentPanel
-            totalCents={totalCents}
+        {totalCents === 0 ? (
+          <FreeOrderPanel
             canPay={canPay}
             blockedHint={blockedHint}
             buildInput={buildInput}
             resetAttempt={() => {
               attempt.current = null;
             }}
-            onQuote={(next) => setQuoted({ key: quoteKey, quote: next })}
-            requote={() => setNonce((n) => n + 1)}
+            onQuote={(next, message) => serverQuote(next, message)}
           />
-        </Elements>
+        ) : (
+          <Elements
+            stripe={stripePromise}
+            options={{
+              mode: "payment",
+              currency: "usd",
+              // Elements needs a chargeable amount before the first quote lands.
+              amount: Math.max(totalCents ?? MINIMUM_CHARGE_CENTS, MINIMUM_CHARGE_CENTS),
+              appearance: stripeAppearance,
+              fonts: stripeFonts,
+            }}
+          >
+            <PaymentPanel
+              totalCents={totalCents}
+              canPay={canPay}
+              blockedHint={blockedHint}
+              buildInput={buildInput}
+              resetAttempt={() => {
+                attempt.current = null;
+              }}
+              onQuote={(next, message) => serverQuote(next, message)}
+              requote={() => setNonce((n) => n + 1)}
+            />
+          </Elements>
+        )}
       </Section>
+    </div>
+  );
+}
+
+/** A reward pays for the whole order: nothing to charge, so no card form. */
+function FreeOrderPanel({
+  canPay,
+  blockedHint,
+  buildInput,
+  resetAttempt,
+  onQuote,
+}: {
+  canPay: boolean;
+  blockedHint: string | null;
+  buildInput: () => CheckoutInput;
+  resetAttempt: () => void;
+  onQuote: (quote: CheckoutQuote, message: string) => void;
+}) {
+  const router = useRouter();
+  const setPendingOrder = useCartStore((s) => s.setPendingOrder);
+  const submitting = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function place() {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    let leaving = false;
+    try {
+      let result = await createCheckoutAction(buildInput());
+      if (!result.ok && result.code === "expired") {
+        resetAttempt();
+        result = await createCheckoutAction(buildInput());
+      }
+      if (!result.ok) {
+        if (result.code === "signed_out") {
+          leaving = true;
+          router.replace("/sign-in?next=/checkout");
+          return;
+        }
+        if (result.code === "changed") resetAttempt();
+        if (result.quote) onQuote(result.quote, result.message);
+        setError(result.message);
+        return;
+      }
+      setPendingOrder(result.orderId);
+      leaving = true;
+      router.push(`/orders/${result.orderId}/confirmed`);
+    } catch (caught) {
+      console.error("Checkout failed", caught);
+      setError("Something went wrong. Please try again.");
+    } finally {
+      if (!leaving) {
+        submitting.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-sm">Your reward covers the whole order, so there&apos;s nothing to pay.</p>
+      {error ? (
+        <p role="alert" className="mt-4 flex items-start gap-1.5 text-sm font-semibold text-destructive">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {error}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => void place()}
+        disabled={!canPay || busy}
+        className="focus-ring mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-brand-teal-deep px-5 text-base font-bold text-white hover:bg-brand-teal-deep/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+      >
+        {busy ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : null}
+        {busy ? "Placing your order…" : "Place order · $0.00"}
+      </button>
+      {blockedHint && !busy ? <p className="mt-2 text-center text-sm text-muted-foreground">{blockedHint}</p> : null}
     </div>
   );
 }
@@ -415,7 +634,7 @@ function PaymentPanel({
   blockedHint: string | null;
   buildInput: () => CheckoutInput;
   resetAttempt: () => void;
-  onQuote: (quote: CheckoutQuote) => void;
+  onQuote: (quote: CheckoutQuote, message: string) => void;
   requote: () => void;
 }) {
   const stripe = useStripe();
@@ -462,7 +681,7 @@ function PaymentPanel({
           return;
         }
         if (result.code === "changed") resetAttempt();
-        if (result.quote) onQuote(result.quote);
+        if (result.quote) onQuote(result.quote, result.message);
         fail(result.message);
         return;
       }

@@ -10,18 +10,20 @@ import { Clock, CreditCard, MapPin, Receipt, Wifi, WifiOff } from "lucide-react"
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { OrderBreakdown } from "@/components/checkout/order-breakdown";
+import { OrderBreakdown, PointsNote, RewardTag } from "@/components/checkout/order-breakdown";
 import { SaveFavoriteFromOrderItem } from "@/components/favorites/save-favorite";
 import { DirectionsLink } from "@/components/locations/directions-link";
 import { OrderTimeline } from "@/components/orders/order-timeline";
 import { ReadyAlert } from "@/components/orders/ready-alert";
 import { ReorderButton } from "@/components/orders/reorder";
 import { OrderStatusBadge } from "@/components/orders/status-badge";
+import { BRAND } from "@/lib/brand";
 import { formatCents } from "@/lib/money";
 import { ACTIVE_ORDER_STATUSES, ORDER_STATUS_DESCRIPTIONS } from "@/lib/order-status";
 import { paymentMethodLabel, type OrderDetail } from "@/lib/orders/detail";
 import { useLiveOrder } from "@/lib/orders/live";
 import { buildTimeline } from "@/lib/orders/timeline";
+import { pointsNoteState } from "@/lib/rewards/model";
 import { formatCafeDate, formatCafeDateTime, formatCafeTimeOfDay } from "@/lib/time";
 
 /** "Ready around 9:40 AM", "Pickup Fri, Oct 3 at 10:15 AM", "Picked up Oct 3, 9:52 AM". */
@@ -125,6 +127,9 @@ export function OrderTracker({ initial }: { initial: OrderDetail }) {
                     <p className="text-sm text-muted-foreground">{[item.sizeName, ...item.options].filter(Boolean).join(" · ")}</p>
                   ) : null}
                   {item.specialInstructions ? <p className="text-sm italic">“{item.specialInstructions}”</p> : null}
+                  {item.rewardNotes.map((note) => (
+                    <RewardTag key={note}>{note}</RewardTag>
+                  ))}
                 </div>
                 <p className="tabular shrink-0 font-semibold">{formatCents(item.lineTotalCents)}</p>
               </div>
@@ -138,14 +143,16 @@ export function OrderTracker({ initial }: { initial: OrderDetail }) {
             values={{
               subtotalCents: order.totals.subtotalCents,
               promoCode: order.totals.promoCode,
-              promoDiscountCents: order.totals.discountCents,
-              rewardDiscountCents: 0,
+              promoDiscountCents: order.totals.promoDiscountCents,
+              rewardDiscountCents: order.totals.rewardDiscountCents,
+              rewards: order.rewards,
               taxRate: order.totals.taxRate,
               taxCents: order.totals.taxCents,
               tipCents: order.totals.tipCents,
               totalCents: order.totals.totalCents,
             }}
           />
+          <PointsNote points={order.points.toEarn} programName={BRAND.loyaltyProgramName} state={pointsNoteState(order.status)} />
           {method ? (
             <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" data-testid="payment-method">
               <CreditCard className="size-4" aria-hidden="true" />

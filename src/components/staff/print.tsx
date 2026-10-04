@@ -124,6 +124,11 @@ function PrintedTicket({
                 – {line}
               </p>
             ))}
+            {item.rewards?.map((reward) => (
+              <p key={reward} className="print-strong">
+                REWARD: {reward}
+              </p>
+            ))}
             {item.specialInstructions ? <p className="print-note">NOTE: {item.specialInstructions}</p> : null}
             {allergens.length ? (
               <p className="print-line">ALLERGENS: {allergens.map((a) => ALLERGENS[a].label).join(", ")}</p>

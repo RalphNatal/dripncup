@@ -35,6 +35,15 @@ export const pickupChoiceSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("scheduled"), slot: z.string().min(1).max(40) }),
 ]);
 
+/** A reward to redeem, optionally on a chosen cart line. */
+export const rewardChoiceSchema = z.object({
+  rewardId: id(),
+  lineId: z.string().min(1).max(64).nullable().optional(),
+});
+
+/** One checkout attempt's idempotency key, generated in the browser. */
+const attemptKey = z.string().min(16).max(80).regex(/^[A-Za-z0-9_-]+$/);
+
 const promoCode = z
   .string()
   .trim()
@@ -48,16 +57,30 @@ export const quoteInputSchema = z.object({
   promoCode,
   tip: tipChoiceSchema,
   pickup: pickupChoiceSchema.nullable(),
+  rewards: z.array(rewardChoiceSchema).max(5).optional().default([]),
+  /**
+   * Attempts this browser already submitted. Points their unpaid orders hold
+   * count as the customer's own for this order: paying again (or replacing
+   * that attempt) gives them back first.
+   */
+  heldByKeys: z.array(attemptKey).max(3).optional().default([]),
 });
 
 export const checkoutInputSchema = quoteInputSchema.extend({
   pickup: pickupChoiceSchema,
   /** One per checkout attempt, generated in the browser. */
-  idempotencyKey: z.string().min(16).max(80).regex(/^[A-Za-z0-9_-]+$/),
+  idempotencyKey: attemptKey,
+  /**
+   * The previous attempt from this same browser, when the customer changed
+   * something after submitting it. Its unpaid order is cancelled first (and
+   * any points it held are returned), so it cannot also be paid.
+   */
+  replacesIdempotencyKey: attemptKey.nullable().optional(),
   cupName: z.string().trim().min(1, { error: "Tell us the name for your cup." }).max(30),
   notes: z.string().trim().max(200).optional().default(""),
 });
 
 export type CartLineInput = z.infer<typeof cartLineSchema>;
+export type RewardChoice = z.infer<typeof rewardChoiceSchema>;
 export type QuoteInput = z.input<typeof quoteInputSchema>;
 export type CheckoutInput = z.input<typeof checkoutInputSchema>;

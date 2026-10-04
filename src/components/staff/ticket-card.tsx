@@ -7,7 +7,7 @@
  * cannot be missed, and the one forward action is a full-width 64px button.
  * Tapping anywhere else on the card opens the detail view.
  */
-import { AlertTriangle, BellRing, CalendarClock, Clock, MessageSquareWarning, Undo2 } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarClock, Clock, Gift, MessageSquareWarning, Undo2 } from "lucide-react";
 
 import { ALLERGENS } from "@/components/menu/dietary";
 import { ORDER_STATUS_LABELS } from "@/lib/order-status";
@@ -70,6 +70,16 @@ export function TicketItems({ order, meta }: { order: StaffOrder; meta: CatalogM
                 ))}
               </ul>
             ) : null}
+            {item.rewards?.map((reward) => (
+              <p
+                key={reward}
+                data-testid="ticket-reward"
+                className="mt-1.5 ml-11 flex w-fit items-center gap-1.5 rounded-lg bg-brand-magenta-deep px-2.5 py-1 text-lg font-extrabold text-white"
+              >
+                <Gift className="size-5" aria-hidden="true" />
+                REWARD · {reward}
+              </p>
+            ))}
             {item.specialInstructions ? (
               <p
                 data-testid="special-instructions"

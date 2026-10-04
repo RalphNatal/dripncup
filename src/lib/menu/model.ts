@@ -98,6 +98,8 @@ export interface ProductDetail {
     allergens: Allergen[];
     dietaryTags: DietaryTag[];
     calories: number | null;
+    /** For reward eligibility ("any drink"). */
+    categoryId: string | null;
     categoryName: string | null;
   };
   groups: DetailGroup[];
@@ -313,6 +315,7 @@ export function buildProductDetail(catalog: CatalogData, slug: string, ctx: Menu
       allergens: product.allergens,
       dietaryTags: product.dietary_tags,
       calories: product.calories,
+      categoryId: product.category_id,
       categoryName: catalog.categories.find((c) => c.id === product.category_id)?.name ?? null,
     },
     groups,

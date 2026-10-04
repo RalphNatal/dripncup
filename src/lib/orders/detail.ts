@@ -9,7 +9,8 @@
  * they can never disagree about what an order says.
  */
 import type { OrderStatus } from "@/lib/order-status";
-import { describeModifier } from "@/lib/pricing";
+import { describeModifier, type RewardType } from "@/lib/pricing";
+import { rewardLabel, type OrderRewardView } from "@/lib/rewards/model";
 
 /** The `order_items.modifiers` snapshot entry, as checkout writes it. */
 export interface SnapshotModifier {
@@ -36,6 +37,14 @@ export interface OrderDetailItem {
   unitPriceCents: number;
   lineTotalCents: number;
   specialInstructions: string | null;
+  /** "Free drink", "Free add-on: Vanilla": rewards applied to this line. */
+  rewardNotes: string[];
+}
+
+/** A reward the order used, as receipts show it. */
+export interface OrderDetailReward extends OrderRewardView {
+  /** "Free drink: Latte" */
+  label: string;
 }
 
 export interface PaymentMethod {
@@ -77,11 +86,19 @@ export interface OrderDetail {
   totals: {
     subtotalCents: number;
     discountCents: number;
+    promoDiscountCents: number;
+    rewardDiscountCents: number;
     promoCode: string | null;
     taxCents: number;
     taxRate: number;
     tipCents: number;
     totalCents: number;
+  };
+  rewards: OrderDetailReward[];
+  points: {
+    /** What the order earns at pickup (worked out at checkout). */
+    toEarn: number;
+    redeemed: number;
   };
   payment: {
     status: string;
@@ -96,13 +113,14 @@ export interface OrderDetail {
 export const ORDER_DETAIL_SELECT = `
   id, user_id, order_number, status, cancellation_reason, pickup_type, scheduled_for, estimated_ready_at,
   created_at, placed_at, accepted_at, preparing_at, ready_at, picked_up_at, cancelled_at,
-  customer_first_name, subtotal_cents, discount_cents, promo_code, tax_cents, tax_rate, tip_cents, total_cents,
-  location_id,
+  customer_first_name, subtotal_cents, discount_cents, reward_discount_cents, promo_code, tax_cents, tax_rate, tip_cents,
+  total_cents, points_earned, points_redeemed, location_id,
   locations(id, name, address_line1, address_line2, city, state, postal_code, pickup_instructions),
   order_items(id, product_id, product_size_id, product_name, size_name, modifiers, quantity, unit_price_cents,
               line_total_cents, special_instructions, created_at),
   payments(status, amount_cents, failure_message, refunded_cents, method_brand, method_last4, method_wallet, created_at),
-  order_status_history(to_status, created_at)
+  order_status_history(to_status, created_at),
+  order_rewards(id, reward_name, reward_type, points_cost, discount_cents, order_item_id, option_name, created_at)
 `;
 
 /** The row ORDER_DETAIL_SELECT returns. Loose on purpose: three different clients read it. */
@@ -125,11 +143,15 @@ export interface OrderDetailRow {
   customer_first_name: string | null;
   subtotal_cents: number;
   discount_cents: number;
+  /** Optional so rows from before rewards (and test fixtures) still map. */
+  reward_discount_cents?: number;
   promo_code: string | null;
   tax_cents: number;
   tax_rate: number | string;
   tip_cents: number;
   total_cents: number;
+  points_earned?: number;
+  points_redeemed?: number;
   location_id: string;
   locations: {
     id: string;
@@ -169,6 +191,18 @@ export interface OrderDetailRow {
       }[]
     | null;
   order_status_history: { to_status: OrderStatus; created_at: string }[] | null;
+  order_rewards?:
+    | {
+        id: string;
+        reward_name: string;
+        reward_type: RewardType;
+        points_cost: number;
+        discount_cents: number;
+        order_item_id: string | null;
+        option_name: string | null;
+        created_at: string;
+      }[]
+    | null;
 }
 
 function snapshotModifiers(value: unknown): SnapshotModifier[] {
@@ -202,6 +236,22 @@ export function toOrderDetail(row: OrderDetailRow): OrderDetail {
     : [];
   const payment = latestFirst(row.payments)[0];
   const refundedAt = latestFirst(row.order_status_history).find((h) => h.to_status === "refunded")?.created_at ?? null;
+  const itemNames = new Map((row.order_items ?? []).map((item) => [item.id, item.product_name]));
+  const rewards: OrderDetailReward[] = [...(row.order_rewards ?? [])]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+    .map((reward) => {
+      const view: OrderRewardView = {
+        name: reward.reward_name,
+        type: reward.reward_type,
+        pointsCost: reward.points_cost,
+        discountCents: reward.discount_cents,
+        orderItemId: reward.order_item_id,
+        productName: reward.order_item_id ? (itemNames.get(reward.order_item_id) ?? null) : null,
+        optionName: reward.option_name,
+      };
+      return { ...view, label: rewardLabel(view) };
+    });
+  const rewardDiscountCents = row.reward_discount_cents ?? 0;
 
   return {
     id: row.id,
@@ -246,17 +296,24 @@ export function toOrderDetail(row: OrderDetailRow): OrderDetail {
           unitPriceCents: item.unit_price_cents,
           lineTotalCents: item.line_total_cents,
           specialInstructions: item.special_instructions,
+          rewardNotes: rewards
+            .filter((reward) => reward.orderItemId === item.id)
+            .map((reward) => (reward.type === "free_modifier" && reward.optionName ? `${reward.name}: ${reward.optionName}` : reward.name)),
         };
       }),
     totals: {
       subtotalCents: row.subtotal_cents,
       discountCents: row.discount_cents,
+      promoDiscountCents: row.discount_cents - rewardDiscountCents,
+      rewardDiscountCents,
       promoCode: row.promo_code,
       taxCents: row.tax_cents,
       taxRate: Number(row.tax_rate),
       tipCents: row.tip_cents,
       totalCents: row.total_cents,
     },
+    rewards,
+    points: { toEarn: row.points_earned ?? 0, redeemed: row.points_redeemed ?? 0 },
     payment: payment
       ? {
           status: payment.status,

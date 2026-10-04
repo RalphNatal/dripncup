@@ -115,7 +115,15 @@ export async function evaluateCart(
 
     checked.push({ id: line.id, issues, current });
     if (issues.every((i) => !i.blocking)) {
-      orderLines.push({ lineId: line.id, detail, product: detail.product, groups: detail.groups, selection, quantity: line.quantity });
+      orderLines.push({
+        lineId: line.id,
+        categoryId: detail.product.categoryId,
+        detail,
+        product: detail.product,
+        groups: detail.groups,
+        selection,
+        quantity: line.quantity,
+      });
     }
   }
 

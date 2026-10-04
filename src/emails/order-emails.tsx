@@ -1,15 +1,3 @@
-/**
- * Customer order emails, built with React Email: the receipt, cancelled /
- * refunded, and (opt-in) ready.
- *
- * Templates only lay out what they are given. Every value arrives already
- * formatted (see src/lib/email/order-email.ts), so the HTML and the
- * plain-text version below can never disagree.
- *
- * Colours: the deep teal and magenta from the Decisions Log, which pass WCAG
- * AA with white text; body text is near-black on white. The logo is a text
- * wordmark until the cafe supplies artwork (NEEDS_CONFIRMATION).
- */
 import { Body, Button, Column, Container, Head, Hr, Html, Link, Preview, Row, Section, Text } from "react-email";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -29,6 +17,8 @@ export interface EmailLine {
   /** "Large · Oat milk · Vanilla (2 pumps)" */
   details: string;
   specialInstructions: string | null;
+  /** "Free drink": rewards applied to this line. */
+  rewardNotes: string[];
   /** "$11.00" */
   total: string;
 }
@@ -52,6 +42,8 @@ export interface OrderEmailData {
   breakdown: EmailBreakdownRow[];
   /** "Visa •••• 4242" */
   paymentMethod: string | null;
+  /** "You'll earn 12 Overflow Rewards points when you pick this up." */
+  pointsLine: string | null;
   trackUrl: string;
 }
 
@@ -139,6 +131,11 @@ function Items({ data }: { data: OrderEmailData }) {
             </Text>
             {item.details ? <Text style={{ ...muted, margin: "2px 0 0" }}>{item.details}</Text> : null}
             {item.specialInstructions ? <Text style={{ ...muted, fontStyle: "italic", margin: "2px 0 0" }}>“{item.specialInstructions}”</Text> : null}
+            {item.rewardNotes.map((note) => (
+              <Text key={note} style={{ ...muted, color: MAGENTA_DEEP, fontWeight: 700, margin: "2px 0 0" }}>
+                Reward: {note}
+              </Text>
+            ))}
           </Column>
           <Column align="right" style={{ padding: "10px 0", verticalAlign: "top", width: "90px" }}>
             <Text style={{ ...text, fontWeight: 700, margin: 0 }}>{item.total}</Text>
@@ -162,6 +159,15 @@ function Items({ data }: { data: OrderEmailData }) {
   );
 }
 
+function PointsLine({ data }: { data: OrderEmailData }) {
+  if (!data.pointsLine) return null;
+  return (
+    <Section style={{ backgroundColor: "#fdf0f6", borderRadius: "12px", margin: "16px 0 0", padding: "12px 16px" }}>
+      <Text style={{ ...text, margin: 0 }}>{data.pointsLine}</Text>
+    </Section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The emails
 // ---------------------------------------------------------------------------
@@ -175,6 +181,7 @@ export function OrderReceiptEmail({ data }: { data: OrderEmailData }) {
       <OrderNumber value={data.orderNumber} />
       <Pickup data={data} />
       <Items data={data} />
+      <PointsLine data={data} />
       <Hr style={{ borderColor: LINE, margin: "24px 0" }} />
       <Text style={text}>We&apos;ll update your order page as the team works on it, and alert you when it&apos;s ready.</Text>
       <TrackButton href={data.trackUrl} />
@@ -246,6 +253,7 @@ function textItems(data: OrderEmailData): string {
     `${item.quantity}x ${item.name}  ${item.total}`,
     ...(item.details ? [`   ${item.details}`] : []),
     ...(item.specialInstructions ? [`   "${item.specialInstructions}"`] : []),
+    ...item.rewardNotes.map((note) => `   Reward: ${note}`),
   ]);
   const totals = data.breakdown.map((row) => `${row.label}: ${row.amount}`);
   return [...lines, "", ...totals, ...(data.paymentMethod ? [`Paid with ${data.paymentMethod}`] : [])].join("\n");
@@ -273,6 +281,7 @@ export function orderReceiptText(data: OrderEmailData): string {
     textPickup(data),
     "",
     textItems(data),
+    ...(data.pointsLine ? ["", data.pointsLine] : []),
     "",
     `Track your order: ${data.trackUrl}`,
     "",

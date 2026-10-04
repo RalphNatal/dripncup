@@ -18,6 +18,8 @@ export interface StaffOrderItem {
   quantity: number;
   modifiers: SnapshotModifier[];
   specialInstructions: string | null;
+  /** Rewards on this line ("Free drink", "Free add-on: Vanilla"), so the barista knows it is on the house. */
+  rewards?: string[];
 }
 
 /** One order as the staff screen holds it. */

@@ -24,6 +24,7 @@ import { clientEnv } from "@/lib/env";
 import { formatCents, formatTaxRate } from "@/lib/money";
 import { ORDER_DETAIL_SELECT, paymentMethodLabel, toOrderDetail, type OrderDetail, type OrderDetailRow } from "@/lib/orders/detail";
 import { plainCancellationReason, refundSentence } from "@/lib/orders/timeline";
+import { formatPoints, pointsNoteState } from "@/lib/rewards/model";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCafeDate, formatCafeTimeOfDay } from "@/lib/time";
 
@@ -41,11 +42,14 @@ function pickupLine(order: OrderDetail): string | null {
   return order.estimatedReadyAt ? `Ready around ${formatCafeTimeOfDay(new Date(order.estimatedReadyAt))}` : null;
 }
 
-/** The receipt rows, in calculateOrderTotal's order. */
-export function breakdownRows(totals: OrderDetail["totals"]): EmailBreakdownRow[] {
+/** The receipt rows, in calculateOrderTotal's order: promo, then each reward ("Free drink: Latte"). */
+export function breakdownRows(totals: OrderDetail["totals"], rewards: OrderDetail["rewards"] = []): EmailBreakdownRow[] {
   const rows: EmailBreakdownRow[] = [{ label: "Subtotal", amount: formatCents(totals.subtotalCents) }];
-  if (totals.discountCents > 0) {
-    rows.push({ label: totals.promoCode ? `Promo (${totals.promoCode})` : "Discount", amount: `−${formatCents(totals.discountCents)}` });
+  if (totals.promoDiscountCents > 0) {
+    rows.push({ label: totals.promoCode ? `Promo (${totals.promoCode})` : "Discount", amount: `−${formatCents(totals.promoDiscountCents)}` });
+  }
+  for (const reward of rewards) {
+    rows.push({ label: reward.label, amount: `−${formatCents(reward.discountCents)}` });
   }
   rows.push({ label: `Tax (GET ${formatTaxRate(totals.taxRate)})`, amount: formatCents(totals.taxCents) });
   rows.push({ label: "Tip", amount: formatCents(totals.tipCents) });
@@ -66,10 +70,17 @@ export function emailDataOf(order: OrderDetail): OrderEmailData {
       name: item.name,
       details: [item.sizeName, ...item.options].filter(Boolean).join(" · "),
       specialInstructions: item.specialInstructions,
+      rewardNotes: item.rewardNotes,
       total: formatCents(item.lineTotalCents),
     })),
-    breakdown: breakdownRows(order.totals),
-    paymentMethod: paymentMethodLabel(order.payment?.method ?? null),
+    breakdown: breakdownRows(order.totals, order.rewards),
+    paymentMethod:
+      paymentMethodLabel(order.payment?.method ?? null) ??
+      (order.totals.totalCents === 0 && order.rewards.length > 0 ? `${BRAND.loyaltyProgramName} points` : null),
+    pointsLine:
+      order.points.toEarn > 0 && pointsNoteState(order.status) === "upcoming"
+        ? `You'll earn ${formatPoints(order.points.toEarn)} with ${BRAND.loyaltyProgramName} when you pick this up.`
+        : null,
     trackUrl: new URL(`/orders/${order.id}`, clientEnv.NEXT_PUBLIC_SITE_URL).toString(),
   };
 }

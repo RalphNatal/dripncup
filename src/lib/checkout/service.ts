@@ -4,15 +4,18 @@ import "server-only";
  * Checkout, server side. Two entry points share one preparation step:
  *
  *   quote()           what the checkout page shows: re-validated lines,
- *                     pickup options, promo result, the full breakdown
+ *                     pickup options, promo and reward results, the full
+ *                     breakdown and the points the order earns
  *   createCheckout()  the same checks again, then the pending order, its
- *                     snapshot lines and the PaymentIntent
+ *                     snapshot lines, rewards and points reservation, and
+ *                     the PaymentIntent (or, for a $0.00 order a reward paid
+ *                     for in full, the order placed straight away)
  *
  * Nothing the browser sends is trusted: the location comes from the cookie,
- * prices from the live catalogue, the promo from the database, and the total
- * from calculateOrderTotal.
+ * prices from the live catalogue, the promo and rewards from the database,
+ * the points balance from the ledger, and the total from calculateOrderTotal.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { evaluateCart, type EvaluatedCart } from "@/lib/checkout/cart-check";
@@ -26,23 +29,39 @@ import {
   type QuoteInput,
 } from "@/lib/checkout/schemas";
 import { getCheckoutSettings, type CheckoutSettings } from "@/lib/checkout/settings";
-import type { CartCheck, CartLocation, CheckoutQuote, CreateCheckoutResult, PromoStatus } from "@/lib/checkout/types";
+import type { CartCheck, CartLocation, CheckoutQuote, CheckoutRewards, CreateCheckoutResult, PromoStatus } from "@/lib/checkout/types";
 import { getStorefront, type LocationView } from "@/lib/locations/storefront";
 import { formatCents } from "@/lib/money";
+import { cancelUnpaidCheckout } from "@/lib/orders/expiry";
 import { paymentProvider } from "@/lib/payments";
 import {
   PROMO_NOT_APPLICABLE_MESSAGE,
   calculateOrderTotal,
+  pointsEligibleCents,
+  pointsForOrder,
   selectionKey,
   type OrderTotalResult,
   type PromoRule,
   type TipResult,
 } from "@/lib/pricing";
 import { LIMITS, hasRoomUserAndIp, hitUserAndIp } from "@/lib/rate-limit";
+import { appliedRewards, resolveRewardChoices, rewardOptions } from "@/lib/rewards/checkout";
+import type { RewardTier } from "@/lib/rewards/model";
+import { getHeldPoints, getRewardsSettings, getRewardTiers } from "@/lib/rewards/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Stripe's smallest USD charge. */
 export const MINIMUM_CHARGE_CENTS = 50;
+
+/** Why an earlier attempt from the same browser was cancelled. */
+export const REPLACED_REASON = "Replaced by a newer checkout before it was paid.";
+
+function minimumChargeMessage(rewardApplied: boolean): string {
+  const minimum = formatCents(MINIMUM_CHARGE_CENTS);
+  return rewardApplied
+    ? `Card payments start at ${minimum}. Add a tip or another item to pay the rest.`
+    : `Card payments start at ${minimum}.`;
+}
 
 // ---------------------------------------------------------------------------
 // The cart page (guests too): lines and location only.
@@ -95,6 +114,9 @@ interface Prepared {
   promoRule: PromoRule | null;
   promo: PromoStatus | null;
   totals: OrderTotalResult | null;
+  /** The rewards that were priced, aligned with `totals.rewards`. */
+  rewardTiers: RewardTier[];
+  rewards: CheckoutRewards;
   tipError: string | null;
   problems: string[];
 }
@@ -138,14 +160,36 @@ async function loadPromo(code: string, userId: string, idempotencyKey?: string) 
   return { rule, uses: Number(row.user_uses ?? 0) };
 }
 
-async function prepare(
-  input: { lines: CartLineInput[]; promoCode?: string | null; tip: CheckoutInput["tip"]; pickup: CheckoutInput["pickup"] | null },
-  userId: string,
-  idempotencyKey?: string,
-): Promise<Prepared> {
+/** The ledger balance, read fresh (a replaced checkout may just have returned points). */
+async function loadBalance(userId: string): Promise<number> {
+  const { data, error } = await createAdminClient().from("profiles").select("loyalty_points").eq("id", userId).single();
+  if (error) throw new Error(`Checkout: could not read the points balance (${error.message})`);
+  return data.loyalty_points;
+}
+
+interface PrepareInput {
+  lines: CartLineInput[];
+  promoCode?: string | null;
+  tip: CheckoutInput["tip"];
+  pickup: CheckoutInput["pickup"] | null;
+  rewards?: { rewardId: string; lineId?: string | null }[];
+  heldByKeys?: string[];
+}
+
+async function prepare(input: PrepareInput, userId: string, idempotencyKey?: string): Promise<Prepared> {
   const now = new Date();
   const view = await selectedLocation();
-  const [snapshot, settings] = await Promise.all([loadLocationSnapshot(view.id, now), getCheckoutSettings()]);
+  const ownKeys = [...(input.heldByKeys ?? []), ...(idempotencyKey ? [idempotencyKey] : [])];
+  const [snapshot, settings, rewardsSettings, tiers, balance, held] = await Promise.all([
+    loadLocationSnapshot(view.id, now),
+    getCheckoutSettings(),
+    getRewardsSettings(),
+    getRewardTiers(),
+    loadBalance(userId),
+    getHeldPoints(userId, ownKeys),
+  ]);
+  // Points this browser's own unpaid attempt holds are the customer's to use here.
+  const spendable = balance + held.ownPoints;
 
   const cart = await evaluateCart(input.lines, view, now);
   const problems: string[] = [];
@@ -185,12 +229,20 @@ async function prepare(
     }
   }
 
+  const choices = resolveRewardChoices(input.rewards ?? [], tiers, {
+    spendable,
+    balance,
+    hasPromo: Boolean(code),
+    policy: rewardsSettings.discount,
+  });
+
   const totals =
     cart.orderLines.length > 0
       ? calculateOrderTotal({
           lines: cart.orderLines,
           promo: promoRule,
           promoCustomerUses: promoUses,
+          rewards: choices.requests,
           taxRate: settings.taxRate,
           tip: input.tip,
           tipPolicy: settings.tipPolicy,
@@ -226,6 +278,42 @@ async function prepare(
   if (tipError) problems.push(tipError);
   if (promo && promo.state !== "applied" && promo.message) problems.push(promo.message);
 
+  // Rewards: what applied, what could not (each a problem, like a failed
+  // code, so it never silently drops off), and the list to choose from.
+  const verdicts = totals?.ok ? appliedRewards(totals.rewards, choices.tiers) : { applied: [], rejected: [] };
+  const rejected = [...choices.rejected, ...verdicts.rejected];
+  if (choices.blocked) problems.push(choices.blocked);
+  for (const rejection of rejected) problems.push(rejection.message);
+
+  const lineLabels = new Map(
+    cart.lines.flatMap((line) =>
+      line.current ? [[line.id, [line.current.productName, line.current.sizeName].filter(Boolean).join(" · ")] as const] : [],
+    ),
+  );
+  const promoDiscountCents = totals?.ok ? totals.breakdown.promoDiscountCents : 0;
+  const rewards: CheckoutRewards = {
+    programName: rewardsSettings.programName,
+    balance,
+    heldPoints: held.points,
+    policy: rewardsSettings.discount,
+    applied: verdicts.applied,
+    rejected,
+    options: rewardOptions({
+      tiers,
+      lines: totals?.ok ? totals.lines : [],
+      lineLabels,
+      applied: verdicts.applied,
+      spendable,
+      balance,
+      heldPoints: held.points,
+      policy: rewardsSettings.discount,
+      amountOffRoomCents: totals?.ok
+        ? totals.breakdown.subtotalCents - (rewardsSettings.discount.allowPromoWithReward ? promoDiscountCents : 0)
+        : 0,
+    }),
+    pointsToEarn: totals?.ok ? pointsForOrder(pointsEligibleCents(totals.breakdown), rewardsSettings.earn) : 0,
+  };
+
   return {
     now,
     view,
@@ -238,6 +326,8 @@ async function prepare(
     promoRule: promo?.state === "applied" ? promoRule : null,
     promo,
     totals,
+    rewardTiers: choices.tiers,
+    rewards,
     tipError,
     problems,
   };
@@ -260,6 +350,7 @@ function toQuote(prepared: Prepared): CheckoutQuote {
         : null,
     promo: prepared.promo,
     breakdown: prepared.totals?.ok ? prepared.totals.breakdown : null,
+    rewards: prepared.rewards,
     tipError: prepared.tipError,
     problems: prepared.problems,
   };
@@ -282,6 +373,7 @@ function fingerprint(input: ReturnType<typeof checkoutInputSchema.parse>, locati
     locationId,
     lines: input.lines.map((l) => [l.productId, l.sizeId, selectionKey(l.selection), l.specialInstructions.trim(), l.quantity]),
     promo: input.promoCode ?? null,
+    rewards: input.rewards.map((r) => [r.rewardId, r.lineId ?? null]),
     tip: input.tip,
     pickup: input.pickup,
     cupName: input.cupName,
@@ -299,8 +391,24 @@ type OrderForPayment = {
   idempotency_key: string;
 };
 
+/**
+ * A $0.00 order -- a reward paid for all of it -- has nothing to wait for:
+ * it is placed now, which also turns its points reservation into a
+ * redemption. Everything checkout checks has just been checked.
+ */
+async function placeFreeOrder(orderId: string): Promise<CreateCheckoutResult> {
+  const { data: outcome, error } = await createAdminClient().rpc("place_free_order", { p_order_id: orderId });
+  if (error) {
+    console.error(`Order ${orderId}: could not place the free order`, error);
+    return { ok: false, code: "invalid", message: "We couldn't place your order. Please try again." };
+  }
+  if (outcome === "placed" || outcome === "already_placed") return { ok: true, orderId, alreadyPaid: true };
+  return { ok: false, code: "expired", message: "This checkout was cancelled. Please try again." };
+}
+
 /** Returns the order's PaymentIntent client secret, creating the intent once. */
 async function ensurePayment(order: OrderForPayment): Promise<CreateCheckoutResult> {
+  if (order.total_cents === 0) return placeFreeOrder(order.id);
   const db = createAdminClient();
   const provider = paymentProvider();
 
@@ -393,6 +501,27 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
     return ensurePayment(existing);
   }
 
+  // The customer changed something after submitting an earlier attempt in
+  // this browser: that unpaid order goes first, so it cannot be paid as well,
+  // and any points it was holding come back for this one.
+  if (input.replacesIdempotencyKey && input.replacesIdempotencyKey !== input.idempotencyKey) {
+    const { data: replaced } = await db
+      .from("orders")
+      .select("id, user_id, status")
+      .eq("idempotency_key", input.replacesIdempotencyKey)
+      .maybeSingle();
+    if (replaced && replaced.user_id === profile.id && replaced.status === "pending_payment") {
+      const outcome = await cancelUnpaidCheckout(replaced.id, REPLACED_REASON);
+      if (outcome === "money_on_its_way") {
+        return {
+          ok: false,
+          code: "invalid",
+          message: "Your earlier payment is still going through. Check Orders before paying again.",
+        };
+      }
+    }
+  }
+
   const prepared = await prepare(input, profile.id, input.idempotencyKey);
   const totals = prepared.totals;
   if (prepared.problems.length > 0 || !prepared.pickup || !totals?.ok || !prepared.location) {
@@ -403,16 +532,21 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
       quote: toQuote(prepared),
     };
   }
-  if (totals.breakdown.totalCents < MINIMUM_CHARGE_CENTS) {
+  // $0.00 (a reward covered everything) needs no card; anything else must
+  // reach the card minimum.
+  if (totals.breakdown.totalCents > 0 && totals.breakdown.totalCents < MINIMUM_CHARGE_CENTS) {
     return {
       ok: false,
       code: "minimum_charge",
-      message: `Card payments start at ${formatCents(MINIMUM_CHARGE_CENTS)}.`,
+      message: minimumChargeMessage(totals.breakdown.rewardDiscountCents > 0),
       quote: toQuote(prepared),
     };
   }
 
   const { breakdown } = totals;
+  // Line ids are chosen here so each reward can name the line it went on.
+  const itemIds = new Map(totals.lines.map((line) => [line.lineId, randomUUID()]));
+  const redeemed = totals.rewards.flatMap((evaluation, index) => (evaluation.ok ? [{ evaluation, tier: prepared.rewardTiers[index] }] : []));
   const { data: created, error } = await db.rpc("create_checkout_order", {
     p_order: {
       user_id: profile.id,
@@ -429,6 +563,9 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
       total_cents: breakdown.totalCents,
       promo_id: prepared.promoRule?.id ?? null,
       promo_code: prepared.promoRule?.code ?? null,
+      reward_discount_cents: breakdown.rewardDiscountCents,
+      points_earned: prepared.rewards.pointsToEarn,
+      points_redeemed: redeemed.reduce((sum, r) => sum + r.tier.pointsCost, 0),
       customer_first_name: input.cupName,
       customer_phone: profile.phone,
       customer_email: profile.email,
@@ -437,6 +574,7 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
       checkout_fingerprint: print,
     },
     p_items: totals.lines.map((line) => ({
+      id: itemIds.get(line.lineId),
       product_id: line.product.id,
       product_size_id: line.size?.id ?? null,
       product_name: line.product.name,
@@ -457,7 +595,27 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
       line_total_cents: line.lineTotalCents,
       special_instructions: line.specialInstructions,
     })),
+    p_rewards: redeemed.map(({ evaluation, tier }) => ({
+      reward_id: tier.id,
+      reward_name: tier.name,
+      reward_type: tier.type,
+      points_cost: tier.pointsCost,
+      discount_cents: evaluation.discountCents,
+      order_item_id: evaluation.lineId ? (itemIds.get(evaluation.lineId) ?? null) : null,
+      option_name: evaluation.optionName,
+    })),
   });
+
+  // Another checkout spent the points between the quote and now (the
+  // database checks under a lock, so only one of them can win).
+  if (error?.code === "DC004") {
+    return {
+      ok: false,
+      code: "invalid",
+      message: "You don't have enough points for that reward any more.",
+      quote: toQuote(await prepare(input, profile.id, input.idempotencyKey)),
+    };
+  }
 
   const orderId = created?.[0]?.order_id;
   if (error || !orderId) {
