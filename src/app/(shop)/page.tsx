@@ -6,25 +6,27 @@ import { Swirl } from "@/components/brand/logo";
 import { FavoritesRow } from "@/components/favorites/favorites-list";
 import { StatusDot } from "@/components/locations/status-dot";
 import { ActiveOrderCards, PastOrderRow } from "@/components/orders/order-lists";
+import { RewardsSummary } from "@/components/rewards/rewards-summary";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { BRAND } from "@/lib/brand";
 import { listFavorites } from "@/lib/favorites/queries";
 import { getStorefront } from "@/lib/locations/storefront";
 import { listActiveOrders, listPastOrders } from "@/lib/orders/queries";
+import { getMyRewards } from "@/lib/rewards/queries";
 import { firstParam, type SearchParams } from "@/lib/search-params";
 
 /**
- * Home tab: greeting, live cards for orders on their way, the customer's
- * favourites, "Order again" from recent orders, and the pickup location.
- * Rewards and upcoming pop-ups arrive in Phases 7 and 8.
+ * Home tab: greeting with the Overflow Rewards balance, live cards for
+ * orders on their way, the customer's favourites, "Order again" from recent
+ * orders, and the pickup location. Upcoming pop-ups arrive in Phase 8.
  */
 export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
   const accountDeleted = firstParam((await searchParams).account) === "deleted";
   const [{ selected }, profile] = await Promise.all([getStorefront(), getCurrentProfile()]);
   const greeting = profile?.first_name ? `Aloha, ${profile.first_name}!` : "Aloha!";
-  const [active, recent, favorites] = profile
-    ? await Promise.all([listActiveOrders(), listPastOrders(null, 3), listFavorites()])
-    : [[], null, null];
+  const [active, recent, favorites, rewards] = profile
+    ? await Promise.all([listActiveOrders(), listPastOrders(null, 3), listFavorites(), getMyRewards()])
+    : [[], null, null, null];
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -42,6 +44,32 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
           Start an order
           <ArrowRight className="size-5" aria-hidden="true" />
         </Link>
+
+        {rewards ? (
+          <Link
+            href="/rewards"
+            className="focus-ring mt-6 block rounded-3xl border border-brand-pink/60 bg-brand-pink-soft/90 p-4 hover:bg-brand-pink-soft"
+            data-testid="home-rewards"
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-brand-magenta-deep">
+              <Gift className="size-4" aria-hidden="true" />
+              {rewards.settings.programName}
+            </p>
+            <div className="mt-1">
+              <RewardsSummary balance={rewards.balance} progress={rewards.progress} compact />
+            </div>
+          </Link>
+        ) : (
+          <p className="mt-6 flex items-center gap-2 text-sm" data-testid="home-rewards">
+            <Gift className="size-4 text-brand-magenta-deep" aria-hidden="true" />
+            <span>
+              <Link href="/sign-up" className="focus-ring rounded font-semibold text-brand-magenta-deep underline underline-offset-2">
+                Join {BRAND.loyaltyProgramName}
+              </Link>{" "}
+              and earn points on every order.
+            </span>
+          </p>
+        )}
       </section>
 
       {profile ? <ActiveOrderCards userId={profile.id} initial={active} /> : null}
@@ -82,16 +110,6 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
           </p>
         </section>
       ) : null}
-
-      <section aria-labelledby="home-rewards" className="rounded-3xl border border-brand-pink/60 bg-brand-pink-soft p-5">
-        <h2 id="home-rewards" className="flex items-center gap-2 text-lg font-bold">
-          <Gift className="size-5 text-brand-magenta-deep" aria-hidden="true" />
-          {BRAND.loyaltyProgramName}
-        </h2>
-        <p className="mt-1 text-sm text-foreground/80">
-          Earn points on every order and watch your cup overflow. Coming soon.
-        </p>
-      </section>
     </div>
   );
 }

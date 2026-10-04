@@ -1,4 +1,4 @@
-import { ChevronRight, Heart, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
+import { ChevronRight, Gift, Heart, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -6,10 +6,13 @@ import type { ReactNode } from "react";
 import { ProfileForm } from "@/components/account/profile-form";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { PageShell } from "@/components/page-shell";
+import { MemberCard } from "@/components/rewards/member-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/dal";
 import { ROLE_LABELS } from "@/lib/auth/roles";
+import { BRAND } from "@/lib/brand";
+import { formatPoints } from "@/lib/rewards/model";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -60,6 +63,9 @@ export default async function AccountPage() {
             Admin dashboard
           </LinkRow>
         ) : null}
+        <LinkRow href="/rewards" icon={<Gift aria-hidden="true" />}>
+          {BRAND.loyaltyProgramName} · <span className="tabular">{formatPoints(profile.loyalty_points)}</span>
+        </LinkRow>
         <LinkRow href="/account/favorites" icon={<Heart aria-hidden="true" />}>
           Favorites
         </LinkRow>
@@ -67,6 +73,10 @@ export default async function AccountPage() {
           Change password
         </LinkRow>
       </nav>
+
+      <div className="mt-6">
+        <MemberCard code={profile.member_code} programName={BRAND.loyaltyProgramName} />
+      </div>
 
       <section aria-labelledby="profile-heading" className="mt-8">
         <h2 id="profile-heading" className="sr-only">

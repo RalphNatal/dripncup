@@ -17,7 +17,7 @@ export const PROTECTED_ROUTES: readonly { prefix: string; roles: readonly UserRo
   { prefix: "/staff", roles: ["staff", "admin"] },
   { prefix: "/account", roles: ANY_SIGNED_IN },
   { prefix: "/orders", roles: ANY_SIGNED_IN },
-  { prefix: "/rewards", roles: ANY_SIGNED_IN },
+  // /rewards is public: guests get the programme explained and an invitation.
   { prefix: "/checkout", roles: ANY_SIGNED_IN },
 ];
 
