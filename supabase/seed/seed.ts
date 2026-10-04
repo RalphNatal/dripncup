@@ -84,6 +84,8 @@ const TEST_ACCOUNTS = [
 // ---------------------------------------------------------------------------
 
 const WIPE_ORDER = [
+  "order_rewards",
+  "loyalty_reservations",
   "loyalty_transactions",
   "promo_redemptions",
   "order_status_history",
@@ -976,36 +978,61 @@ async function seedCollection(productIds: Map<string, string>) {
   );
 }
 
+/**
+ * Overflow Rewards tiers. NEEDS_CONFIRMATION: costs, caps and what each
+ * covers are stand-ins until the owner decides. At the default 1 point per
+ * dollar each tier gives back about 5 cents a point.
+ *
+ * The top tier is a fixed amount off rather than "a free drink and a
+ * pastry": one reward row is one discount, and a bundle would need two free
+ * lines with two caps. $12.50 is roughly a capped drink plus a pastry.
+ */
 async function seedRewardsAndPromos() {
+  const slugsToIds = async (table: "categories" | "modifier_groups", slugs: string[]) => {
+    const rows = ok(await db.from(table).select("id, slug").in("slug", slugs), `look up ${table}`);
+    return slugs.map((slug) => {
+      const row = rows.find((r) => r.slug === slug);
+      if (!row) throw new Error(`seed rewards: no ${table} row "${slug}"`);
+      return row.id;
+    });
+  };
+  const drinkCategories = await slugsToIds("categories", ["coffee-espresso", "tropical-refreshers", "tea", "blended"]);
+  const addOnGroups = await slugsToIds("modifier_groups", ["syrups", "toppings", "espresso-shots"]);
+
   ok(
     await db
       .from("rewards")
       .insert([
         {
-          name: "Free flavor add-on",
-          description: "Any syrup or topping, on the house.",
-          points_cost: 60,
-          type: "free_addon",
-          value_cents: 100,
+          name: "Free add-on",
+          description: "A flavor, a topping or an extra shot, on us.",
+          points_cost: 50,
+          type: "free_modifier",
+          applicable_modifier_group_ids: addOnGroups,
+          eligibility_label: "a flavor, topping or extra shot",
           sort_order: 0,
         },
         {
           name: "Free drink",
-          description: "Any small or medium drink.",
+          description: "Any drink on the menu, any size, up to $7.50.",
           points_cost: 150,
           type: "free_item",
-          value_cents: 650,
+          value_cents: 750,
+          covers_modifiers: false,
+          applicable_category_ids: drinkCategories,
+          eligibility_label: "any drink",
           sort_order: 10,
         },
         {
-          name: "$5 off your order",
-          description: "Five dollars off any order over $10.",
-          points_cost: 220,
+          name: "$12.50 off",
+          description: "Treat yourself (or a friend): $12.50 off your order.",
+          points_cost: 250,
           type: "amount_off",
-          value_cents: 500,
+          value_cents: 1250,
           sort_order: 20,
         },
-      ])
+        // Columns a row leaves out take their defaults rather than null.
+      ], { defaultToNull: false })
       .select(),
     "insert rewards",
   );

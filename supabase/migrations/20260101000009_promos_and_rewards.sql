@@ -78,10 +78,9 @@ create table public.rewards (
   points_cost            integer not null check (points_cost > 0),
   type                   public.reward_type not null,
 
-  -- Used by amount_off / free_item valuation.
+  -- amount_off: the amount. free_item / free_modifier: the value cap (null =
+  -- no cap). See 20260101000023_overflow_rewards.sql.
   value_cents            integer check (value_cents is null or value_cents > 0),
-  -- Used by percent_off.
-  percent                numeric(5, 2) check (percent is null or (percent > 0 and percent <= 100)),
 
   -- Empty array = applies to anything. Otherwise the reward is limited to
   -- these products or categories.
@@ -92,12 +91,7 @@ create table public.rewards (
   sort_order             integer not null default 0,
   is_active              boolean not null default true,
   created_at             timestamptz not null default now(),
-  updated_at             timestamptz not null default now(),
-
-  constraint rewards_value_matches_type check (
-    (type = 'percent_off' and percent is not null)
-    or (type <> 'percent_off' and percent is null)
-  )
+  updated_at             timestamptz not null default now()
 );
 
 create index rewards_active_idx on public.rewards (is_active, sort_order);

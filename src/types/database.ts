@@ -788,43 +788,114 @@ export type Database = {
           },
         ]
       }
+      loyalty_reservations: {
+        Row: {
+          created_at: string
+          id: string
+          order_id: string
+          points: number
+          redeemed_at: string | null
+          release_reason: string | null
+          released_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_id: string
+          points: number
+          redeemed_at?: string | null
+          release_reason?: string | null
+          released_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_id?: string
+          points?: number
+          redeemed_at?: string | null
+          release_reason?: string | null
+          released_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_reservations_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_reservations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       loyalty_transactions: {
         Row: {
           created_at: string
+          created_by: string | null
           description: string | null
           id: string
           order_id: string | null
           points: number
+          reservation_id: string | null
           reward_id: string | null
           type: Database["public"]["Enums"]["loyalty_transaction_type"]
           user_id: string
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           description?: string | null
           id?: string
           order_id?: string | null
           points: number
+          reservation_id?: string | null
           reward_id?: string | null
           type: Database["public"]["Enums"]["loyalty_transaction_type"]
           user_id: string
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           description?: string | null
           id?: string
           order_id?: string | null
           points?: number
+          reservation_id?: string | null
           reward_id?: string | null
           type?: Database["public"]["Enums"]["loyalty_transaction_type"]
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "loyalty_transactions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "loyalty_transactions_order_id_fkey"
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_transactions_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_reservations"
             referencedColumns: ["id"]
           },
           {
@@ -1020,6 +1091,67 @@ export type Database = {
           },
         ]
       }
+      order_rewards: {
+        Row: {
+          created_at: string
+          discount_cents: number
+          id: string
+          option_name: string | null
+          order_id: string
+          order_item_id: string | null
+          points_cost: number
+          reward_id: string | null
+          reward_name: string
+          reward_type: Database["public"]["Enums"]["reward_type"]
+        }
+        Insert: {
+          created_at?: string
+          discount_cents: number
+          id?: string
+          option_name?: string | null
+          order_id: string
+          order_item_id?: string | null
+          points_cost: number
+          reward_id?: string | null
+          reward_name: string
+          reward_type: Database["public"]["Enums"]["reward_type"]
+        }
+        Update: {
+          created_at?: string
+          discount_cents?: number
+          id?: string
+          option_name?: string | null
+          order_id?: string
+          order_item_id?: string | null
+          points_cost?: number
+          reward_id?: string | null
+          reward_name?: string
+          reward_type?: Database["public"]["Enums"]["reward_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_rewards_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_rewards_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_rewards_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "rewards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_status_history: {
         Row: {
           changed_by: string | null
@@ -1095,8 +1227,7 @@ export type Database = {
           promo_id: string | null
           ready_at: string | null
           review_reason: string | null
-          reward_id: string | null
-          reward_name: string | null
+          reward_discount_cents: number
           scheduled_for: string | null
           status: Database["public"]["Enums"]["order_status"]
           subtotal_cents: number
@@ -1137,8 +1268,7 @@ export type Database = {
           promo_id?: string | null
           ready_at?: string | null
           review_reason?: string | null
-          reward_id?: string | null
-          reward_name?: string | null
+          reward_discount_cents?: number
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           subtotal_cents?: number
@@ -1179,8 +1309,7 @@ export type Database = {
           promo_id?: string | null
           ready_at?: string | null
           review_reason?: string | null
-          reward_id?: string | null
-          reward_name?: string | null
+          reward_discount_cents?: number
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           subtotal_cents?: number
@@ -1205,13 +1334,6 @@ export type Database = {
             columns: ["promo_id"]
             isOneToOne: false
             referencedRelation: "promos"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "orders_reward_id_fkey"
-            columns: ["reward_id"]
-            isOneToOne: false
-            referencedRelation: "rewards"
             referencedColumns: ["id"]
           },
           {
@@ -1472,6 +1594,7 @@ export type Database = {
           loyalty_points: number
           marketing_opt_in: boolean
           member_code: string
+          member_code_updated_at: string
           notification_prefs: Json
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
@@ -1488,6 +1611,7 @@ export type Database = {
           loyalty_points?: number
           marketing_opt_in?: boolean
           member_code?: string
+          member_code_updated_at?: string
           notification_prefs?: Json
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
@@ -1504,6 +1628,7 @@ export type Database = {
           loyalty_points?: number
           marketing_opt_in?: boolean
           member_code?: string
+          member_code_updated_at?: string
           notification_prefs?: Json
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
@@ -1709,14 +1834,16 @@ export type Database = {
       rewards: {
         Row: {
           applicable_category_ids: string[]
+          applicable_modifier_group_ids: string[]
           applicable_product_ids: string[]
+          covers_modifiers: boolean
           created_at: string
           description: string | null
+          eligibility_label: string | null
           id: string
           image_url: string | null
           is_active: boolean
           name: string
-          percent: number | null
           points_cost: number
           sort_order: number
           type: Database["public"]["Enums"]["reward_type"]
@@ -1725,14 +1852,16 @@ export type Database = {
         }
         Insert: {
           applicable_category_ids?: string[]
+          applicable_modifier_group_ids?: string[]
           applicable_product_ids?: string[]
+          covers_modifiers?: boolean
           created_at?: string
           description?: string | null
+          eligibility_label?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
           name: string
-          percent?: number | null
           points_cost: number
           sort_order?: number
           type: Database["public"]["Enums"]["reward_type"]
@@ -1741,14 +1870,16 @@ export type Database = {
         }
         Update: {
           applicable_category_ids?: string[]
+          applicable_modifier_group_ids?: string[]
           applicable_product_ids?: string[]
+          covers_modifiers?: boolean
           created_at?: string
           description?: string | null
+          eligibility_label?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
           name?: string
-          percent?: number | null
           points_cost?: number
           sort_order?: number
           type?: Database["public"]["Enums"]["reward_type"]
@@ -1866,6 +1997,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_adjust_points: {
+        Args: { p_points: number; p_reason: string; p_user_id: string }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          order_id: string | null
+          points: number
+          reservation_id: string | null
+          reward_id: string | null
+          type: Database["public"]["Enums"]["loyalty_transaction_type"]
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "loyalty_transactions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       advance_order_status: {
         Args: {
           p_new_status: Database["public"]["Enums"]["order_status"]
@@ -1901,8 +2053,7 @@ export type Database = {
           promo_id: string | null
           ready_at: string | null
           review_reason: string | null
-          reward_id: string | null
-          reward_name: string | null
+          reward_discount_cents: number
           scheduled_for: string | null
           status: Database["public"]["Enums"]["order_status"]
           subtotal_cents: number
@@ -1971,7 +2122,7 @@ export type Database = {
         }
       }
       create_checkout_order: {
-        Args: { p_items: Json; p_order: Json }
+        Args: { p_items: Json; p_order: Json; p_rewards?: Json }
         Returns: {
           created: boolean
           order_id: string
@@ -1981,6 +2132,8 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: undefined
       }
+      expire_loyalty_points: { Args: { p_as_of?: string }; Returns: number }
+      generate_member_code: { Args: never; Returns: string }
       get_promo_for_checkout: {
         Args: {
           p_code: string
@@ -2022,6 +2175,23 @@ export type Database = {
           total_cents: number
         }[]
       }
+      list_my_points_activity: {
+        Args: {
+          p_before_created_at?: string
+          p_before_id?: string
+          p_limit?: number
+        }
+        Returns: {
+          created_at: string
+          description: string
+          id: string
+          kind: string
+          order_id: string
+          order_number: string
+          points: number
+          reservation_status: string
+        }[]
+      }
       mark_order_paid: {
         Args: {
           p_amount_cents: number
@@ -2044,6 +2214,7 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: boolean
       }
+      place_free_order: { Args: { p_order_id: string }; Returns: string }
       rate_limit_hit: {
         Args: {
           p_cost?: number
@@ -2057,6 +2228,7 @@ export type Database = {
         Args: { p_code: string; p_message: string; p_payment_intent_id: string }
         Returns: boolean
       }
+      regenerate_member_code: { Args: never; Returns: string }
       set_location_accepting_orders: {
         Args: {
           accepting: boolean
@@ -2125,7 +2297,15 @@ export type Database = {
           request_number: string
         }[]
       }
+      staff_lookup_member: {
+        Args: { p_code: string }
+        Returns: {
+          first_name: string
+          points: number
+        }[]
+      }
       staff_order_activity: { Args: { p_order_id: string }; Returns: Json }
+      sync_order_loyalty: { Args: { p_order_id: string }; Returns: undefined }
     }
     Enums: {
       allergen:
@@ -2153,7 +2333,13 @@ export type Database = {
         | "decaf"
       fulfillment_type: "pickup" | "delivery"
       location_type: "cafe" | "event"
-      loyalty_transaction_type: "earn" | "redeem" | "adjust" | "reverse"
+      loyalty_transaction_type:
+        | "earn"
+        | "redeem"
+        | "release"
+        | "reverse"
+        | "adjust"
+        | "expire"
       modifier_selection_type: "single" | "multi"
       order_status:
         | "pending_payment"
@@ -2174,7 +2360,7 @@ export type Database = {
         | "partially_refunded"
       pickup_type: "asap" | "scheduled"
       promo_type: "percent" | "fixed"
-      reward_type: "free_item" | "free_addon" | "percent_off" | "amount_off"
+      reward_type: "free_item" | "free_modifier" | "amount_off"
       user_role: "customer" | "staff" | "admin"
     }
     CompositeTypes: {
@@ -2334,7 +2520,14 @@ export const Constants = {
       ],
       fulfillment_type: ["pickup", "delivery"],
       location_type: ["cafe", "event"],
-      loyalty_transaction_type: ["earn", "redeem", "adjust", "reverse"],
+      loyalty_transaction_type: [
+        "earn",
+        "redeem",
+        "release",
+        "reverse",
+        "adjust",
+        "expire",
+      ],
       modifier_selection_type: ["single", "multi"],
       order_status: [
         "pending_payment",
@@ -2357,7 +2550,7 @@ export const Constants = {
       ],
       pickup_type: ["asap", "scheduled"],
       promo_type: ["percent", "fixed"],
-      reward_type: ["free_item", "free_addon", "percent_off", "amount_off"],
+      reward_type: ["free_item", "free_modifier", "amount_off"],
       user_role: ["customer", "staff", "admin"],
     },
   },

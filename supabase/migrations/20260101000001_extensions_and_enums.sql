@@ -49,12 +49,15 @@ create type public.catering_status as enum (
 
 create type public.promo_type as enum ('percent', 'fixed');
 
-create type public.reward_type as enum ('free_item', 'free_addon', 'percent_off', 'amount_off');
+-- Overflow Rewards. free_item: one eligible item free (up to a value cap);
+-- free_modifier: one add-on free; amount_off: a fixed amount off the order.
+create type public.reward_type as enum ('free_item', 'free_modifier', 'amount_off');
 
 -- Single-select renders as radios, multi as checkboxes/steppers.
 create type public.modifier_selection_type as enum ('single', 'multi');
 
-create type public.loyalty_transaction_type as enum ('earn', 'redeem', 'adjust', 'reverse');
+-- Points ledger entries; see 20260101000023_overflow_rewards.sql.
+create type public.loyalty_transaction_type as enum ('earn', 'redeem', 'release', 'reverse', 'adjust', 'expire');
 
 -- Declared allergens. Macadamia is called out separately from tree nuts
 -- because it is the one Hawaii customers ask about most.
