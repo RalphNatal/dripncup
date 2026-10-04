@@ -7,6 +7,8 @@
  * fetched from the Events API, or fixtures built around real PaymentIntents,
  * signed with STRIPE_WEBHOOK_SECRET exactly as Stripe signs them.
  */
+import { randomUUID } from "node:crypto";
+
 import type { APIRequestContext } from "@playwright/test";
 import Stripe from "stripe";
 
@@ -107,6 +109,8 @@ export async function arrangePendingOrder({
   promo,
   pickupType = "asap",
   pay,
+  pointsEarned = 0,
+  reward,
 }: {
   userId: string;
   totalCents?: number;
@@ -115,12 +119,21 @@ export async function arrangePendingOrder({
   promo?: { id: string; code: string; discountCents: number };
   pickupType?: "asap" | "scheduled";
   pay?: "pm_card_visa" | "pm_card_chargeDeclined";
+  /** Points the order earns at pickup, as checkout would have worked out. */
+  pointsEarned?: number;
+  /** A seeded reward redeemed on the order's line (its points are reserved). */
+  reward?: { name: string; discountCents: number };
 }): Promise<ArrangedOrder> {
   const locationId = await locationIdBySlug(SEEDED.cafeSlug);
   const product = must(await db().from("products").select("id, name, base_price_cents").eq("slug", "latte").single(), "latte");
   const key = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const discount = promo?.discountCents ?? 0;
+  const rewardRow = reward
+    ? must(await db().from("rewards").select("id, name, type, points_cost").eq("name", reward.name).single(), `reward ${reward.name}`)
+    : null;
+  const rewardCents = reward?.discountCents ?? 0;
+  const discount = (promo?.discountCents ?? 0) + rewardCents;
   const subtotal = totalCents + discount;
+  const itemId = randomUUID();
 
   const created = must(
     await db().rpc("create_checkout_order", {
@@ -132,6 +145,9 @@ export async function arrangePendingOrder({
         estimated_ready_at: new Date(Date.now() + 10 * 60_000).toISOString(),
         subtotal_cents: subtotal,
         discount_cents: discount,
+        reward_discount_cents: rewardCents,
+        points_earned: pointsEarned,
+        points_redeemed: rewardRow?.points_cost ?? 0,
         taxable_base_cents: totalCents,
         tax_rate: 0,
         tax_cents: 0,
@@ -148,6 +164,7 @@ export async function arrangePendingOrder({
       },
       p_items: [
         {
+          id: itemId,
           product_id: product.id,
           product_size_id: null,
           product_name: product.name,
@@ -160,6 +177,18 @@ export async function arrangePendingOrder({
           special_instructions: "",
         },
       ],
+      p_rewards: rewardRow
+        ? [
+            {
+              reward_id: rewardRow.id,
+              reward_name: rewardRow.name,
+              reward_type: rewardRow.type,
+              points_cost: rewardRow.points_cost,
+              discount_cents: rewardCents,
+              order_item_id: rewardRow.type === "amount_off" ? null : itemId,
+            },
+          ]
+        : [],
     }),
     "create_checkout_order",
   );

@@ -4,7 +4,7 @@ import { findRouteRule, isGuestOnlyRoute, roleCanAccess } from "./roles";
 
 describe("route rules", () => {
   it("leaves the storefront public", () => {
-    for (const path of ["/", "/menu", "/sign-in", "/auth/callback"]) {
+    for (const path of ["/", "/menu", "/rewards", "/sign-in", "/auth/callback"]) {
       expect(findRouteRule(path)).toBeNull();
     }
   });

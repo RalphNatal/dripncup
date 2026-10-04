@@ -185,7 +185,21 @@ describe("calculateOrderTotal", () => {
       const { breakdown } = total({
         lines: [cookies(1)],
         promo: promo({ type: "fixed", percent: null, amountCents: 300 }),
-        rewardDiscountCents: 650,
+        rewards: [
+          {
+            reward: {
+              id: "r",
+              name: "$6.50 off",
+              type: "amount_off",
+              pointsCost: 200,
+              valueCents: 650,
+              coversModifiers: false,
+              productIds: [],
+              categoryIds: [],
+              modifierGroupIds: [],
+            },
+          },
+        ],
       });
       expect(breakdown).toMatchObject({ promoDiscountCents: 300, rewardDiscountCents: 75, discountCents: 375 });
     });

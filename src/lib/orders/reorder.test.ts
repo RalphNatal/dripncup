@@ -57,6 +57,7 @@ function latte(overrides: { groups?: DetailGroup[]; soldOut?: boolean; onLocatio
       allergens: [],
       dietaryTags: [],
       calories: null,
+      categoryId: null,
       categoryName: "Coffee",
     },
     groups: overrides.groups ?? [milk(), syrups],

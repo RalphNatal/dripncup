@@ -92,6 +92,7 @@ export async function arrangePlacedOrder({
   scheduledFor,
   cupName = "Kai",
   notes,
+  pointsEarned = 0,
 }: {
   userId: string;
   lines: ArrangedLine[];
@@ -100,6 +101,8 @@ export async function arrangePlacedOrder({
   scheduledFor?: Date;
   cupName?: string;
   notes?: string;
+  /** Points the order earns at pickup, as checkout would have worked out. */
+  pointsEarned?: number;
 }) {
   const locationId = await locationIdBySlug(locationSlug);
   const items = await Promise.all(lines.map(snapshotLine));
@@ -121,6 +124,7 @@ export async function arrangePlacedOrder({
         tax_cents: 0,
         tip_cents: 0,
         total_cents: subtotal,
+        points_earned: pointsEarned,
         customer_first_name: cupName,
         notes: notes ?? null,
         idempotency_key: key,

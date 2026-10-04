@@ -10,11 +10,18 @@
  * Each suite wraps itself in BEGIN ... ROLLBACK, so nothing it creates
  * survives the run.
  *
+ * `*.concurrent.mjs` files test what one transaction cannot: several real
+ * database sessions at once (separate psql processes). Each exports a
+ * function that receives an async `psql(sql)` and returns
+ * `[{ ok, name, detail }]`; it creates and removes its own committed
+ * fixtures.
+ *
  * Usage: npm run test:db [-- path/to/one.test.sql]
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const TESTS_DIR = "supabase/tests";
 
@@ -27,12 +34,23 @@ function databaseContainer() {
   return `supabase_db_${projectId}`;
 }
 
+const PSQL_ARGS = ["psql", "-U", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"];
+
 function psql(container, sql) {
-  return spawnSync(
-    "docker",
-    ["exec", "-i", container, "psql", "-U", "postgres", "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
-    { input: sql, encoding: "utf8" },
-  );
+  return spawnSync("docker", ["exec", "-i", container, ...PSQL_ARGS], { input: sql, encoding: "utf8" });
+}
+
+/** One more database session, without blocking the others. */
+function psqlAsync(container, sql) {
+  return new Promise((done) => {
+    const child = spawn("docker", ["exec", "-i", container, ...PSQL_ARGS]);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => done({ status, stdout, stderr }));
+    child.stdin.end(sql);
+  });
 }
 
 const container = databaseContainer();
@@ -40,7 +58,7 @@ const requested = process.argv.slice(2);
 const files = requested.length
   ? requested
   : readdirSync(TESTS_DIR)
-      .filter((name) => name.endsWith(".test.sql"))
+      .filter((name) => name.endsWith(".test.sql") || name.endsWith(".concurrent.mjs"))
       .sort()
       .map((name) => join(TESTS_DIR, name));
 
@@ -57,6 +75,22 @@ let failedSuites = 0;
 let totalTests = 0;
 
 for (const file of files) {
+  if (file.endsWith(".concurrent.mjs")) {
+    const { default: run } = await import(pathToFileURL(resolve(file)).href);
+    let results;
+    try {
+      results = await run({ psql: (sql) => psqlAsync(container, sql) });
+    } catch (error) {
+      results = [{ ok: false, name: "suite crashed", detail: error instanceof Error ? error.message : String(error) }];
+    }
+    const failed = results.filter((r) => !r.ok);
+    totalTests += results.length;
+    console.log(`${failed.length ? "FAIL" : "PASS"}  ${file}  (${results.length - failed.length}/${results.length})`);
+    for (const r of failed) console.log(`      not ok - ${r.name}\n      # ${String(r.detail ?? "").trim().replace(/\n/g, "\n      # ")}`);
+    if (failed.length) failedSuites += 1;
+    continue;
+  }
+
   const result = psql(container, readFileSync(file, "utf8"));
   const lines = result.stdout.split(/\r?\n/).filter(Boolean);
 
