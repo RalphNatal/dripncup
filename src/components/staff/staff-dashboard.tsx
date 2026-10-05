@@ -98,10 +98,13 @@ export function StaffDashboard({
   location,
   options,
   viewer,
+  renderedAt,
 }: {
   location: StaffLocationContext;
   options: StaffLocationOption[];
   viewer: { id: string; name: string; role: "customer" | "staff" | "admin" };
+  /** When the server rendered the page (ISO): the Start shift heading's clock until hydrated. */
+  renderedAt: string;
 }) {
   const [started, setStarted] = useState(false);
   const wakeLock = useWakeLock(started);
@@ -112,6 +115,7 @@ export function StaffDashboard({
         location={location}
         options={options}
         viewerName={viewer.name}
+        renderedAt={renderedAt}
         onStart={(fullscreen) => {
           unlockAudio();
           rememberFullscreen(fullscreen);
@@ -132,20 +136,26 @@ function StartShift({
   location,
   options,
   viewerName,
+  renderedAt,
   onStart,
 }: {
   location: StaffLocationContext;
   options: StaffLocationOption[];
   viewerName: string;
+  renderedAt: string;
   onStart: (fullscreen: boolean) => void;
 }) {
+  // Open/closed is worked out from the clock: the server's render time while
+  // hydrating (so the heading matches the HTML), then the live clock.
+  const [serverNow] = useState(() => new Date(renderedAt));
+  const now = useNow(serverNow);
   const remembered = useRememberedFullscreen();
   const [choice, setFullscreen] = useState<boolean | null>(null);
   const fullscreen = choice ?? remembered;
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 py-6">
-      <LocationHeading location={location} options={options} now={null} />
+      <LocationHeading location={location} options={options} now={now} />
       <div className="space-y-5 rounded-3xl border-2 bg-card p-6 sm:p-8">
         <h1 className="font-heading text-4xl font-extrabold">Aloha, {viewerName}!</h1>
         <p className="text-xl">

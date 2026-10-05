@@ -56,6 +56,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Search
       location={context}
       options={options}
       viewer={{ id: profile.id, name: profile.first_name ?? profile.full_name ?? profile.email ?? "Staff", role: profile.role }}
+      renderedAt={new Date().toISOString()}
     />
   );
 }

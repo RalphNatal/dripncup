@@ -30,12 +30,17 @@ function subscribeClock(onChange: () => void) {
   };
 }
 
-/** The current time, ticking once a second (one shared timer). Null on the server render. */
-export function useNow(): Date | null {
+/**
+ * The current time, ticking once a second (one shared timer). On the server
+ * render, and while hydrating, it is `serverNow` (null if not given): the
+ * time the page was rendered, so the first render in the browser matches the
+ * HTML. Pass a stable Date (state or memo), not a fresh one each render.
+ */
+export function useNow(serverNow: Date | null = null): Date | null {
   return useSyncExternalStore(
     subscribeClock,
     () => (tick ??= new Date()),
-    () => null,
+    () => serverNow,
   );
 }
 
