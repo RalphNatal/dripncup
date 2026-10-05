@@ -165,16 +165,10 @@ async function seedLocations() {
     "insert cafe",
   );
 
-  // NEEDS_CONFIRMATION: real trading hours. 0 = Sunday .. 6 = Saturday.
-  const hours = [
-    { day_of_week: 0, opens_at: "07:00", closes_at: "15:00" },
-    { day_of_week: 1, opens_at: "06:30", closes_at: "16:00" },
-    { day_of_week: 2, opens_at: "06:30", closes_at: "16:00" },
-    { day_of_week: 3, opens_at: "06:30", closes_at: "16:00" },
-    { day_of_week: 4, opens_at: "06:30", closes_at: "16:00" },
-    { day_of_week: 5, opens_at: "06:30", closes_at: "18:00" },
-    { day_of_week: 6, opens_at: "07:00", closes_at: "18:00" },
-  ];
+  // NEEDS_CONFIRMATION: real trading hours. Placeholder: open every day,
+  // 7:00 AM - 6:00 PM Honolulu time. 0 = Sunday .. 6 = Saturday.
+  // No closures or holiday hours are seeded; admins add those as needed.
+  const hours = [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day_of_week: day, opens_at: "07:00", closes_at: "18:00" }));
 
   ok(
     await db
