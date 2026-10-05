@@ -127,13 +127,15 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `npm test` | Vitest unit tests |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:db` | pgTAP database tests in `supabase/tests` (local stack must be running) |
-| `npm run test:e2e` | Playwright end-to-end tests (builds the app, serves it on port 3100) |
+| `npm run test:e2e` | Playwright end-to-end tests on their **own** Supabase stack (starts, resets and seeds it; builds the app on port 3100; then proves the dev database is unchanged) |
 | `npm run db:start` / `db:stop` | Start / stop the local Supabase stack |
 | `npm run db:reset` | Recreate the database and re-run every migration |
 | `npm run db:push` | Apply migrations to the **linked remote** project |
 | `npm run db:diff` | Diff local schema against migrations |
 | `npm run db:types` | Regenerate `src/types/database.ts` from the live schema |
 | `npm run db:seed` | Load demo data and test accounts |
+| `npm run db:clean-test-data` | Remove data automated tests left in the dev database (asks first; `-- --yes` to skip) |
+| `npm run db:e2e:stop` | Stop the e2e suite's Supabase stack (frees about 1 GB of Docker memory) |
 
 ---
 
@@ -146,6 +148,11 @@ Created by `npm run db:seed`. Password for all three: **`DrincupTest123!`**
 | Admin | `admin@drincup.test` | `/admin`, `/staff`, everything |
 | Staff | `barista@drincup.test` | `/staff` for the cafe and the seeded pop-up |
 | Customer | `customer@drincup.test` | ordering, rewards, catering |
+
+These three are for hand testing. The e2e suite never uses them: its own stack
+is seeded with `e2e-admin@`, `e2e-barista@` and `e2e-customer@drincup.test`
+(same password), and `tests/e2e-isolation.test.ts` fails if any e2e file names
+the accounts above.
 
 ---
 
@@ -234,8 +241,82 @@ npm run test:db     # pgTAP: SQL functions, triggers, constraints, grants
 npm run test:e2e    # Playwright: the app in a real browser
 ```
 
-`test:db` and `test:e2e` need the local stack running and seeded (`npm run
-db:start`, `npm run db:reset`, `npm run db:seed`).
+`test:db` needs the local stack running (`npm run db:start`). `test:e2e` sets up
+its own (below); Docker must be running.
+
+### Test isolation: the e2e suite has its own database
+
+`npm run test:e2e` never touches your dev database. `scripts/e2e.mjs`:
+
+1. Writes `.e2e-stack/` (gitignored): `supabase/config.toml` with
+   `project_id = "drincup-cafe-e2e"` and every port moved up by 1000 (API
+   `55321`, database `55322`, Mailpit `55324`), plus a fresh copy of the
+   migrations. Studio, analytics and the edge runtime are left out.
+2. Starts that second stack if it isn't running, resets it (every migration
+   from scratch) and seeds it with the e2e accounts.
+3. Fingerprints the dev database (row counts of orders, payments, ledger,
+   outbox, webhook events, users and more; hashes of hours, closures, pause,
+   sold-out flags, settings, prices, promo usage, points balances and the
+   order counters), runs Playwright, then fingerprints it again. **Any change
+   fails the run**, and it prints the order counts before and after. (If you
+   place an order by hand on the dev app during a run, that is reported too.)
+
+Extra arguments go to Playwright: `npm run test:e2e -- e2e/menu.spec.ts`.
+`npx playwright test` on its own reuses the e2e stack as the last run left it;
+the config refuses to start if that stack was never set up, or if it would
+point at the dev database's port.
+
+Cost: the e2e stack needs about **1 GB of Docker memory** on top of the dev
+stack's ~2 GB. It stays up between runs (so later runs skip the start-up);
+`npm run db:e2e:stop` stops it. The first start takes a minute or two.
+
+The suite never reuses a server already on port 3100 (one left over from an
+older run may have been built against the dev database). If 3100 is busy, the
+run stops and says so; find the leftover `next start` with
+`Get-NetTCPConnection -LocalPort 3100 -State Listen` and `Stop-Process` it.
+
+Stripe is shared: e2e payments are real sandbox PaymentIntents. They are
+tagged so the dashboard tells them apart from hand testing: the description
+starts `[e2e]`, and the metadata has `source = e2e` and `e2e_run = <run id>`
+(search `metadata['source']:'e2e'` in the dashboard). Refunds carry the same
+metadata. If `stripe listen` forwards to your dev server during a run, the
+webhook acknowledges events for payments the dev database never made and
+writes nothing.
+
+### Cleaning test data out of the dev database
+
+```powershell
+npm run db:clean-test-data           # shows what it will remove, then asks
+npm run db:clean-test-data -- --yes  # no question (scripts)
+```
+
+For data from before the suite had its own stack, or from a test pointed at
+the wrong database. It refuses to run unless `NEXT_PUBLIC_SUPABASE_URL` is a
+`127.0.0.1`/`localhost` URL, and it removes only:
+
+- accounts `e2e-*@drincup.test` and `race@drincup.test` (the `points_race`
+  fixture), with everything they own: orders and their lines, payments,
+  refunds, status history, email outbox rows, reward snapshots, promo
+  redemptions, points ledger and reservations, favourites, roster rows,
+  catering requests, rate-limit counters
+- anonymised orders whose idempotency key starts `e2e-`
+- webhook events the suite delivered (`evt_e2e_*`), and real Stripe events
+  whose PaymentIntent belongs to a test order (looked up in the sandbox)
+- pauses and sold-out flags set by test accounts; availability-log rows by
+  test accounts, or by the service role or seeded staff while tests were
+  writing
+- Mailpit messages to test accounts
+
+It then takes test redemptions off promo usage counts and winds the daily
+order and catering counters back to the highest number still in use. Seed
+data and the three hand-testing accounts, with everything they own, are kept.
+
+It runs in one transaction through `docker exec` into the local database
+container, with foreign keys and the ledger's triggers on. The one exception
+is `order_items_freeze` (paid orders' lines are immutable): it is disabled by
+name inside that transaction, under the exclusive lock `ALTER TABLE` takes,
+and re-enabled before commit. There is no database function for this, so
+nothing a hosted project could call.
 
 - **Database tests** run each file in `supabase/tests` inside a transaction
   that is rolled back, so they leave nothing behind. `scripts/test-db.mjs`
@@ -246,28 +327,30 @@ db:start`, `npm run db:reset`, `npm run db:seed`).
   clash with `npm run dev`. On Windows they drive the Microsoft Edge that ships
   with the OS, so nothing needs downloading. Elsewhere, run
   `npx playwright install chromium` once. `PLAYWRIGHT_CHANNEL` overrides the
-  browser (`chromium`, `chrome` or `msedge`). The tests change real rows (the
-  pause toggle, sold-out flags, opening hours) and put them back afterwards,
-  so they run one at a time. Avoid running them against a database you are
-  using by hand.
+  browser (`chromium`, `chrome` or `msedge`). The tests change real rows in
+  the e2e stack (the pause toggle, sold-out flags, opening hours) and put them
+  back afterwards, so they run one at a time.
 - **Checkout tests** (`e2e/checkout.spec.ts`, `e2e/webhooks.spec.ts`) pay
   with Stripe test cards in the sandbox, so they need the three Stripe test
   keys in `.env.local` (they refuse a live key). They do **not** need
   `stripe listen`: the test server on 3100 is not where the CLI forwards, so
   the tests fetch the real events from Stripe's Events API (or build signed
   fixtures around real PaymentIntents) and deliver them to the webhook
-  themselves. If `stripe listen` is also forwarding to your dev server on the
-  same database, that is harmless: every event is handled idempotently.
+  themselves. If `stripe listen` is also forwarding to your dev server, the
+  dev server ignores those events without writing anything (the payments are
+  not in its database).
 - **Tracking tests** (`e2e/tracking.spec.ts`) move orders along as the
-  seeded barista (a real signed-in Supabase client calling
+  e2e stack's barista (a real signed-in Supabase client calling
   `advance_order_status`), listen on real Realtime sockets, and read the
-  receipt and cancellation emails from Mailpit, so the local stack must be
-  running with Mailpit (it is by default).
+  receipt and cancellation emails from the e2e stack's Mailpit
+  (`http://127.0.0.1:55324`), not yours.
 - **Concurrency tests** (`supabase/tests/*.concurrent.mjs`, run by
   `npm run test:db`) cover what one transaction cannot: several real database
   sessions at once. `points_race.concurrent.mjs` holds one checkout's
   transaction open while another tries to spend the same points, then fires
-  five at once. They commit their own fixtures and delete them afterwards.
+  five at once. They commit their own fixtures and delete them afterwards,
+  and give back the order numbers they took, so they leave no trace in the
+  dev database.
 - **Rewards tests** (`e2e/rewards.spec.ts`) give points with
   `admin_adjust_points`, redeem in real checkouts (sandbox card, real
   webhook), let a reserved checkout expire through the cron route, race two
