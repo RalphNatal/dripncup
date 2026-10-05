@@ -15,7 +15,8 @@ import type { Database } from "../../src/types/database";
 
 import { SEEDED, TEST_PASSWORD, db, locationIdBySlug, must } from "./db";
 
-export const BARISTA = "barista@drincup.test";
+/** The e2e stack's seeded barista, rostered to the cafe and the pop-up (see SEEDED). */
+export const BARISTA = "e2e-barista@drincup.test";
 
 export interface ArrangedLine {
   productSlug: string;

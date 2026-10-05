@@ -12,14 +12,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:db": "node scripts/test-db.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e.mjs",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:diff": "supabase db diff",
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
-    "db:seed": "tsx supabase/seed/seed.ts"
+    "db:seed": "tsx supabase/seed/seed.ts",
+    "db:clean-test-data": "node scripts/clean-test-data.mjs",
+    "db:e2e:stop": "supabase stop --workdir .e2e-stack"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

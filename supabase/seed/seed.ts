@@ -73,11 +73,19 @@ const dollars = (value: number) => Math.round(value * 100);
 
 const TEST_PASSWORD = "DrincupTest123!";
 
+/**
+ * `SEED_ACCOUNTS=e2e` (set by `npm run test:e2e` for its own stack) seeds
+ * e2e-admin@, e2e-barista@ and e2e-customer@drincup.test instead, so the
+ * suite never uses the accounts kept for hand testing.
+ */
+const ACCOUNT_PREFIX = process.env.SEED_ACCOUNTS === "e2e" ? "e2e-" : "";
+
 const TEST_ACCOUNTS = [
-  { email: "admin@drincup.test", fullName: "Alika Admin", role: "admin" as const },
-  { email: "barista@drincup.test", fullName: "Kekoa Barista", role: "staff" as const },
-  { email: "customer@drincup.test", fullName: "Leilani Customer", role: "customer" as const },
+  { email: `${ACCOUNT_PREFIX}admin@drincup.test`, fullName: "Alika Admin", role: "admin" as const },
+  { email: `${ACCOUNT_PREFIX}barista@drincup.test`, fullName: "Kekoa Barista", role: "staff" as const },
+  { email: `${ACCOUNT_PREFIX}customer@drincup.test`, fullName: "Leilani Customer", role: "customer" as const },
 ];
+const CUSTOMER_EMAIL = TEST_ACCOUNTS[2].email;
 
 // ---------------------------------------------------------------------------
 // Wipe, in foreign-key-safe order
@@ -1137,7 +1145,7 @@ async function seedCatering(customerId: string, cafeId: string, productIds: Map<
         {
           user_id: customerId,
           contact_name: "Leilani Customer",
-          contact_email: "customer@drincup.test",
+          contact_email: CUSTOMER_EMAIL,
           contact_phone: "+18085550101",
           event_at: inTwoWeeks.toISOString(),
           headcount: 30,
@@ -1149,7 +1157,7 @@ async function seedCatering(customerId: string, cafeId: string, productIds: Map<
         {
           user_id: customerId,
           contact_name: "Leilani Customer",
-          contact_email: "customer@drincup.test",
+          contact_email: CUSTOMER_EMAIL,
           event_at: inSixWeeks.toISOString(),
           headcount: 75,
           fulfillment: "delivery",
@@ -1210,7 +1218,7 @@ async function seedTodaysCatering(customerId: string, cafeId: string, productIds
         user_id: customerId,
         location_id: cafeId,
         contact_name: "Malia Office Manager",
-        contact_email: "customer@drincup.test",
+        contact_email: CUSTOMER_EMAIL,
         contact_phone: "+18085550123",
         event_at: nextWeek.toISOString(),
         headcount: 12,

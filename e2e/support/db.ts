@@ -7,6 +7,8 @@ import { config } from "dotenv";
 
 import type { Database } from "../../src/types/database";
 
+import { assertNotDevDatabase } from "./stack";
+
 config({ path: ".env.local" });
 config({ path: ".env" });
 
@@ -20,9 +22,8 @@ export function db(): SupabaseClient<Database> {
   if (!url || !key) {
     throw new Error("e2e tests need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local");
   }
-  if (!/127\.0\.0\.1|localhost/.test(url)) {
-    throw new Error(`Refusing to run e2e tests against a non-local database (${url}).`);
-  }
+  // The suite's own stack only (playwright.config.ts points these at it).
+  assertNotDevDatabase(url);
 
   client = createClient<Database>(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   return client;
@@ -41,9 +42,14 @@ export function must<T>(result: PostgrestSingleResponse<T>, label: string): NonN
 /** Same password as the seeded accounts (README). */
 export const TEST_PASSWORD = "DrincupTest123!";
 
+/**
+ * The e2e stack is seeded with its own accounts (`SEED_ACCOUNTS=e2e`), so the
+ * suite never signs in as the seeded admin, barista or customer, which are
+ * kept for hand testing in the dev database (tests/e2e-isolation.test.ts).
+ */
 export const SEEDED = {
-  admin: "admin@drincup.test",
-  customer: "customer@drincup.test",
+  admin: "e2e-admin@drincup.test",
+  customer: "e2e-customer@drincup.test",
   cafeSlug: "kapiolani",
   eventSlug: "kakaako-market-popup",
 } as const;
