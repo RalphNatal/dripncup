@@ -7,7 +7,7 @@
  * same SQL functions checkout uses, and moved along by the seeded barista
  * through advance_order_status, exactly as the staff screen does.
  */
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./support/test";
 
 import { CARDS, addFromMenu, fillCard, orderIdFromUrl, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
 import { createCustomer, db, must } from "./support/db";

@@ -10,7 +10,7 @@
  * in the Stripe sandbox (arrangePendingOrder + a delivered webhook). Neither
  * page is ever reloaded while it waits: a marker on `window` proves it.
  */
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "./support/test";
 
 import { addFromMenu, signIn } from "./support/checkout";
 import { SEEDED, TEST_PASSWORD, createCustomer, db, locationIdBySlug, must } from "./support/db";

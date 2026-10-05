@@ -1,7 +1,9 @@
 /**
- * The e2e suite must never depend on, or change, the accounts kept for hand
- * testing (admin@, barista@ and customer@drincup.test). It has its own,
- * e2e-admin@ and friends, seeded into its own stack (scripts/e2e.mjs).
+ * Guards on the e2e suite. It must never depend on, or change, the accounts
+ * kept for hand testing (admin@, barista@ and customer@drincup.test): it has
+ * its own, e2e-admin@ and friends, seeded into its own stack
+ * (scripts/e2e.mjs). And every spec must run under the page guard
+ * (e2e/support/test.ts), which fails a test on hydration and uncaught errors.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -23,6 +25,15 @@ describe("e2e isolation", () => {
       [...readFileSync(file, "utf8").matchAll(HAND_TESTING_ACCOUNT)].map((match) => `${file}: ${match[0]}`),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("every spec uses the guarded test (fails on hydration and uncaught errors)", () => {
+    const specs = filesUnder("e2e").filter((file) => file.endsWith(".spec.ts"));
+    const unguarded = specs.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return /from "@playwright\/test"/.test(source) || !/from "\.\/support\/test"/.test(source);
+    });
+    expect(unguarded).toEqual([]);
   });
 
   it("the Playwright server is never reused (it may point at another database)", () => {

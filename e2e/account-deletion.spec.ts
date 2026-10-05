@@ -5,7 +5,7 @@
  * The database side (every table the deletion touches, the last-admin lock)
  * is covered in depth by supabase/tests/account_deletion.test.sql.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 import { SEEDED, TEST_PASSWORD, createCustomer, db, locationIdBySlug, must } from "./support/db";
 

@@ -2,7 +2,7 @@
  * Browsing: the menu as a guest, search, the product sheet vs the shareable
  * full page, and pop-up menus.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import { SEEDED } from "./support/db";
 import { eventMenuProductNames } from "./support/storefront";

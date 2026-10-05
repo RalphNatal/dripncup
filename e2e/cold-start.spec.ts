@@ -17,7 +17,7 @@ import { spawn } from "node:child_process";
 import { connect } from "node:net";
 import { join } from "node:path";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 const PORT = 3101;
 

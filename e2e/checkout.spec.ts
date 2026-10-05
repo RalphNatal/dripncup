@@ -4,7 +4,7 @@
  * payment_intent.succeeded event to the test server (see support/stripe.ts),
  * which is what turns the order Placed.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import {
   CARDS,

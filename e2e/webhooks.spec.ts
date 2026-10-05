@@ -9,7 +9,7 @@
  * every handler is idempotent and only moves an order forward -- and the
  * assertions hold whichever delivery lands first.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import { SEEDED, createCustomer, db, must } from "./support/db";
 import { setPaused } from "./support/storefront";

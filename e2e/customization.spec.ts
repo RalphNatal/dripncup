@@ -2,7 +2,7 @@
  * Customising and adding to the cart: live pricing, required choices,
  * sold-out and closed / paused states, and the cart count.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/test";
 
 import { SEEDED } from "./support/db";
 import { closeToday, markSoldOut, setPaused } from "./support/storefront";

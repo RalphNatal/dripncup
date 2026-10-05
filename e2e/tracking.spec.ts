@@ -7,7 +7,7 @@
  * cancel-with-refund endpoint). The customer's page is never reloaded while
  * it waits; a marker set on `window` proves it.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./support/test";
 
 import { signIn } from "./support/checkout";
 import { SEEDED, TEST_PASSWORD, createCustomer, db, must } from "./support/db";
