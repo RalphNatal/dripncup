@@ -20,7 +20,19 @@ const REWARD = "38000000-0000-0000-0000-000000000001";
 // Lines first: the freeze trigger only lets a pending order's lines go, and
 // it cannot see the order once a cascade has deleted it. (These orders are
 // never paid, so they are all still pending.)
+//
+// The race's orders took real order numbers from today's counter; give them
+// back when nothing else has taken one since, so the next order placed by
+// hand is not numbered after them.
 const CLEANUP = `
+  update public.daily_counters c
+     set last_value = coalesce((select max(split_part(o.order_number, '-', 3)::int) from public.orders o
+                                 where o.user_id is distinct from '${USER}'
+                                   and split_part(o.order_number, '-', 2) = to_char(c.counter_day, 'YYMMDD')), 0)
+   where c.scope = 'order'
+     and c.last_value = (select max(split_part(o.order_number, '-', 3)::int) from public.orders o
+                          where o.user_id = '${USER}'
+                            and split_part(o.order_number, '-', 2) = to_char(c.counter_day, 'YYMMDD'));
   delete from public.order_items where order_id in (select id from public.orders where user_id = '${USER}');
   delete from public.orders where user_id = '${USER}';
   delete from public.loyalty_transactions where user_id = '${USER}';
