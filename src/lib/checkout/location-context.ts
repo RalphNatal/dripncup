@@ -9,6 +9,7 @@ import "server-only";
 import { z } from "zod";
 
 import type { PickupContext, PickupSettings } from "@/lib/checkout/pickup";
+import { openingHours } from "@/lib/locations/opening-hours";
 import { isAcceptingOrders, type Closure, type WeeklyHours } from "@/lib/locations/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addDays, cafeDateKey } from "@/lib/time";
@@ -74,15 +75,7 @@ export async function loadLocationSnapshot(locationId: string, now: Date = new D
       pickupInstructions: row.pickup_instructions,
       addressLines: [row.address_line1, row.address_line2, cityLine].filter((l): l is string => Boolean(l)),
     },
-    hours: (hours.data ?? []).map((h) => ({ dayOfWeek: h.day_of_week, opensAt: h.opens_at, closesAt: h.closes_at })),
-    closures: (closures.data ?? []).map((c) => ({
-      locationId: c.location_id,
-      date: c.closure_date,
-      isClosed: c.is_closed,
-      opensAt: c.opens_at,
-      closesAt: c.closes_at,
-      reason: c.reason,
-    })),
+    ...openingHours(hours.data, closures.data),
   };
 }
 

@@ -96,6 +96,35 @@ describe("regular hours", () => {
   it("says just Closed when there are no hours at all", () => {
     expect(describeStatus(input(hst("2026-09-24T10:00:00"), { hours: [] }))).toBe("Closed");
   });
+
+  it("merges rows that touch into one stretch", () => {
+    const touching: WeeklyHours[] = [
+      { dayOfWeek: 4, opensAt: "06:30:00", closesAt: "12:00:00" },
+      { dayOfWeek: 4, opensAt: "12:00:00", closesAt: "16:00:00" },
+    ];
+    const at = hst("2026-09-24T10:00:00");
+    expect(statusDetail(getLocationStatus(input(at, { hours: touching })), at)).toBe("Until 4:00 PM");
+    expect(todaysHoursText(input(at, { hours: touching })).hours).toBe("6:30 AM – 4:00 PM");
+  });
+});
+
+describe("open through midnight", () => {
+  // Thursday until midnight, Friday from midnight to 2 AM.
+  const lateNight: WeeklyHours[] = [
+    { dayOfWeek: 4, opensAt: "18:00:00", closesAt: "24:00:00" },
+    { dayOfWeek: 5, opensAt: "00:00:00", closesAt: "02:00:00" },
+  ];
+
+  it("does not close at midnight when the next day opens at midnight", () => {
+    const at = hst("2026-09-24T23:30:00");
+    const status = getLocationStatus(input(at, { hours: lateNight }));
+    expect(status).toEqual({ kind: "open", canOrder: true, closesAt: hst("2026-09-25T02:00:00") });
+    expect(statusDetail(status, at)).toBe("Until 2:00 AM");
+  });
+
+  it("reads 24:00 as the end of the day in today's hours", () => {
+    expect(todaysHoursText(input(hst("2026-09-24T19:00:00"), { hours: lateNight })).hours).toBe("6:00 PM – 12:00 AM");
+  });
 });
 
 describe("closure days", () => {

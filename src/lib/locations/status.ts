@@ -13,6 +13,10 @@
  *   3. Otherwise the weekly hours for that weekday; several rows = split hours.
  *   4. Within open hours, the staff pause toggle or the global
  *      "accepting online orders" switch makes the location Paused.
+ *
+ * Hours and closures arrive through `openingHours()` (./opening-hours), which
+ * is where local test mode swaps in "open 24 hours"; nothing here knows
+ * about the flag.
  */
 import {
   addDays,
@@ -87,6 +91,9 @@ export function isAcceptingOrders(acceptingOrders: boolean, pausedUntil: string 
 /** How far ahead to look for the next opening before just saying "Closed". */
 const LOOKAHEAD_DAYS = 14;
 
+/** Honolulu has no daylight saving, so every day is exactly this long. */
+const DAY_MS = 86_400_000;
+
 /** The closure row that governs `dateKey`, if any: the location's own beats all-locations. */
 export function closureFor(locationId: string, dateKey: string, closures: readonly Closure[]): Closure | null {
   return (
@@ -96,7 +103,11 @@ export function closureFor(locationId: string, dateKey: string, closures: readon
   );
 }
 
-/** Open intervals on the Honolulu day containing `day`, closures applied. */
+/**
+ * Open intervals on the Honolulu day containing `day`, closures applied.
+ * Rows that touch or overlap are merged, so 10-2 and 2-6 read as 10-6.
+ * A closing time of 24:00 is the following midnight.
+ */
 export function openIntervalsOn(
   locationId: string,
   day: Date,
@@ -111,10 +122,43 @@ export function openIntervalsOn(
   }
 
   const weekday = cafeDayOfWeek(day);
-  return hours
+  const sorted = hours
     .filter((h) => h.dayOfWeek === weekday)
     .map((h) => ({ start: cafeDateAtTime(day, h.opensAt), end: cafeDateAtTime(day, h.closesAt) }))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  const merged: Interval[] = [];
+  for (const interval of sorted) {
+    const last = merged.at(-1);
+    if (last && interval.start <= last.end) {
+      if (interval.end > last.end) last.end = interval.end;
+    } else {
+      merged.push({ ...interval });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Where an open stretch really ends. A day that closes at midnight while the
+ * next day opens at midnight (a 24-hour location, or local test mode) does
+ * not close at all, so follow it day by day, up to the lookahead.
+ */
+export function openStretchEnd(
+  locationId: string,
+  end: Date,
+  hours: readonly WeeklyHours[],
+  closures: readonly Closure[],
+): Date {
+  let current = end;
+  for (let day = 0; day < LOOKAHEAD_DAYS; day += 1) {
+    const next = openIntervalsOn(locationId, current, hours, closures).find(
+      (i) => i.start.getTime() === current.getTime(),
+    );
+    if (!next) break;
+    current = next.end;
+  }
+  return current;
 }
 
 /** The next opening strictly after `now`, or null if none within the lookahead. */
@@ -164,9 +208,8 @@ export function getLocationStatus({
     return { kind: "closed", canOrder: false, opensAt: nextOpening(location.id, now, hours, closures) };
   }
 
-  return paused
-    ? { kind: "paused", canOrder: false, closesAt: current.end }
-    : { kind: "open", canOrder: true, closesAt: current.end };
+  const closesAt = openStretchEnd(location.id, current.end, hours, closures);
+  return paused ? { kind: "paused", canOrder: false, closesAt } : { kind: "open", canOrder: true, closesAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -206,10 +249,11 @@ export function statusLabel(status: LocationStatus, now: Date): string {
   }
 }
 
-/** A second line of detail, e.g. "Until 4:00 PM". */
-export function statusDetail(status: LocationStatus): string | null {
+/** A second line of detail, e.g. "Until 4:00 PM", or "Open 24 hours" when it doesn't close within a day. */
+export function statusDetail(status: LocationStatus, now?: Date): string | null {
   switch (status.kind) {
     case "open":
+      if (now && status.closesAt.getTime() - now.getTime() >= DAY_MS) return "Open 24 hours";
       return `Until ${formatCafeTimeOfDay(status.closesAt)}`;
     case "paused":
       return "Online ordering is paused for a moment";
@@ -250,11 +294,12 @@ export function todaysHoursText({ location, hours, closures, now }: Omit<StatusI
 
   const closure = closureFor(location.id, cafeDateKey(now), closures);
   const intervals = openIntervalsOn(location.id, now, hours, closures);
-  const text = intervals.length
-    ? intervals
-        .map((i) => `${formatCafeTimeOfDay(i.start)} – ${formatCafeTimeOfDay(i.end)}`)
-        .join(", ")
-    : "Closed today";
+  const allDay = intervals.some((i) => i.end.getTime() - i.start.getTime() >= DAY_MS);
+  const text = allDay
+    ? "Open 24 hours"
+    : intervals.length
+      ? intervals.map((i) => `${formatCafeTimeOfDay(i.start)} – ${formatCafeTimeOfDay(i.end)}`).join(", ")
+      : "Closed today";
 
   const note = closure ? (closure.reason ?? (closure.isClosed ? "Closed today" : "Holiday hours")) : null;
   return { hours: text, note: note === text ? null : note };

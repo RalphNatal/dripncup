@@ -2,8 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Baloo_2, Inter } from "next/font/google";
 
 import { Providers } from "@/components/providers";
+import { TestModeBanner } from "@/components/test-mode-banner";
 import { BRAND, CAFE_ADDRESS, CAFE_ADDRESS_ONE_LINE } from "@/lib/brand";
 import { clientEnv } from "@/lib/env";
+import { storeAlwaysOpen } from "@/lib/test-mode";
 
 import "./globals.css";
 
@@ -58,6 +60,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${baloo.variable} h-full`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col bg-background text-foreground">
+        {/* Local test mode only; the guard makes this impossible in a production build. */}
+        {storeAlwaysOpen() ? <TestModeBanner /> : null}
         <Providers>{children}</Providers>
       </body>
     </html>

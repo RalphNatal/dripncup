@@ -8,7 +8,7 @@
 import { useId } from "react";
 
 import type { PickupChoice, PickupOptions } from "@/lib/checkout/pickup";
-import { cafeDateKey, formatCafeDate, formatCafeTimeOfDay } from "@/lib/time";
+import { cafeDateKey, formatCafeDate, formatCafeTimeOfDay, formatCafeWeekdayShort } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 function dayLabel(slotDate: string | null): string {
@@ -94,6 +94,10 @@ export function PickupPicker({
             {options.slots.map((slot) => (
               <option key={slot.startsAt} value={slot.startsAt} disabled={!slot.available}>
                 {formatCafeTimeOfDay(new Date(slot.startsAt))}
+                {/* Slots that run past midnight (a location open through the night) name their day. */}
+                {cafeDateKey(new Date(slot.startsAt)) === options.slotDate
+                  ? ""
+                  : ` · ${formatCafeWeekdayShort(new Date(slot.startsAt))}`}
                 {slot.available ? "" : " (full)"}
               </option>
             ))}

@@ -13,8 +13,10 @@
  *   Scheduled   15-minute slots, today only. The first is at least the prep
  *               time from now; the last starts `lastSlotBufferMinutes` before
  *               closing. If the location is closed right now, the slots are
- *               the next open day's. Pop-ups: only inside the event window.
- *               A slot with `maxOrdersPerSlot` orders already is full.
+ *               the next open day's. Open through midnight (24-hour days,
+ *               local test mode): slots carry on past midnight, up to
+ *               OVERNIGHT_SLOT_HOURS ahead. Pop-ups: only inside the event
+ *               window. A slot with `maxOrdersPerSlot` orders already is full.
  *   Paused, the global switch off, or a pop-up outside its window: no pickup
  *   times at all -- checkout is blocked.
  */
@@ -22,6 +24,7 @@ import {
   getLocationStatus,
   nextOpening,
   openIntervalsOn,
+  openStretchEnd,
   type Closure,
   type StatusLocation,
   type WeeklyHours,
@@ -75,6 +78,9 @@ export interface ResolvedPickup {
 
 const FIVE_MINUTES = 5 * 60_000;
 
+/** How far ahead slots run when a location stays open through midnight. */
+export const OVERNIGHT_SLOT_HOURS = 12;
+
 /** "Ready around 9:40 AM": prep plus the queue, rounded up to 5 minutes. */
 export function estimateAsapReadyAt(
   now: Date,
@@ -123,12 +129,19 @@ export function getPickupOptions(ctx: PickupContext): PickupOptions {
   if (location.type === "event") {
     // Inside the window (checked above), so the window is the hours.
     intervals = [{ start: new Date(location.startsAt!), end: new Date(location.endsAt!) }];
-  } else if (status.kind === "open") {
-    intervals = openIntervalsOn(location.id, now, ctx.hours, ctx.closures);
   } else {
-    const opensAt = nextOpening(location.id, now, ctx.hours, ctx.closures);
-    if (!opensAt) return blocked(`${location.name} is closed and has no opening hours coming up.`);
-    intervals = openIntervalsOn(location.id, opensAt, ctx.hours, ctx.closures);
+    const day = status.kind === "open" ? now : nextOpening(location.id, now, ctx.hours, ctx.closures);
+    if (!day) return blocked(`${location.name} is closed and has no opening hours coming up.`);
+    // A day open until midnight that carries straight on into the next (24-hour
+    // opening, or local test mode) keeps offering slots past midnight, up to
+    // OVERNIGHT_SLOT_HOURS from now, instead of stopping at 11:45 PM.
+    const horizon = addMinutes(now, OVERNIGHT_SLOT_HOURS * 60);
+    intervals = openIntervalsOn(location.id, day, ctx.hours, ctx.closures).map((interval) => {
+      const stretchEnd = openStretchEnd(location.id, interval.end, ctx.hours, ctx.closures);
+      if (stretchEnd.getTime() === interval.end.getTime()) return interval;
+      const end = Math.min(stretchEnd.getTime(), Math.max(interval.end.getTime(), horizon.getTime()));
+      return { start: interval.start, end: new Date(end) };
+    });
   }
 
   const earliest = addMinutes(now, location.prepTimeMinutes);

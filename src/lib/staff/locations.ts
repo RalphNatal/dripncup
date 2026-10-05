@@ -15,7 +15,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { z } from "zod";
 
-import type { Closure, WeeklyHours } from "@/lib/locations/status";
+import { openingHours } from "@/lib/locations/opening-hours";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, cafeDateKey, startOfCafeDay } from "@/lib/time";
 
@@ -162,19 +162,7 @@ export async function loadStaffLocationContext(locationId: string, now = new Dat
     pausedUntil: row.paused_until,
     pausedAt: row.paused_at,
     onlineOrderingEnabled: typeof globalSwitch === "boolean" ? globalSwitch : true,
-    hours: (hours.data ?? []).map(
-      (h): WeeklyHours => ({ dayOfWeek: h.day_of_week, opensAt: h.opens_at, closesAt: h.closes_at }),
-    ),
-    closures: (closures.data ?? []).map(
-      (c): Closure => ({
-        locationId: c.location_id,
-        date: c.closure_date,
-        isClosed: c.is_closed,
-        opensAt: c.opens_at,
-        closesAt: c.closes_at,
-        reason: c.reason,
-      }),
-    ),
+    ...openingHours(hours.data, closures.data),
     settings: staffSettings,
   };
 }

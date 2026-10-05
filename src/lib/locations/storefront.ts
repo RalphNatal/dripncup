@@ -15,6 +15,7 @@ import { createPublicClient } from "@/lib/supabase/public";
 import { cafeDateKey, addDays } from "@/lib/time";
 
 import { LOCATION_COOKIE } from "./cookie";
+import { openingHours } from "./opening-hours";
 import {
   getLocationStatus,
   isAcceptingOrders,
@@ -122,7 +123,7 @@ function toView(
       kind: status.kind,
       canOrder: status.canOrder,
       label: statusLabel(status, now),
-      detail: statusDetail(status),
+      detail: statusDetail(status, now),
       unavailableReason: orderingUnavailableReason(status, row.name, now),
     },
     todaysHours: todaysHoursText({ location, hours, closures, now }),
@@ -166,15 +167,6 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
   const pickupSetting = setting("store.pickup_instructions");
   const defaultPickupInstructions = typeof pickupSetting === "string" ? pickupSetting : null;
 
-  const closureRows: Closure[] = (closures.data ?? []).map((c) => ({
-    locationId: c.location_id,
-    date: c.closure_date,
-    isClosed: c.is_closed,
-    opensAt: c.opens_at,
-    closesAt: c.closes_at,
-    reason: c.reason,
-  }));
-
   // The cafe, plus any pop-up that is running now or still to come.
   const rows = ((locations.data ?? []) as LocationRow[]).filter(
     (row) => row.type === "cafe" || (row.ends_at !== null && new Date(row.ends_at) > now),
@@ -185,18 +177,13 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
     return a.sort_order - b.sort_order;
   });
 
-  const views = rows.map((row) =>
-    toView(
-      row,
-      (hours.data ?? [])
-        .filter((h) => h.location_id === row.id)
-        .map((h) => ({ dayOfWeek: h.day_of_week, opensAt: h.opens_at, closesAt: h.closes_at })),
-      closureRows,
-      now,
-      onlineOrderingEnabled,
-      defaultPickupInstructions,
-    ),
-  );
+  const views = rows.map((row) => {
+    const opening = openingHours(
+      (hours.data ?? []).filter((h) => h.location_id === row.id),
+      closures.data,
+    );
+    return toView(row, opening.hours, opening.closures, now, onlineOrderingEnabled, defaultPickupInstructions);
+  });
 
   const selected =
     views.find((v) => v.id === chosenId) ?? views.find((v) => v.type === "cafe") ?? views[0] ?? null;
