@@ -62,7 +62,11 @@ export default defineConfig({
     // clearing it means a freshly re-seeded database is what the tests see.
     command: `node -e "require('fs').rmSync('.next/cache/fetch-cache',{recursive:true,force:true})" && npm run build && npm run start -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
-    env: { CRON_SECRET: process.env.E2E_CRON_SECRET },
+    // TEST_STORE_ALWAYS_OPEN is forced off, whatever .env.local says: the
+    // suite controls opening hours itself (e2e/support/storefront.ts), and the
+    // open/closed tests must see the real rules. (A production build ignores
+    // the flag anyway; this keeps it true even if that guard ever changed.)
+    env: { CRON_SECRET: process.env.E2E_CRON_SECRET, TEST_STORE_ALWAYS_OPEN: "false" },
     reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },

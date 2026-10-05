@@ -43,7 +43,8 @@ export async function restoreStorefront(snapshot: StorefrontSnapshot) {
 
 /**
  * The cafe open around the clock with nothing sold out, so a test's outcome
- * never depends on what time it happens to be in Honolulu.
+ * never depends on what time it happens to be in Honolulu. Midnight to
+ * 24:00 every day, so even ASAP just before midnight works.
  */
 export async function makeCafeAlwaysOpen() {
   const cafeId = await locationIdBySlug(SEEDED.cafeSlug);
@@ -56,7 +57,7 @@ export async function makeCafeAlwaysOpen() {
           location_id: cafeId,
           day_of_week: day,
           opens_at: "00:00:00",
-          closes_at: "23:59:59",
+          closes_at: "24:00:00",
         })),
       )
       .select(),
