@@ -323,6 +323,18 @@ nothing a hosted project could call.
   pipes them into the running database container, rather than using
   `supabase test db`, because Docker Desktop on Windows intermittently fails
   the bind mount that command needs.
+- **The page guard** (`e2e/support/test.ts`): every spec imports `test` and
+  `expect` from there, not from `@playwright/test` (a unit test enforces
+  it). It watches every page a test opens, including extra browser contexts,
+  and fails the test on any uncaught error (a hydration mismatch arrives this
+  way, as React error #418 in the production build), on console errors about
+  hydration or React, and on invalid nesting left in the DOM (a link or
+  button inside a link or button, a block inside a `<p>`). A test that
+  causes an error on purpose lists it with
+  `test.use({ allowedPageErrors: [/…/] })`. `e2e/console-health.spec.ts`
+  loads the main pages fresh signed out, as a customer (no orders, an order
+  in progress, an unpaid checkout, items in the cart), as the barista and as
+  the admin, so every one of them hydrates under the guard.
 - **End-to-end tests** build the app and serve it on port 3100, so they never
   clash with `npm run dev`. On Windows they drive the Microsoft Edge that ships
   with the OS, so nothing needs downloading. Elsewhere, run
