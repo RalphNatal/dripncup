@@ -199,7 +199,9 @@ export async function arrangePendingOrder({
     amount: intentAmountCents ?? totalCents,
     currency: "usd",
     automatic_payment_methods: { enabled: true, allow_redirects: "never" },
-    metadata: { order_id: orderId, order_number: order.order_number },
+    // Tagged like the test server's own payments (src/lib/payments/stripe.ts).
+    description: `[e2e] Arranged order ${order.order_number}`,
+    metadata: { order_id: orderId, order_number: order.order_number, source: "e2e", e2e_run: process.env.E2E_RUN_ID ?? "manual" },
   });
   must(
     await db()

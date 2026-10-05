@@ -31,6 +31,16 @@ const CLAIM_TIMEOUT_MS = 2 * 60_000;
 export async function processPaymentEvent(event: PaymentEvent): Promise<WebhookOutcome> {
   const db = createAdminClient();
 
+  // Nothing to do, so nothing to record: event types we don't handle, and
+  // payments this database never made. Everything sharing the Stripe sandbox
+  // reaches whichever server `stripe listen` forwards to (e2e runs, another
+  // developer's machine), and none of it belongs in this database's log.
+  if (event.type === "ignored") return "ignored";
+  if (!(await isOurPayment(event))) {
+    console.info(`Webhook ${event.id}: payment ${event.paymentId} is not from this database; ignoring.`);
+    return "ignored";
+  }
+
   const { data: seen } = await db
     .from("webhook_events")
     .select("status, attempts, attempted_at")
@@ -51,8 +61,7 @@ export async function processPaymentEvent(event: PaymentEvent): Promise<WebhookO
       .select("id");
     if (!claimed?.length) return "in_progress";
   } else {
-    const type = event.type === "ignored" ? event.providerType : event.type;
-    const { error } = await db.from("webhook_events").insert({ id: event.id, type, status: "processing" });
+    const { error } = await db.from("webhook_events").insert({ id: event.id, type: event.type, status: "processing" });
     // Another delivery of the same event won the insert.
     if (error?.code === "23505") return "in_progress";
     if (error) throw new Error(`Could not record webhook event ${event.id}: ${error.message}`);
@@ -72,20 +81,39 @@ export async function processPaymentEvent(event: PaymentEvent): Promise<WebhookO
       case "payment.refunded":
         await handleRefunded(event);
         break;
-      case "ignored":
-        break;
     }
     await db
       .from("webhook_events")
       .update({ status: "processed", processed_at: new Date().toISOString(), last_error: null })
       .eq("id", event.id);
-    return event.type === "ignored" ? "ignored" : "processed";
+    return "processed";
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db.from("webhook_events").update({ status: "failed", last_error: message.slice(0, 1000) }).eq("id", event.id);
     // Rethrown so the route answers 500 and the provider redelivers.
     throw error;
   }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether this database made the payment: a payments row for it, or the
+ * order its metadata names. (Checkout creates the order before the
+ * PaymentIntent, so an event for one of ours can never arrive first.)
+ */
+async function isOurPayment(event: Exclude<PaymentEvent, { type: "ignored" }>): Promise<boolean> {
+  const db = createAdminClient();
+  const { data: payment } = await db
+    .from("payments")
+    .select("id")
+    .eq("provider_payment_intent_id", event.paymentId)
+    .maybeSingle();
+  if (payment) return true;
+  const orderId = "orderId" in event ? event.orderId : null;
+  if (!orderId || !UUID.test(orderId)) return false;
+  const { data: order } = await db.from("orders").select("id").eq("id", orderId).maybeSingle();
+  return Boolean(order);
 }
 
 /** The order a payment belongs to: our payments row first, the metadata second. */

@@ -70,6 +70,16 @@ const idOf = (value: string | { id: string } | null | undefined) =>
   value == null ? null : typeof value === "string" ? value : value.id;
 
 /**
+ * Marks payments made by an e2e run, so the sandbox dashboard tells them
+ * apart from hand testing (search `metadata['source']:'e2e'`). E2E_RUN_ID is
+ * set only on the Playwright test server (playwright.config.ts).
+ */
+function testRunTag(): { metadata: Record<string, string>; descriptionPrefix: string } {
+  const run = process.env.E2E_RUN_ID?.trim();
+  return run ? { metadata: { source: "e2e", e2e_run: run }, descriptionPrefix: "[e2e] " } : { metadata: {}, descriptionPrefix: "" };
+}
+
+/**
  * Brand, last four and wallet from the charge, for the receipt. Webhook
  * payloads carry only the charge id, so this is one extra call; if it fails
  * the order is placed anyway and the receipt just omits the card.
@@ -94,15 +104,16 @@ export const stripeProvider: PaymentProvider = {
   name: "stripe",
 
   async createPayment(input: CreatePaymentInput) {
+    const tag = testRunTag();
     const intent = await stripe().paymentIntents.create(
       {
         amount: input.amountCents,
         currency: input.currency,
         // Cards plus whatever wallets and methods are enabled in the dashboard.
         automatic_payment_methods: { enabled: true },
-        description: input.description,
+        description: input.description ? `${tag.descriptionPrefix}${input.description}` : undefined,
         receipt_email: input.customerEmail ?? undefined,
-        metadata: { order_id: input.orderId, order_number: input.orderNumber },
+        metadata: { order_id: input.orderId, order_number: input.orderNumber, ...tag.metadata },
       },
       { idempotencyKey: `checkout-${input.idempotencyKey}` },
     );
@@ -132,7 +143,7 @@ export const stripeProvider: PaymentProvider = {
         payment_intent: input.paymentId,
         amount: input.amountCents,
         reason: "requested_by_customer",
-        metadata: { refund_row_id: input.refundRowId, note: input.reason.slice(0, 450) },
+        metadata: { refund_row_id: input.refundRowId, note: input.reason.slice(0, 450), ...testRunTag().metadata },
       },
       { idempotencyKey: `refund-${input.refundRowId}-${input.attempt}` },
     );
