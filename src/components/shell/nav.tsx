@@ -4,13 +4,16 @@
  * The five customer tabs: a bottom tab bar on phones, links in the header
  * from `md` up. One list, two presentations. Orders carries a live dot
  * while one of the customer's orders is on its way (useActiveOrders: the
- * same subscription the Home cards use).
+ * same subscription the Home cards use). The shop layout reads the active
+ * orders on the server and passes them in, so the first render in the
+ * browser matches the HTML; Realtime takes over after that.
  */
 import { CircleUserRound, CupSoda, Gift, House, Receipt, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { CUSTOMER_TABS } from "@/lib/brand";
+import type { OrderListItem } from "@/lib/orders/list";
 import { useActiveOrders } from "@/lib/orders/live";
 import { cn } from "@/lib/utils";
 
@@ -27,8 +30,8 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /** True while an order is between Placed and Ready. */
-function useOrderInProgress(userId: string | null): { inProgress: boolean; ready: boolean } {
-  const orders = useActiveOrders(userId);
+function useOrderInProgress(userId: string | null, initial: OrderListItem[]): { inProgress: boolean; ready: boolean } {
+  const orders = useActiveOrders(userId, initial);
   return { inProgress: orders.length > 0, ready: orders.some((o) => o.status === "ready") };
 }
 
@@ -45,9 +48,9 @@ function OrderDot({ ready, className }: { ready: boolean; className?: string }) 
   );
 }
 
-export function BottomTabs({ userId }: { userId: string | null }) {
+export function BottomTabs({ userId, activeOrders }: { userId: string | null; activeOrders: OrderListItem[] }) {
   const pathname = usePathname();
-  const orders = useOrderInProgress(userId);
+  const orders = useOrderInProgress(userId, activeOrders);
 
   return (
     <nav
@@ -89,9 +92,17 @@ export function BottomTabs({ userId }: { userId: string | null }) {
   );
 }
 
-export function DesktopNav({ userId, className }: { userId: string | null; className?: string }) {
+export function DesktopNav({
+  userId,
+  activeOrders,
+  className,
+}: {
+  userId: string | null;
+  activeOrders: OrderListItem[];
+  className?: string;
+}) {
   const pathname = usePathname();
-  const orders = useOrderInProgress(userId);
+  const orders = useOrderInProgress(userId, activeOrders);
 
   return (
     <nav aria-label="Main" className={className}>

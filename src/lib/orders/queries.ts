@@ -5,6 +5,7 @@ import "server-only";
  * for one order, checked against their id as well: staff can read orders at
  * their location, but a customer's tracker and receipt are the customer's.
  */
+import { cache } from "react";
 import { z } from "zod";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
@@ -26,12 +27,18 @@ export async function getOwnOrderDetail(orderId: string): Promise<OrderDetail | 
   return toOrderDetail(row);
 }
 
-export async function listActiveOrders(): Promise<OrderListItem[]> {
+/**
+ * The signed-in customer's orders in Placed through Ready (never an unpaid
+ * or abandoned checkout: `list_my_orders` 'active' scope). Cached per
+ * request: the shop layout (the Orders-tab dot) and Home or /orders (the
+ * cards) seed the same client query, so they must render the same list.
+ */
+export const listActiveOrders = cache(async (): Promise<OrderListItem[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("list_my_orders", { p_scope: "active", p_limit: 20 });
   if (error) throw new Error(`Could not load active orders: ${error.message}`);
   return (data ?? []).map(toOrderListItem);
-}
+});
 
 export interface PastOrdersPage {
   orders: OrderListItem[];
