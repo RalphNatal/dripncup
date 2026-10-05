@@ -471,8 +471,10 @@ Strongest rule first:
    `Event · Oct 8, 10:00 AM – 3:00 PM`.
 2. **A closure row** for the day replaces the weekly hours, either closed all
    day or holiday hours. The location's own row beats an all-locations row.
-3. **Weekly hours**; several rows on one day are split hours. Open means
-   `opensAt <= now < closesAt`, so at 4:00:00 PM a 4 PM close is closed.
+3. **Weekly hours**; several rows on one day are split hours (rows that touch
+   merge). Open means `opensAt <= now < closesAt`, so at 4:00:00 PM a 4 PM
+   close is closed. A `24:00` close is the next midnight, and a day that
+   runs into a day opening at midnight stays open across it ("Open 24 hours").
 4. **Paused** applies only while it would otherwise be open. Outside hours
    the label says `Closed · Opens Fri 6:30 AM`, which is the more useful
    thing to know.
@@ -480,6 +482,13 @@ Strongest rule first:
 The label, today's hours and an "ordering unavailable" sentence are computed
 on the server and passed down as plain strings. The same function will
 re-check at checkout.
+
+Hours and closures always enter through `openingHours()`
+(`src/lib/locations/opening-hours.ts`), used by the storefront, checkout and
+webhook, and staff loaders. Local test mode (`TEST_STORE_ALWAYS_OPEN`, guarded
+in `src/lib/test-mode.ts` to dev builds on a local database) swaps them there
+for "open 24 hours, no closures", so every check above follows without its own
+branch. No SQL function reads hours (`supabase/tests/store_hours.test.sql`).
 
 ### Menu data and caching
 

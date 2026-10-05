@@ -107,6 +107,7 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `RESEND_API_KEY` | **secret** | production | Set → emails go through Resend. Leave empty locally: emails go to Mailpit |
 | `EMAIL_FROM` | config | production | Sender, e.g. `Drincup Cafe <orders@your-domain>`; the domain must be verified in Resend |
 | `MAILPIT_URL` | config | no | Local Mailpit address; defaults to `http://127.0.0.1:54324` |
+| `TEST_STORE_ALWAYS_OPEN` | local only | no | `true` = ignore store hours on a local dev server (see "Testing from outside Hawaii"). Ignored on production builds and hosted databases |
 
 `.env*` is gitignored. Never commit real keys — `.env.example` is the template.
 
@@ -664,6 +665,36 @@ Private-network addresses are already allowed in `next.config.ts`
 but Apple Pay and Google Pay stay hidden: wallets need HTTPS. To test those,
 use a tunnel with HTTPS (for example `ngrok http 3000`) and add its hostname to
 `allowedDevOrigins`.
+
+## Testing from outside Hawaii
+
+The app always runs on Honolulu time (`Pacific/Honolulu`, UTC−10, no daylight
+saving), whatever your computer's timezone. From Manila (UTC+8) Honolulu is
+**18 hours behind**: 9:00 AM Monday in Manila is 3:00 PM Sunday in Honolulu,
+and by mid-afternoon in Manila the cafe has closed for the night. The menu then
+blocks Add to Cart, and checkout and the staff queue can't be tried.
+
+For local testing, turn store hours off:
+
+1. In `.env.local`, add `TEST_STORE_ALWAYS_OPEN=true`.
+2. Restart `npm run dev` (env changes need a restart).
+3. A yellow strip appears at the top of every page:
+   *Test mode: store hours ignored · Honolulu time now: 5:43 PM Sun*.
+
+While it is on, every location is open 24 hours, every day: weekly hours,
+closures and holiday hours are ignored everywhere (header, menu, cart,
+checkout, pickup slots, the payment webhook's re-check, the staff dashboard).
+ASAP works at any hour and scheduled slots run every 15 minutes for the next
+12 hours, past midnight. **Still enforced as normal:** the staff pause toggle,
+the global online-ordering switch, sold-out items, and pop-up event windows.
+
+**Local only.** The flag is honoured only on a development server
+(`NODE_ENV` not `production`) whose `NEXT_PUBLIC_SUPABASE_URL` is
+`127.0.0.1`, `localhost` or a private LAN address (phone testing). Anywhere
+else, including a Vercel deployment where someone set it by mistake, it is
+ignored and the server logs a warning. The e2e suite forces it off, so your
+`.env.local` never changes test results. Set it back to `false` (or delete the
+line) to see the real hours.
 
 ---
 
