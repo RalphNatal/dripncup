@@ -49,7 +49,8 @@ export default async function SettingsPage() {
               const row = stored.get(def.key);
               return (
                 <SettingField
-                  key={`${def.key}:${row?.updatedAt ?? ""}`}
+                  key={def.key}
+                  version={row?.updatedAt ?? ""}
                   def={def}
                   initial={settingInputValue(def, row?.value)}
                   confirmed={Boolean(row?.confirmedAt)}

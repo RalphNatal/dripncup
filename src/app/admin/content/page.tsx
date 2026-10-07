@@ -26,7 +26,8 @@ export default async function ContentPage() {
           const row = rows.get(item.key);
           return (
             <ContentEditor
-              key={`${item.key}:${row?.updated_at ?? ""}`}
+              key={item.key}
+              version={row?.updated_at ?? ""}
               item={item}
               initial={row?.value ?? ""}
               confirmed={Boolean(row?.confirmed_at)}

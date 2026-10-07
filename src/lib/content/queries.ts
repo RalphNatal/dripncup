@@ -5,6 +5,7 @@ import "server-only";
  * logo) and the catering refund policy. Public rows, read fresh so an edit
  * shows at once; deduped within a request.
  */
+import { connection } from "next/server";
 import { cache } from "react";
 
 import { clientEnv } from "@/lib/env";
@@ -23,6 +24,9 @@ const EMPTY: SiteContent = {
 };
 
 export const getSiteContent = cache(async (): Promise<SiteContent> => {
+  // Live content: read per request, never during prerendering (where the
+  // no-store fetch would fail and be logged as a load error).
+  await connection();
   const { data, error } = await createPublicClient({ live: true }).from("site_content").select("key, value");
   if (error) {
     console.error("Could not load site content", error);

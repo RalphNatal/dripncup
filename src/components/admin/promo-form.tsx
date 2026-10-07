@@ -89,7 +89,7 @@ export function PromoForm({ initial, locked }: { initial: PromoValues; locked: b
         </fieldset>
         {values.type === "percent" ? (
           <>
-            {input("percent", "Percent off", "e.g. 10", locked, "decimal")}
+            {input("percent", "Percent off (%)", "e.g. 10", locked, "decimal")}
             {input("maxDiscount", "Most it can take off ($)", "Optional cap, e.g. 10.00.", locked, "decimal")}
           </>
         ) : (

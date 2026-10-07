@@ -15,11 +15,25 @@ import type { ContentItem } from "@/lib/content/registry";
 import { inputClass, textareaClass } from "./form-layout";
 import { ImageUploadField } from "./image-upload-field";
 import { StatusPill } from "./status-pill";
+import { useSyncedDraft } from "./use-synced-draft";
 
-export function ContentEditor({ item, initial, confirmed, supabaseUrl }: { item: ContentItem; initial: string; confirmed: boolean; supabaseUrl: string }) {
+export function ContentEditor({
+  item,
+  initial,
+  version,
+  confirmed,
+  supabaseUrl,
+}: {
+  item: ContentItem;
+  initial: string;
+  /** The saved row's updated_at: a new one means the saved value changed. */
+  version: string;
+  confirmed: boolean;
+  supabaseUrl: string;
+}) {
   const id = useId();
   const router = useRouter();
-  const [value, setValue] = useState(initial);
+  const { value, setValue, markSaved } = useSyncedDraft(initial, version);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [, startTransition] = useTransition();
@@ -34,6 +48,7 @@ export function ContentEditor({ item, initial, confirmed, supabaseUrl }: { item:
         toast.error(result.message);
         return;
       }
+      markSaved(next);
       toast.success(result.message ?? "Saved.");
       startTransition(() => router.refresh());
     } finally {

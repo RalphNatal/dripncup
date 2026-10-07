@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { inputClass, textareaClass } from "./form-layout";
 import { StatusPill } from "./status-pill";
+import { useSyncedDraft } from "./use-synced-draft";
 
 export interface SettingHistoryEntry {
   id: number;
@@ -46,19 +47,21 @@ export function SettingField({
   initial,
   history,
   confirmed,
+  version,
 }: {
   def: SettingDefinition;
   initial: string | boolean;
+  /** The saved row's updated_at: a new one means the saved value changed. */
+  version: string;
   history: SettingHistoryEntry[];
   confirmed: boolean;
 }) {
   const id = useId();
   const router = useRouter();
-  const [value, setValue] = useState(initial);
+  const { value, setValue, dirty, markSaved } = useSyncedDraft(initial, version);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [, startTransition] = useTransition();
-  const dirty = value !== initial;
   const unit = suffix(def);
 
   async function save(event: React.FormEvent) {
@@ -72,6 +75,7 @@ export function SettingField({
         toast.error(result.message);
         return;
       }
+      markSaved(value);
       toast.success(result.message ?? "Saved.");
       startTransition(() => router.refresh());
     } finally {
