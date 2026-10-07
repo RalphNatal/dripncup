@@ -16,6 +16,7 @@
 --   DC033  an archived item must be restored before it is switched on
 --   DC034  that option controls an "Only show when" rule on a product
 --   DC035  that group is still on products
+--   DC036  "Only show when" rules on a product form a loop
 --
 -- Archive vs delete: a product, size, modifier group or option that anything
 -- refers to is archived (inactive, hidden from customers, kept for history);
@@ -460,6 +461,26 @@ begin
      set sort_order = excluded.sort_order, visible_when_option_id = excluded.visible_when_option_id
    where product_modifier_groups.sort_order is distinct from excluded.sort_order
       or product_modifier_groups.visible_when_option_id is distinct from excluded.visible_when_option_id;
+
+  -- No loops: A shown only when B's option is picked and B only when A's
+  -- (directly or through others) would hide every group in the loop.
+  if exists (
+    with recursive edges as (
+      select l.modifier_group_id as grp, o.modifier_group_id as needs
+        from public.product_modifier_groups l
+        join public.modifier_options o on o.id = l.visible_when_option_id
+       where l.product_id = p_product_id
+    ),
+    walk as (
+      select grp as start, needs as at, 1 as depth from edges
+      union all
+      select w.start, e.needs, w.depth + 1 from walk w join edges e on e.grp = w.at where w.depth < 25 and w.at <> w.start
+    )
+    select 1 from walk where at = start
+  ) then
+    raise exception '"Only show when" rules on this product depend on each other in a loop, so those groups would never show'
+      using errcode = 'DC036';
+  end if;
 
   -- Required and single-choice (on this product) needs a default, or the
   -- customer is handed a sheet they cannot add without choosing.

@@ -82,6 +82,18 @@ describe("validateProductDraft", () => {
     expect(validateProductDraft(missing, GROUPS)["groups.0.visibleWhen"]).toBe("Pick an option from another group on this product.");
   });
 
+  it("refuses 'Only show when' rules that depend on each other in a loop", () => {
+    const loop = draft({
+      groups: [
+        { groupId: TEMP.id, visibleWhenOptionId: ICE.options[0].id },
+        { groupId: ICE.id, visibleWhenOptionId: TEMP.options[1].id },
+      ],
+    });
+    const errors = validateProductDraft(loop, GROUPS);
+    expect(errors["groups.0.visibleWhen"]).toMatch(/in a loop/);
+    expect(errors["groups.1.visibleWhen"]).toMatch(/in a loop/);
+  });
+
   it("refuses a required single-choice group without a default", () => {
     expect(validateProductDraft(draft({ groups: [{ groupId: NO_DEFAULT.id, visibleWhenOptionId: null }] }), GROUPS)["groups.0"]).toMatch(/needs a default option/);
   });

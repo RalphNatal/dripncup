@@ -158,11 +158,27 @@ export function validateProductDraft(draft: ProductDraft, groups: readonly Admin
       errors[`groups.${index}`] = `${group.name} is required and single-choice, so it needs a default option. Set one on the Modifiers page.`;
     }
   });
+  // Which group each group's "Only show when" option belongs to.
+  const controller = new Map<string, string>();
   draft.groups.forEach((link, index) => {
     if (!link.visibleWhenOptionId) return;
     const owner = groups.find((g) => g.options.some((o) => o.id === link.visibleWhenOptionId));
     if (!owner || owner.id === link.groupId || !linked.has(owner.id)) {
       errors[`groups.${index}.visibleWhen`] = "Pick an option from another group on this product.";
+      return;
+    }
+    controller.set(link.groupId, owner.id);
+  });
+  // A loop (A shown only when B's option is picked, B only when A's) would
+  // hide every group in it for good.
+  draft.groups.forEach((link, index) => {
+    const seen = new Set<string>([link.groupId]);
+    for (let at = controller.get(link.groupId); at; at = controller.get(at)) {
+      if (seen.has(at)) {
+        errors[`groups.${index}.visibleWhen`] ??= "These \"Only show when\" rules depend on each other in a loop, so the groups would never show.";
+        return;
+      }
+      seen.add(at);
     }
   });
 

@@ -23,7 +23,7 @@
 -- ============================================================================
 begin;
 
-select plan(67);
+select plan(68);
 
 create function pg_temp.as_user(uid uuid, sql text)
 returns text
@@ -277,6 +277,15 @@ select is(
       '[{"name": "Small", "price_cents": 400}, {"name": "Large", "price_cents": 500}]'::jsonb, '[]'::jsonb)$$,
     (select id from ids where name = 'product'))),
   '22023', 'sizes need exactly one default');
+
+select is(
+  pg_temp.as_user('c9000000-0000-0000-0000-000000000001', format($$
+    select public.admin_save_product('{"id": "%s", "name": "P9 Iced Tea", "slug": "p9-iced-tea"}'::jsonb,
+      '[{"name": "Small", "price_cents": 400, "is_default": true}]'::jsonb,
+      '[{"group_id": "%s", "visible_when_option_id": "%s"}, {"group_id": "%s", "visible_when_option_id": "%s"}]'::jsonb)$$,
+    (select id from ids where name = 'product'), (select id from ids where name = 'group'), (select id from ids where name = 'light'),
+    (select id from ids where name = 'ice'), (select id from ids where name = 'iced'))),
+  'DC036', '"Only show when" rules cannot form a loop');
 
 select is(
   pg_temp.as_user('c9000000-0000-0000-0000-000000000001', format($$
