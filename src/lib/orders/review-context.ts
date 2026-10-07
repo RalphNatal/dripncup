@@ -7,6 +7,7 @@ import "server-only";
  * the 60-second menu cache, for lists that only display (the favourites row);
  * sold-out flags are always live.
  */
+import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 import { getStorefront, type LocationView } from "@/lib/locations/storefront";
 import { getSoldOut } from "@/lib/menu/availability";
@@ -28,7 +29,7 @@ export async function loadReviewContext({ live = true }: { live?: boolean } = {}
   const { selected, locations } = await getStorefront();
   if (!selected) return null;
 
-  const now = new Date();
+  const now = await appNow();
   const [catalog, soldOut] = await Promise.all([live ? getLiveCatalog() : getCatalog(), getSoldOut(selected.id, now)]);
   const ctx = {
     location: { id: selected.id, type: selected.type },

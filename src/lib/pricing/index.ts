@@ -5,6 +5,7 @@
  * `Date.now()`, no I/O. Everything it needs is passed in. That is what lets
  * checkout (Phase 4) reuse exactly the code the product sheet runs.
  */
+export * from "./catering-quote";
 export * from "./constants";
 export * from "./order-total";
 export * from "./points";

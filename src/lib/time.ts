@@ -70,6 +70,26 @@ export function cafeDateAtTime(day: Date, time: TimeString): Date {
   );
 }
 
+/**
+ * A Honolulu calendar date ("2026-10-18") and wall time ("10:30") as an
+ * instant, for forms that ask for a date and a time in Hawaii. Null when the
+ * date does not exist ("2026-02-30") or either part is malformed.
+ */
+export function cafeInstant(dateKey: string, time: string): Date | null {
+  const date = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!date || !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time)) return null;
+  // Noon UTC on that date is the same date in Honolulu (UTC-10).
+  const noon = new Date(Date.UTC(Number(date[1]), Number(date[2]) - 1, Number(date[3]), 12));
+  const at = new Date(cafeDateAtTime(noon, time.length === 5 ? `${time}:00` : time).getTime());
+  return cafeDateKey(at) === dateKey ? at : null;
+}
+
+/** "10:30" for an instant, in Honolulu (for a time input). */
+export function cafeTimeKey(date: Date): string {
+  const cafe = toCafeTime(date);
+  return `${String(cafe.getHours()).padStart(2, "0")}:${String(cafe.getMinutes()).padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Formatting. Intl is used directly so the timezone is explicit at every call
 // and cannot be forgotten.

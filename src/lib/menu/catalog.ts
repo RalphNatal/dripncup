@@ -36,6 +36,8 @@ export interface CatalogData {
     | "dietary_tags"
     | "calories"
     | "sort_order"
+    | "available_from"
+    | "available_until"
   >[];
   sizes: Pick<Tables<"product_sizes">, "id" | "product_id" | "name" | "price_cents" | "volume_oz" | "is_default" | "sort_order">[];
   groups: Pick<
@@ -79,7 +81,7 @@ async function fetchCatalog({ live = false }: { live?: boolean } = {}): Promise<
       db
         .from("products")
         .select(
-          "id, category_id, name, slug, description, image_url, base_price_cents, allergens, dietary_tags, calories, sort_order",
+          "id, category_id, name, slug, description, image_url, base_price_cents, allergens, dietary_tags, calories, sort_order, available_from, available_until",
         )
         .order("sort_order")
         .order("name"),
@@ -120,7 +122,7 @@ async function fetchCatalog({ live = false }: { live?: boolean } = {}): Promise<
 }
 
 /** For browsing: may be up to a minute old. */
-export const getCatalog = unstable_cache(() => fetchCatalog(), ["menu-catalog", "v1"], {
+export const getCatalog = unstable_cache(() => fetchCatalog(), ["menu-catalog", "v2"], {
   tags: [MENU_CACHE_TAG],
   revalidate: CATALOG_REVALIDATE_SECONDS,
 });

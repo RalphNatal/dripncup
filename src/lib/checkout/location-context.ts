@@ -33,7 +33,7 @@ export interface LocationSnapshot {
   closures: Closure[];
 }
 
-/** The location, its weekly hours and closures from today on. Null if missing or switched off. */
+/** The location, its weekly hours and closures from today on. Null if missing, switched off or an unpublished event. */
 export async function loadLocationSnapshot(locationId: string, now: Date = new Date()): Promise<LocationSnapshot | null> {
   // The id goes into a PostgREST filter string below; only ever a UUID.
   if (!z.guid().safeParse(locationId).success) return null;
@@ -42,7 +42,7 @@ export async function loadLocationSnapshot(locationId: string, now: Date = new D
     db
       .from("locations")
       .select(
-        "id, name, type, accepting_orders, paused_until, is_active, starts_at, ends_at, prep_time_minutes, pickup_instructions, address_line1, address_line2, city, state, postal_code",
+        "id, name, type, accepting_orders, paused_until, is_active, is_published, starts_at, ends_at, prep_time_minutes, pickup_instructions, address_line1, address_line2, city, state, postal_code",
       )
       .eq("id", locationId)
       .maybeSingle(),
@@ -59,7 +59,7 @@ export async function loadLocationSnapshot(locationId: string, now: Date = new D
     if (result.error) throw new Error(`Checkout: could not load the location (${result.error.message})`);
   }
   const row = location.data;
-  if (!row || !row.is_active) return null;
+  if (!row || !row.is_active || (row.type === "event" && !row.is_published)) return null;
 
   const cityLine = [row.city, [row.state, row.postal_code].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   return {

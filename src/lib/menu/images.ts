@@ -55,3 +55,15 @@ export function safeCssColor(value: string | null): string | null {
   const keyword = /^[a-z]{3,20}$/i;
   return hex.test(color) || fn.test(color) || keyword.test(color) ? color : null;
 }
+
+/**
+ * Local Supabase serves Storage from 127.0.0.1, which next/image's
+ * optimiser refuses to fetch; such images are shown unoptimised.
+ */
+export function isLoopbackUrl(src: string): boolean {
+  try {
+    return ["127.0.0.1", "localhost"].includes(new URL(src).hostname);
+  } catch {
+    return false;
+  }
+}

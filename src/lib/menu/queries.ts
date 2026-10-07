@@ -5,6 +5,7 @@ import "server-only";
  * the fresh storefront (selected location, status) and that location's
  * sold-out list.
  */
+import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 import { getStorefront, type LocationView } from "@/lib/locations/storefront";
 
@@ -26,7 +27,7 @@ export async function getMenuPageData(): Promise<{ location: LocationView; menu:
   const { selected } = await getStorefront();
   if (!selected) return null;
 
-  const now = new Date();
+  const now = await appNow();
   const [catalog, soldOut] = await Promise.all([getCatalog(), getSoldOut(selected.id, now)]);
 
   return {
@@ -50,7 +51,7 @@ export async function getProductPageData(slug: string): Promise<ProductPageData 
   const { selected } = await getStorefront();
   if (!selected) return null;
 
-  const now = new Date();
+  const now = await appNow();
   const [catalog, soldOut] = await Promise.all([getCatalog(), getSoldOut(selected.id, now)]);
   const detail = buildProductDetail(catalog, slug, {
     location: { id: selected.id, type: selected.type },

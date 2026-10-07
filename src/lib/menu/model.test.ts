@@ -27,6 +27,8 @@ function catalog(): CatalogData {
         dietary_tags: ["contains_caffeine"],
         calories: null,
         sort_order: 0,
+        available_from: null,
+        available_until: null,
       },
       {
         id: "cookie",
@@ -40,6 +42,8 @@ function catalog(): CatalogData {
         dietary_tags: [],
         calories: 220,
         sort_order: 0,
+        available_from: null,
+        available_until: null,
       },
       {
         id: "orphan",
@@ -53,6 +57,8 @@ function catalog(): CatalogData {
         dietary_tags: [],
         calories: null,
         sort_order: 0,
+        available_from: null,
+        available_until: null,
       },
       {
         id: "loose",
@@ -66,6 +72,8 @@ function catalog(): CatalogData {
         dietary_tags: [],
         calories: null,
         sort_order: 0,
+        available_from: null,
+        available_until: null,
       },
     ],
     sizes: [
@@ -231,6 +239,28 @@ describe("buildMenu", () => {
     expect(buildMenu(catalog(), { ...cafeCtx, now: new Date("2026-08-31T23:59:59Z") }).collection).toBeNull();
   });
 
+  it("shows a limited-time product only inside its availability window", () => {
+    const data = catalog();
+    data.products[1] = { ...data.products[1], available_from: "2026-09-20T00:00:00-10:00", available_until: "2026-09-25T00:00:00-10:00" };
+    const slugsAt = (now: Date) => buildMenu(data, { ...cafeCtx, now }).sections.flatMap((s) => s.products.map((p) => p.slug));
+    expect(slugsAt(NOW)).toContain("cookie");
+    expect(slugsAt(new Date("2026-09-19T23:59:59-10:00"))).not.toContain("cookie");
+    expect(slugsAt(new Date("2026-09-25T00:00:00-10:00"))).not.toContain("cookie");
+    // Gone from the collection banner too.
+    expect(buildMenu(data, { ...cafeCtx, now: new Date("2026-09-26T00:00:00-10:00") }).collection?.products).toEqual([
+      { slug: "latte", name: "Latte" },
+    ]);
+  });
+
+  it("when seasons overlap, the newest one takes the banner, unless it has nothing on this menu", () => {
+    const data = catalog();
+    data.collections.push({ ...data.collections[0], id: "fall", name: "Fall Harvest", slug: "fall-harvest", starts_at: "2026-09-20T00:00:00Z" });
+    data.collectionProducts.push({ collection_id: "fall", product_id: "cookie", sort_order: 0 });
+    expect(buildMenu(data, cafeCtx).collection?.name).toBe("Fall Harvest");
+    data.collectionProducts = data.collectionProducts.filter((cp) => cp.collection_id !== "fall");
+    expect(buildMenu(data, cafeCtx).collection?.name).toBe("Summer Sunset");
+  });
+
   it("lists only collection products this location carries", () => {
     const menu = buildMenu(catalog(), { ...cafeCtx, location: { id: "popup", type: "event" } });
     expect(menu.collection?.products).toEqual([{ slug: "cookie", name: "Cookie" }]);
@@ -241,6 +271,13 @@ describe("buildProductDetail", () => {
   it("returns null for an unknown or hidden product", () => {
     expect(buildProductDetail(catalog(), "nope", cafeCtx)).toBeNull();
     expect(buildProductDetail(catalog(), "old-drink", cafeCtx)).toBeNull();
+  });
+
+  it("returns null for a limited-time product outside its window (cart, checkout and reorder all use this)", () => {
+    const data = catalog();
+    data.products[0] = { ...data.products[0], available_until: "2026-09-24T09:00:00-10:00" };
+    expect(buildProductDetail(data, "latte", cafeCtx)).toBeNull();
+    expect(buildProductDetail(data, "latte", { ...cafeCtx, now: new Date("2026-09-24T08:59:59-10:00") })).not.toBeNull();
   });
 
   it("orders groups by the product link and applies per-product overrides", () => {

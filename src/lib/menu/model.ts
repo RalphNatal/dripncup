@@ -5,7 +5,8 @@
  * Pure (no I/O, `now` passed in), so it can be unit-tested and so checkout
  * can build exactly the same PricingProduct / PricingModifierGroup values on
  * the server. This is where per-product overrides, sold-out flags and event
- * menus are applied -- nothing downstream needs to know about them.
+ * menus are applied, and limited-time products outside their window are
+ * dropped -- nothing downstream needs to know about them.
  */
 import {
   startingPriceCents,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/pricing";
 import type { Enums } from "@/types/database";
 
+import { isProductAvailableAt } from "./availability-window";
 import type { CatalogData } from "./catalog";
 import { productImageUrl, safeCssColor, storageImageUrl } from "./images";
 
@@ -61,6 +63,7 @@ export interface MenuSection {
 
 export interface MenuCollection {
   id: string;
+  slug: string;
   name: string;
   description: string | null;
   accentColor: string | null;
@@ -156,9 +159,16 @@ function sizesFor(catalog: CatalogData, productId: string): DetailSize[] {
     }));
 }
 
-/** A product in an inactive category is hidden; one with no category goes under "More to try". */
-function isListed(catalog: CatalogData, product: CatalogData["products"][number]): boolean {
-  return product.category_id === null || catalog.categories.some((c) => c.id === product.category_id);
+/**
+ * A product in an inactive category is hidden; one with no category goes
+ * under "More to try". A limited-time product is listed only inside its
+ * availability window.
+ */
+function isListed(catalog: CatalogData, product: CatalogData["products"][number], now: Date): boolean {
+  return (
+    isProductAvailableAt(product, now) &&
+    (product.category_id === null || catalog.categories.some((c) => c.id === product.category_id))
+  );
 }
 
 export function buildMenu(catalog: CatalogData, ctx: MenuContext): MenuView {
@@ -168,7 +178,7 @@ export function buildMenu(catalog: CatalogData, ctx: MenuContext): MenuView {
   const cards = new Map<string, MenuProductCard>();
   const categoryOf = new Map<string, string | null>();
   for (const product of catalog.products) {
-    if (!isListed(catalog, product)) continue;
+    if (!isListed(catalog, product, ctx.now)) continue;
     if (offered && !offered.has(product.id)) continue;
     categoryOf.set(product.id, product.category_id);
     const sizes = sizesFor(catalog, product.id);
@@ -211,27 +221,40 @@ export function buildMenu(catalog: CatalogData, ctx: MenuContext): MenuView {
   };
 }
 
-/** The current seasonal collection, if its window is open and it has something on this menu. */
+/**
+ * The current seasonal collection: one whose window is open and that has
+ * something on this menu. When seasons overlap, the lowest sort order wins,
+ * then the one that started most recently (the new season takes the banner).
+ */
 function activeCollection(
   catalog: CatalogData,
   ctx: MenuContext,
   cards: Map<string, MenuProductCard>,
 ): MenuCollection | null {
-  const collection = catalog.collections.find(
-    (c) => new Date(c.starts_at) <= ctx.now && ctx.now < new Date(c.ends_at),
-  );
-  if (!collection) return null;
+  const open = catalog.collections
+    .filter((c) => new Date(c.starts_at) <= ctx.now && ctx.now < new Date(c.ends_at))
+    .sort((a, b) => a.sort_order - b.sort_order || Date.parse(b.starts_at) - Date.parse(a.starts_at));
 
-  const products = catalog.collectionProducts
-    .filter((cp) => cp.collection_id === collection.id)
-    .flatMap((cp) => {
-      const card = cards.get(cp.product_id);
-      return card ? [{ slug: card.slug, name: card.name }] : [];
-    });
-  if (products.length === 0) return null;
+  for (const collection of open) {
+    const products = catalog.collectionProducts
+      .filter((cp) => cp.collection_id === collection.id)
+      .flatMap((cp) => {
+        const card = cards.get(cp.product_id);
+        return card ? [{ slug: card.slug, name: card.name }] : [];
+      });
+    if (products.length > 0) return toMenuCollection(collection, products, ctx);
+  }
+  return null;
+}
 
+function toMenuCollection(
+  collection: CatalogData["collections"][number],
+  products: MenuCollection["products"],
+  ctx: MenuContext,
+): MenuCollection {
   return {
     id: collection.id,
+    slug: collection.slug,
     name: collection.name,
     description: collection.description,
     accentColor: safeCssColor(collection.accent_color),
@@ -284,7 +307,7 @@ function toDetailGroup(
 
 export function buildProductDetail(catalog: CatalogData, slug: string, ctx: MenuContext): ProductDetail | null {
   const product = catalog.products.find((p) => p.slug === slug);
-  if (!product || !isListed(catalog, product)) return null;
+  if (!product || !isListed(catalog, product, ctx.now)) return null;
 
   const offered = offeredProductIds(catalog, ctx.location);
   const soldOutOptions = new Set(ctx.soldOut.optionIds);

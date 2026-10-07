@@ -9,6 +9,7 @@ import "server-only";
 import type { CartLineInput } from "@/lib/checkout/schemas";
 import type { CheckedLine, LineIssue } from "@/lib/checkout/types";
 import { getSoldOut } from "@/lib/menu/availability";
+import { isProductAvailableAt, outOfWindowMessage } from "@/lib/menu/availability-window";
 import { getLiveCatalog } from "@/lib/menu/catalog";
 import { buildProductDetail, type ProductDetail } from "@/lib/menu/model";
 import { clientEnv } from "@/lib/env";
@@ -43,13 +44,14 @@ export async function evaluateCart(
 
   for (const line of lines) {
     const issues: LineIssue[] = [];
-    const slug = catalog.products.find((p) => p.id === line.productId)?.slug;
-    const detail = slug ? buildProductDetail(catalog, slug, ctx) : null;
+    const row = catalog.products.find((p) => p.id === line.productId);
+    const detail = row ? buildProductDetail(catalog, row.slug, ctx) : null;
 
     if (!detail) {
+      const message = row && !isProductAvailableAt(row, now) ? outOfWindowMessage(row, now) : "This item is no longer on the menu.";
       checked.push({
         id: line.id,
-        issues: [{ code: "removed", message: "This item is no longer on the menu.", blocking: true }],
+        issues: [{ code: "removed", message, blocking: true }],
         current: null,
       });
       continue;

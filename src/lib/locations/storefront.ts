@@ -11,6 +11,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 
+import { appNow } from "@/lib/clock";
 import { createPublicClient } from "@/lib/supabase/public";
 import { cafeDateKey, addDays } from "@/lib/time";
 
@@ -134,7 +135,7 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
   // Read the cookie first: it marks the route as per-request before any query
   // runs, so nothing below is ever fetched at build time.
   const chosenId = (await cookies()).get(LOCATION_COOKIE)?.value;
-  const now = new Date();
+  const now = await appNow();
   const db = createPublicClient({ live: true });
 
   // Closures from today to the edge of the "next opening" lookahead.

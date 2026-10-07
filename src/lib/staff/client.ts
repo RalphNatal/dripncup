@@ -11,6 +11,7 @@
  */
 import type { PostgrestError } from "@supabase/supabase-js";
 
+import { isProductAvailableAt } from "@/lib/menu/availability-window";
 import type { Allergen } from "@/lib/menu/model";
 import type { SnapshotModifier } from "@/lib/orders/detail";
 import type { OrderStatus } from "@/lib/order-status";
@@ -293,11 +294,18 @@ export interface AvailabilityFlag {
   availableFrom: string | null;
 }
 
-/** What can be marked sold out here: the location's products (a pop-up's own menu) and every option. */
-export async function fetchSellables(location: { id: string; type: "cafe" | "event" }): Promise<SellableItem[]> {
+/**
+ * What can be marked sold out here: the location's products (a pop-up's own
+ * menu) and every option. A limited-time product outside its window is not
+ * on the menu, so it is not listed either.
+ */
+export async function fetchSellables(location: { id: string; type: "cafe" | "event" }, now: Date = new Date()): Promise<SellableItem[]> {
   const supabase = createClient();
   const [products, options, eventMenu] = await Promise.all([
-    supabase.from("products").select("id, name, is_active, sort_order, category:categories(name, sort_order)").eq("is_active", true),
+    supabase
+      .from("products")
+      .select("id, name, is_active, sort_order, available_from, available_until, category:categories(name, sort_order)")
+      .eq("is_active", true),
     supabase
       .from("modifier_options")
       .select("id, name, is_active, sort_order, group:modifier_groups(name, sort_order, is_active)")
@@ -310,7 +318,7 @@ export async function fetchSellables(location: { id: string; type: "cafe" | "eve
 
   const onMenu = eventMenu.data ? new Set(eventMenu.data.map((row) => row.product_id)) : null;
   const productItems = (products.data ?? [])
-    .filter((p) => !onMenu || onMenu.has(p.id))
+    .filter((p) => (!onMenu || onMenu.has(p.id)) && isProductAvailableAt(p, now))
     .sort((a, b) => (a.category?.sort_order ?? 0) - (b.category?.sort_order ?? 0) || a.sort_order - b.sort_order)
     .map((p): SellableItem => ({ kind: "product", id: p.id, name: p.name, group: p.category?.name ?? "Menu" }));
   const optionItems = (options.data ?? [])
@@ -355,6 +363,7 @@ export async function setSoldOut(
 export interface CateringPrep {
   id: string;
   requestNumber: string;
+  status: "confirmed" | "fulfilled";
   eventAt: string;
   headcount: number;
   fulfillment: "pickup" | "delivery";
@@ -363,15 +372,18 @@ export interface CateringPrep {
   contactPhone: string | null;
   notes: string | null;
   customDrinkRequest: string | null;
-  items: { name: string; quantity: number; notes: string | null }[];
+  /** The paid quote's lines (what was sold), or what was asked for if there are none. */
+  items: { name: string; size: string | null; quantity: number; notes: string | null }[];
 }
 
-export async function fetchCateringPrep(locationId: string): Promise<CateringPrep[]> {
-  const { data, error } = await createClient().rpc("staff_catering_prep", { p_location_id: locationId });
+/** Confirmed (and fulfilled) catering at this counter on one Honolulu date ("YYYY-MM-DD"). */
+export async function fetchCateringPrep(locationId: string, day: string): Promise<CateringPrep[]> {
+  const { data, error } = await createClient().rpc("staff_catering_prep", { p_location_id: locationId, p_day: day });
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => ({
     id: row.id,
     requestNumber: row.request_number,
+    status: row.status === "fulfilled" ? "fulfilled" : "confirmed",
     eventAt: row.event_at,
     headcount: row.headcount,
     fulfillment: row.fulfillment,
@@ -382,4 +394,12 @@ export async function fetchCateringPrep(locationId: string): Promise<CateringPre
     customDrinkRequest: row.custom_drink_request,
     items: Array.isArray(row.items) ? (row.items as CateringPrep["items"]) : [],
   }));
+}
+
+/** After the event: catering_mark_fulfilled checks the counter and that the day has come. */
+export async function markCateringFulfilled(requestId: string): Promise<ActionResult> {
+  if (!navigator.onLine) return { outcome: "error", message: OFFLINE_MESSAGE };
+  const { error } = await createClient().rpc("catering_mark_fulfilled", { p_request_id: requestId });
+  if (!error) return { outcome: "done" };
+  return failure(error, error.code === "DC016" ? "This event hasn't happened yet." : "Couldn't mark it fulfilled. Try again.");
 }
