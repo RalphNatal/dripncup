@@ -853,7 +853,8 @@ $$;
 -- p_plan:
 --   categories: [{slug, name, description}]
 --   products:   [{slug, name, description, category_slug, base_price_cents,
---                 sizes: [{name, price_cents, is_default}], groups: [group slug],
+--                 sizes: [{name, price_cents, is_default}],
+--                 groups: [group slug | {slug, visible_when_option_id}],
 --                 allergens[], dietary_tags[], is_catering_eligible, is_active}]
 -- Matching is by slug, so importing again updates instead of duplicating.
 -- Nothing is deleted; products missing from the file are archived only when
@@ -928,8 +929,8 @@ begin
 
     group_ids := array(
       select g.id
-        from jsonb_array_elements_text(coalesce(prod.p -> 'groups', '[]'::jsonb)) with ordinality as x(slug, n)
-        join public.modifier_groups g on g.slug = x.slug and g.archived_at is null
+        from jsonb_array_elements(coalesce(prod.p -> 'groups', '[]'::jsonb)) with ordinality as x(item, n)
+        join public.modifier_groups g on g.slug = coalesce(x.item ->> 'slug', x.item #>> '{}') and g.archived_at is null
        order by x.n
     );
     if cardinality(group_ids) <> jsonb_array_length(coalesce(prod.p -> 'groups', '[]'::jsonb)) then
@@ -956,20 +957,25 @@ begin
 
     perform public.write_product_sizes(v_product, coalesce(prod.p -> 'sizes', '[]'::jsonb));
 
-    -- Keep each surviving link's condition if its option is still on the product.
+    -- A condition from the file ("ice-level if Iced") wins; otherwise each
+    -- surviving link keeps its condition if that option is still on the product.
     select coalesce(jsonb_agg(
              jsonb_build_object(
                'group_id', g.id,
-               'visible_when_option_id', (
-                 select l.visible_when_option_id
-                   from public.product_modifier_groups l
-                   join public.modifier_options o on o.id = l.visible_when_option_id
-                  where l.product_id = v_product and l.modifier_group_id = g.id
-                    and o.modifier_group_id = any (group_ids) and o.modifier_group_id <> g.id
-               )
-             ) order by g.n), '[]'::jsonb)
+               'visible_when_option_id', case
+                 when jsonb_typeof(x.item) = 'object' then nullif(x.item ->> 'visible_when_option_id', '')::uuid
+                 else (
+                   select l.visible_when_option_id
+                     from public.product_modifier_groups l
+                     join public.modifier_options o on o.id = l.visible_when_option_id
+                    where l.product_id = v_product and l.modifier_group_id = g.id
+                      and o.modifier_group_id = any (group_ids) and o.modifier_group_id <> g.id
+                 )
+               end
+             ) order by x.n), '[]'::jsonb)
       into groups
-      from unnest(group_ids) with ordinality as g(id, n);
+      from jsonb_array_elements(coalesce(prod.p -> 'groups', '[]'::jsonb)) with ordinality as x(item, n)
+      join public.modifier_groups g on g.slug = coalesce(x.item ->> 'slug', x.item #>> '{}') and g.archived_at is null;
     perform public.write_product_groups(v_product, groups);
   end loop;
 
