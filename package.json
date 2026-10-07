@@ -20,6 +20,7 @@
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
     "db:seed": "tsx supabase/seed/seed.ts",
+    "db:seed:reports-demo": "node scripts/seed-reports-demo.mjs",
     "db:clean-test-data": "node scripts/clean-test-data.mjs",
     "db:e2e:stop": "supabase stop --workdir .e2e-stack",
     "stripe:listen": "node scripts/stripe-listen.mjs",
