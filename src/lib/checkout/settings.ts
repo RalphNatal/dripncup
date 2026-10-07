@@ -12,6 +12,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface CheckoutSettings {
   taxRate: number;
+  /** GET on tips too (tax.tips_taxed). */
+  tipsTaxed: boolean;
   tipPolicy: TipPolicy;
   defaultTipPercent: number;
   pickup: PickupSettings;
@@ -22,6 +24,7 @@ export interface CheckoutSettings {
 
 const KEYS = [
   "tax.get_rate",
+  "tax.tips_taxed",
   "tip.presets",
   "tip.default_preset",
   "tip.custom_max_cents",
@@ -47,6 +50,7 @@ export async function getCheckoutSettings(): Promise<CheckoutSettings> {
 
   return {
     taxRate: num(get("tax.get_rate"), SETTING_FALLBACKS.getRate),
+    tipsTaxed: get("tax.tips_taxed") === true,
     tipPolicy: {
       presetPercents:
         Array.isArray(presets) && presets.every((p) => typeof p === "number")

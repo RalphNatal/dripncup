@@ -233,6 +233,17 @@ function formatOpening(opensAt: Date, now: Date): string {
 }
 
 /**
+ * When the cafe lets customers order ahead while closed (setting
+ * orders.order_ahead_while_closed): the note shown above the menu instead
+ * of "closed". Null when ordering ahead does not apply (open, paused, a
+ * pop-up, or no opening in sight).
+ */
+export function orderAheadNote(status: LocationStatus, locationName: string, now: Date): string | null {
+  if (status.kind !== "closed" || !status.opensAt) return null;
+  return `${locationName} is closed right now. You can order ahead for pickup from ${formatOpening(status.opensAt, now)}.`;
+}
+
+/**
  * The short status shown in the header and location list:
  * "Open", "Closed · Opens Fri 6:30 AM", "Paused", "Event · Oct 8, 10:00 AM – 3:00 PM".
  */

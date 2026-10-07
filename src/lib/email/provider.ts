@@ -18,6 +18,8 @@ export interface EmailMessage {
   html: string;
   /** Every email has a plain-text version. */
   text: string;
+  /** Where a reply goes (setting notifications.reply_to_email), if set. */
+  replyTo?: string | null;
   /**
    * Stable per email (the outbox row id). Resend uses it to drop a repeat
    * of a send that already went through, e.g. after a crash before the row
@@ -62,6 +64,7 @@ function resend(apiKey: string): EmailProvider {
           subject: message.subject,
           html: message.html,
           text: message.text,
+          ...(message.replyTo ? { reply_to: [message.replyTo] } : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -88,6 +91,7 @@ function mailpit(baseUrl: string): EmailProvider {
           Subject: message.subject,
           HTML: message.html,
           Text: message.text,
+          ...(message.replyTo ? { ReplyTo: [{ Email: message.replyTo }] } : {}),
           Headers: { "X-Idempotency-Key": message.idempotencyKey },
         }),
         signal: AbortSignal.timeout(10_000),

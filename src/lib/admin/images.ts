@@ -1,8 +1,8 @@
 "use server";
 
 /**
- * Admin image uploads: collection banners and event photos (and, in Phase 9,
- * menu photos).
+ * Admin image uploads: collection banners, event photos, menu photos and
+ * the logo.
  *
  *   - admins only (checked here; Storage's policies check again, because the
  *     upload runs with the admin's own session)

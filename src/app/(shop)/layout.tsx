@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/shell/app-header";
 import { CartSync } from "@/components/shell/cart-sync";
 import { BottomTabs } from "@/components/shell/nav";
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { getLogoUrl } from "@/lib/content/queries";
 import { getStorefront } from "@/lib/locations/storefront";
 import { listActiveOrders } from "@/lib/orders/queries";
 
@@ -13,7 +14,7 @@ import { listActiveOrders } from "@/lib/orders/queries";
  * /staff, /admin and the sign-in pages have their own frames.
  */
 export default async function ShopLayout({ children }: { children: ReactNode }) {
-  const [storefront, profile] = await Promise.all([getStorefront(), getCurrentProfile()]);
+  const [storefront, profile, logoUrl] = await Promise.all([getStorefront(), getCurrentProfile(), getLogoUrl()]);
   // Drives the live "order in progress" dot on the Orders tab. The server
   // reads the active orders too, so the dot's first render in the browser
   // matches the HTML (the navs seed the shared client query before any page
@@ -29,7 +30,7 @@ export default async function ShopLayout({ children }: { children: ReactNode }) 
       >
         Skip to content
       </a>
-      <AppHeader storefront={storefront} userId={userId} activeOrders={activeOrders} />
+      <AppHeader storefront={storefront} userId={userId} activeOrders={activeOrders} logoUrl={logoUrl} />
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 pb-tabbar outline-none md:pt-8 md:pb-16">
         {children}
       </main>

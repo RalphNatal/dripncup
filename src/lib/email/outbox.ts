@@ -48,6 +48,11 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
 
   const { data: rows, error } = await db.rpc("claim_email_outbox", { p_limit: limit });
   if (error) throw new Error(`Could not claim outbox rows: ${error.message}`);
+  if (!rows?.length) return report;
+
+  // Replies reach the cafe (Settings, Notifications), read once per sweep.
+  const { data: replyRow } = await db.from("settings").select("value").eq("key", "notifications.reply_to_email").maybeSingle();
+  const replyTo = typeof replyRow?.value === "string" && replyRow.value.includes("@") ? replyRow.value : null;
 
   for (const row of rows ?? []) {
     try {
@@ -68,6 +73,7 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
         subject: email.subject,
         html: email.html,
         text: email.text,
+        replyTo,
         idempotencyKey: row.id,
       });
       await db

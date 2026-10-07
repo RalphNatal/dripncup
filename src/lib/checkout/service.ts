@@ -247,6 +247,7 @@ async function prepare(input: PrepareInput, userId: string, idempotencyKey?: str
           taxRate: settings.taxRate,
           tip: input.tip,
           tipPolicy: settings.tipPolicy,
+          tipsTaxed: settings.tipsTaxed,
           now,
         })
       : null;

@@ -17,8 +17,11 @@ export function AppHeader({
   storefront,
   userId,
   activeOrders,
+  logoUrl = null,
 }: {
   storefront: Storefront;
+  /** The uploaded logo, if any (site content). */
+  logoUrl?: string | null;
   userId: string | null;
   /** Server-read, so the Orders dot hydrates as rendered. */
   activeOrders: OrderListItem[];
@@ -27,7 +30,7 @@ export function AppHeader({
     <StickyHeader>
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 px-4 md:h-16 md:flex-nowrap">
         <Link href="/" aria-label={`${BRAND.name} home`} className="focus-ring order-1 flex h-14 items-center rounded-lg md:h-auto">
-          <Logo size="sm" />
+          <Logo size="sm" src={logoUrl} />
         </Link>
 
         <DesktopNav userId={userId} activeOrders={activeOrders} className="order-2 hidden md:ml-4 md:block" />

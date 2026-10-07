@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
 import { FavoritesRow } from "@/components/favorites/favorites-list";
-import { CollectionBanner, OrderingUnavailableBanner } from "@/components/menu/banners";
+import { CollectionBanner, OrderAheadBanner, OrderingUnavailableBanner } from "@/components/menu/banners";
 import { MenuBrowser } from "@/components/menu/menu-browser";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { listFavorites } from "@/lib/favorites/queries";
@@ -37,6 +37,7 @@ export default async function MenuPage() {
       </div>
 
       <OrderingUnavailableBanner location={location} />
+      <OrderAheadBanner location={location} />
 
       {favorites ? <FavoritesRow list={favorites} /> : null}
 

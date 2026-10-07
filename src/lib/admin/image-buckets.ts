@@ -1,5 +1,5 @@
 /** The Storage buckets admin uploads may go to (public read, admin write). */
-export const IMAGE_BUCKETS = ["collection-banners", "location-images", "product-images"] as const;
+export const IMAGE_BUCKETS = ["brand-assets", "collection-banners", "location-images", "product-images"] as const;
 export type ImageBucket = (typeof IMAGE_BUCKETS)[number];
 
 /** The buckets' own limits (the upload action and Storage both enforce them). */

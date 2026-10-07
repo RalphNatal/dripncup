@@ -34,6 +34,23 @@ export function OrderingUnavailableBanner({ location }: { location: LocationView
 }
 
 /**
+ * Closed, but taking orders for the next opening (the cafe's "order ahead
+ * while closed" setting): say so, so nobody expects their drink now.
+ */
+export function OrderAheadBanner({ location }: { location: LocationView }) {
+  if (!location.status.orderAhead) return null;
+  return (
+    <div role="status" className="flex gap-3 rounded-2xl border border-brand-teal-deep/30 bg-brand-teal-soft/60 p-4" data-testid="order-ahead-banner">
+      <Clock className="mt-0.5 size-5 shrink-0 text-brand-teal-deep" aria-hidden="true" />
+      <div className="text-sm">
+        <p className="font-bold">Ordering ahead</p>
+        <p className="mt-0.5 text-foreground/80">{location.status.orderAhead}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The current seasonal collection, on the menu and Home. The collection's own
  * accent colour (data, optional) tints the decoration only -- text always
  * stays on a light surface, so any colour the owner picks keeps AA contrast.

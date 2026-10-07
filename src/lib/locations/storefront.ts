@@ -20,6 +20,7 @@ import { openingHours } from "./opening-hours";
 import {
   getLocationStatus,
   isAcceptingOrders,
+  orderAheadNote,
   orderingUnavailableReason,
   statusDetail,
   statusLabel,
@@ -48,6 +49,11 @@ export interface LocationView {
     detail: string | null;
     /** Why ordering is off, as a sentence. Null when the location can take orders. */
     unavailableReason: string | null;
+    /**
+     * Closed, but customers may order ahead for the next opening (setting
+     * orders.order_ahead_while_closed): the note to show. canOrder is true.
+     */
+    orderAhead: string | null;
   };
   todaysHours: { hours: string; note: string | null };
 }
@@ -91,6 +97,7 @@ function toView(
   now: Date,
   onlineOrderingEnabled: boolean,
   defaultPickupInstructions: string | null,
+  orderAheadWhileClosed: boolean,
 ): LocationView {
   const location = {
     id: row.id,
@@ -100,6 +107,8 @@ function toView(
     endsAt: row.ends_at,
   };
   const status = getLocationStatus({ location, hours, closures, now, onlineOrderingEnabled });
+  // Ordering ahead applies to the cafe only: a pop-up sells inside its window.
+  const ahead = orderAheadWhileClosed && row.type === "cafe" ? orderAheadNote(status, row.name, now) : null;
 
   const cityLine = [row.city, [row.state, row.postal_code].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const addressLines = [row.address_line1, row.address_line2, cityLine].filter((l): l is string => Boolean(l));
@@ -122,10 +131,11 @@ function toView(
     prepTimeMinutes: row.prep_time_minutes,
     status: {
       kind: status.kind,
-      canOrder: status.canOrder,
+      canOrder: status.canOrder || ahead !== null,
       label: statusLabel(status, now),
       detail: statusDetail(status, now),
-      unavailableReason: orderingUnavailableReason(status, row.name, now),
+      unavailableReason: ahead ? null : orderingUnavailableReason(status, row.name, now),
+      orderAhead: ahead,
     },
     todaysHours: todaysHoursText({ location, hours, closures, now }),
   };
@@ -156,7 +166,10 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
       .select("location_id, closure_date, is_closed, opens_at, closes_at, reason")
       .gte("closure_date", from)
       .lte("closure_date", to),
-    db.from("settings").select("key, value").in("key", ["orders.accepting_online_orders", "store.pickup_instructions"]),
+    db
+      .from("settings")
+      .select("key, value")
+      .in("key", ["orders.accepting_online_orders", "store.pickup_instructions", "orders.order_ahead_while_closed"]),
   ]);
 
   for (const result of [locations, hours, closures, settings]) {
@@ -167,6 +180,7 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
   const onlineOrderingEnabled = settingBoolean(setting("orders.accepting_online_orders"), true);
   const pickupSetting = setting("store.pickup_instructions");
   const defaultPickupInstructions = typeof pickupSetting === "string" ? pickupSetting : null;
+  const orderAheadWhileClosed = settingBoolean(setting("orders.order_ahead_while_closed"), false);
 
   // The cafe, plus any pop-up that is running now or still to come.
   const rows = ((locations.data ?? []) as LocationRow[]).filter(
@@ -183,7 +197,7 @@ export const getStorefront = cache(async (): Promise<Storefront> => {
       (hours.data ?? []).filter((h) => h.location_id === row.id),
       closures.data,
     );
-    return toView(row, opening.hours, opening.closures, now, onlineOrderingEnabled, defaultPickupInstructions);
+    return toView(row, opening.hours, opening.closures, now, onlineOrderingEnabled, defaultPickupInstructions, orderAheadWhileClosed);
   });
 
   const selected =

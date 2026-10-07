@@ -85,13 +85,23 @@ export async function expirePendingOrders(now: Date = new Date(), limit = 100): 
 
   const report: ExpiryReport = { cutoff, expired: [], skipped: [], failed: [] };
 
+  // An order the job has to leave (money on its way, or an error) is noted,
+  // so the admin's attention queue can tell "stuck" from "not swept yet".
+  const note = (orderId: string, text: string) =>
+    db.from("orders").update({ expiry_attempted_at: new Date().toISOString(), expiry_note: text.slice(0, 500) }).eq("id", orderId);
+
   for (const order of stale ?? []) {
     try {
       const outcome = await cancelUnpaidCheckout(order.id, EXPIRED_REASON);
       if (outcome === "cancelled") report.expired.push(order.id);
-      else if (outcome === "money_on_its_way") report.skipped.push(order.id);
+      else if (outcome === "money_on_its_way") {
+        report.skipped.push(order.id);
+        await note(order.id, "The payment provider says the payment is still processing.");
+      }
     } catch (err) {
-      report.failed.push({ orderId: order.id, error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      report.failed.push({ orderId: order.id, error: message });
+      await note(order.id, `The expiry job could not settle it: ${message}`);
     }
   }
 

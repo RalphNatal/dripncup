@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AdminShell } from "@/components/admin/admin-shell";
+import { listAttentionItems } from "@/lib/admin/attention";
 import { requireRole } from "@/lib/auth/dal";
 import { countNewCateringRequests } from "@/lib/catering/queries";
 
@@ -11,10 +12,14 @@ import { countNewCateringRequests } from "@/lib/catering/queries";
  */
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const profile = await requireRole(["admin"], "/admin");
-  const newCatering = await countNewCateringRequests();
+  const [newCatering, attention] = await Promise.all([countNewCateringRequests(), listAttentionItems()]);
 
   return (
-    <AdminShell adminName={profile.first_name ?? profile.full_name ?? profile.email ?? "Admin"} newCatering={newCatering}>
+    <AdminShell
+      adminName={profile.first_name ?? profile.full_name ?? profile.email ?? "Admin"}
+      newCatering={newCatering}
+      attention={attention.length}
+    >
       {children}
     </AdminShell>
   );

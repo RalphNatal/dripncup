@@ -254,6 +254,12 @@ describe("calculateOrderTotal", () => {
       expect(breakdown).toMatchObject({ taxableCents: 1035, taxCents: 49, tipCents: 186, totalCents: 1270 });
     });
 
+    it("taxes the tip too when the cafe taxes tips (tax.tips_taxed)", () => {
+      const { breakdown } = total({ promo: promo({ percent: 10 }), tip: { kind: "percent", percent: 18 }, tipsTaxed: true });
+      // Tip still 18% of 10.35 = 1.86; GET on 10.35 + 1.86 = 12.21 -> 0.5753 -> 0.58.
+      expect(breakdown).toMatchObject({ taxableCents: 1035, taxCents: 58, tipCents: 186, totalCents: 1279 });
+    });
+
     it("adds a custom tip", () => {
       expect(total({ tip: { kind: "custom", cents: 250 } }).breakdown.tipCents).toBe(250);
     });

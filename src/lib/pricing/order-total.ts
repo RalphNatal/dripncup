@@ -7,9 +7,11 @@
  *   3. discount  = promo, then rewards (applyRewards, ./rewards.ts),
  *                  together never more than the subtotal
  *   4. taxable   = subtotal - discount
- *      tax (GET) = taxable x rate, rounded once for the whole order
- *   5. tip       = on `taxable` (post-discount, pre-tax); not taxed
- *   6. total     = taxable + tax + tip
+ *   5. tip       = on `taxable` (post-discount, pre-tax)
+ *   6. tax (GET) = taxable x rate, rounded once for the whole order; plus
+ *                  the tip when the cafe taxes tips (setting tax.tips_taxed,
+ *                  off by default)
+ *   7. total     = taxable + tax + tip
  *
  * Rounding (see ./rounding.ts): line prices are exact integer cents and need
  * none. Percentage promos, tax and percentage tips each round half away from
@@ -81,6 +83,8 @@ export interface OrderTotalInput {
   taxRate: number;
   tip: TipChoice;
   tipPolicy: TipPolicy;
+  /** GET on the tip as well (setting tax.tips_taxed). Default: tips are not taxed. */
+  tipsTaxed?: boolean;
   now: Date;
 }
 
@@ -142,15 +146,16 @@ export function calculateOrderTotal(input: OrderTotalInput): OrderTotalResult {
   const rewardDiscountCents = rewards.reduce((sum, r) => sum + (r.ok ? r.discountCents : 0), 0);
   const discountCents = promoDiscountCents + rewardDiscountCents;
 
-  // 4. Tax on what is left, rounded once.
+  // 4-5. What is left after discounts, and the tip on it (pre-tax).
   const taxableCents = subtotalCents - discountCents;
-  const taxCents = divideRounded(taxableCents * taxRateUnits(input.taxRate), TAX_RATE_SCALE);
-
-  // 5. Tip, on the pre-tax, post-discount amount.
   const tip = calculateTip(input.tip, { taxableCents, subtotalCents }, input.tipPolicy);
   if (!tip.ok) return { ok: false, reason: "invalid_tip", tip };
 
-  // 6. Total.
+  // 6. Tax, rounded once: on the order, and on the tip only if tips are taxed.
+  const taxedCents = taxableCents + (input.tipsTaxed ? tip.tipCents : 0);
+  const taxCents = divideRounded(taxedCents * taxRateUnits(input.taxRate), TAX_RATE_SCALE);
+
+  // 7. Total.
   const totalCents = taxableCents + taxCents + tip.tipCents;
 
   return {

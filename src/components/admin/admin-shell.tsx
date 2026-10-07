@@ -2,21 +2,24 @@
 
 /**
  * The admin frame: a sidebar from `lg` up, a top bar with a menu sheet on
- * phones. One list, two presentations. Sections that are not built yet
- * (Phase 9) are listed as "Coming soon", as plain text rather than links, so
- * nothing in the nav leads nowhere.
+ * phones. One list, two presentations. Home carries the number of things
+ * that need attention; Catering the new requests.
  */
 import {
   BarChart3,
   CalendarDays,
   ChefHat,
+  ClipboardCheck,
   CupSoda,
+  FileText,
   Gift,
+  History,
   House,
   LayoutDashboard,
   MapPin,
   Menu,
   Percent,
+  Receipt,
   Settings,
   Sparkles,
   Undo2,
@@ -32,49 +35,48 @@ import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 type NavItem =
-  | { kind: "link"; href: string; label: string; icon: LucideIcon; exact?: boolean; badge?: "catering" }
-  | { kind: "soon"; label: string; icon: LucideIcon };
+  | { kind: "link"; href: string; label: string; icon: LucideIcon; exact?: boolean; badge?: "catering" | "attention" }
+  | { kind: "heading"; label: string };
 
 const NAV: NavItem[] = [
-  { kind: "link", href: "/admin", label: "Home", icon: LayoutDashboard, exact: true },
+  { kind: "link", href: "/admin", label: "Home", icon: LayoutDashboard, exact: true, badge: "attention" },
+  { kind: "link", href: "/admin/orders", label: "Orders", icon: Receipt },
   { kind: "link", href: "/admin/catering", label: "Catering", icon: ChefHat, badge: "catering" },
+  { kind: "link", href: "/admin/menu", label: "Menu", icon: CupSoda },
+  { kind: "link", href: "/admin/locations", label: "Locations", icon: MapPin },
   { kind: "link", href: "/admin/events", label: "Events", icon: CalendarDays },
   { kind: "link", href: "/admin/collections", label: "Collections", icon: Sparkles },
-  { kind: "soon", label: "Menu", icon: CupSoda },
-  { kind: "soon", label: "Locations", icon: MapPin },
-  { kind: "soon", label: "Settings", icon: Settings },
-  { kind: "soon", label: "Promotions", icon: Percent },
-  { kind: "soon", label: "Rewards", icon: Gift },
-  { kind: "soon", label: "Users", icon: Users },
-  { kind: "soon", label: "Reports", icon: BarChart3 },
+  { kind: "link", href: "/admin/promos", label: "Promotions", icon: Percent },
+  { kind: "link", href: "/admin/rewards", label: "Rewards", icon: Gift },
+  { kind: "link", href: "/admin/users", label: "Users", icon: Users },
+  { kind: "link", href: "/admin/reports", label: "Reports", icon: BarChart3 },
+  { kind: "heading", label: "Setup" },
+  { kind: "link", href: "/admin/settings", label: "Settings", icon: Settings },
+  { kind: "link", href: "/admin/setup", label: "Setup checklist", icon: ClipboardCheck },
+  { kind: "link", href: "/admin/content", label: "Pages & contact", icon: FileText },
+  { kind: "link", href: "/admin/audit", label: "Audit log", icon: History },
 ];
 
 function isActive(pathname: string, href: string, exact?: boolean) {
   return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function NavList({ newCatering, onNavigate }: { newCatering: number; onNavigate?: () => void }) {
+function NavList({ newCatering, attention, onNavigate }: { newCatering: number; attention: number; onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
     <ul className="space-y-1">
       {NAV.map((item) => {
-        const Icon = item.icon;
-        if (item.kind === "soon") {
+        if (item.kind === "heading") {
           return (
-            <li key={item.label}>
-              <span
-                aria-disabled="true"
-                className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-muted-foreground"
-              >
-                <Icon className="size-5" aria-hidden="true" />
-                <span>{item.label}</span>
-                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">Coming soon</span>
-              </span>
+            <li key={item.label} className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted-foreground uppercase">
+              {item.label}
             </li>
           );
         }
+        const Icon = item.icon;
         const active = isActive(pathname, item.href, item.exact);
-        const badge = item.badge === "catering" && newCatering > 0 ? newCatering : null;
+        const count = item.badge === "catering" ? newCatering : item.badge === "attention" ? attention : 0;
+        const badge = count > 0 ? count : null;
         return (
           <li key={item.href}>
             <Link
@@ -89,9 +91,12 @@ function NavList({ newCatering, onNavigate }: { newCatering: number; onNavigate?
               <Icon className="size-5" aria-hidden="true" />
               {item.label}
               {badge ? (
-                <span className="ml-auto rounded-full bg-brand-magenta-deep px-2 py-0.5 text-xs font-bold text-white" data-testid="admin-catering-badge">
+                <span
+                  className="ml-auto rounded-full bg-brand-magenta-deep px-2 py-0.5 text-xs font-bold text-white"
+                  data-testid={item.badge === "attention" ? "admin-attention-badge" : "admin-catering-badge"}
+                >
                   {badge}
-                  <span className="sr-only"> new</span>
+                  <span className="sr-only">{item.badge === "attention" ? " need attention" : " new"}</span>
                 </span>
               ) : null}
             </Link>
@@ -129,7 +134,19 @@ function Footer({ adminName }: { adminName: string }) {
   );
 }
 
-export function AdminShell({ adminName, newCatering, children }: { adminName: string; newCatering: number; children: ReactNode }) {
+export function AdminShell({
+  adminName,
+  newCatering,
+  attention,
+  children,
+}: {
+  adminName: string;
+  newCatering: number;
+  attention: number;
+  children: ReactNode;
+}) {
+  // The attention count includes new catering, so it alone drives the dot.
+  const waiting = attention;
   const [open, setOpen] = useState(false);
 
   return (
@@ -150,11 +167,11 @@ export function AdminShell({ adminName, newCatering, children }: { adminName: st
           type="button"
           onClick={() => setOpen(true)}
           className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm font-semibold"
-          aria-label={newCatering > 0 ? `Admin menu, ${newCatering} new catering requests` : "Admin menu"}
+          aria-label={waiting > 0 ? `Admin menu, ${attention} ${attention === 1 ? "thing needs" : "things need"} attention` : "Admin menu"}
         >
           <Menu className="size-5" aria-hidden="true" />
           Menu
-          {newCatering > 0 ? <span className="size-2.5 rounded-full bg-brand-magenta-deep" aria-hidden="true" /> : null}
+          {waiting > 0 ? <span className="size-2.5 rounded-full bg-brand-magenta-deep" aria-hidden="true" /> : null}
         </button>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetContent side="left" className="w-80 max-w-[85vw] gap-0 p-0">
@@ -163,7 +180,7 @@ export function AdminShell({ adminName, newCatering, children }: { adminName: st
               <SheetDescription className="sr-only">Admin sections</SheetDescription>
             </SheetHeader>
             <nav aria-label="Admin" className="flex flex-1 flex-col justify-between gap-6 overflow-y-auto p-3">
-              <NavList newCatering={newCatering} onNavigate={() => setOpen(false)} />
+              <NavList newCatering={newCatering} attention={attention} onNavigate={() => setOpen(false)} />
               <Footer adminName={adminName} />
             </nav>
           </SheetContent>
@@ -175,7 +192,7 @@ export function AdminShell({ adminName, newCatering, children }: { adminName: st
         <div className="sticky top-0 flex h-dvh flex-col gap-6 overflow-y-auto p-4">
           <Wordmark />
           <nav aria-label="Admin" className="flex flex-1 flex-col justify-between gap-6">
-            <NavList newCatering={newCatering} />
+            <NavList newCatering={newCatering} attention={attention} />
             <Footer adminName={adminName} />
           </nav>
         </div>

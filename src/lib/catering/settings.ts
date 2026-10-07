@@ -34,7 +34,6 @@ const KEYS = [
   "catering.delivery_fee_taxable",
   "catering.gratuity_taxable",
   "catering.admin_notification_email",
-  "catering.refund_policy",
   "loyalty.catering_earns_points",
   "tax.get_rate",
 ] as const;
@@ -46,13 +45,18 @@ export const DEFAULT_REFUND_POLICY =
   "Cancel free of charge any time before you pay. After payment, ask us to cancel and we'll be in touch about a full or partial refund.";
 
 export async function getCateringSettings(): Promise<CateringSettings> {
-  const { data, error } = await createAdminClient().from("settings").select("key, value").in("key", [...KEYS]);
+  const db = createAdminClient();
+  const [{ data, error }, { data: content }] = await Promise.all([
+    db.from("settings").select("key, value").in("key", [...KEYS]),
+    // The refund policy is site content (edited on /admin/content).
+    db.from("site_content").select("value").eq("key", "refund_policy").maybeSingle(),
+  ]);
   if (error) throw new Error(`Catering: could not load settings (${error.message})`);
   const get = (key: (typeof KEYS)[number]) => data?.find((row) => row.key === key)?.value;
 
   const zips = get("catering.delivery_zip_codes");
   const email = get("catering.admin_notification_email");
-  const policy = get("catering.refund_policy");
+  const policy = content?.value;
 
   return {
     minLeadTimeHours: num(get("catering.min_lead_time_hours"), SETTING_FALLBACKS.cateringMinLeadTimeHours),
