@@ -1,15 +1,6 @@
-import { Body, Button, Column, Container, Head, Hr, Html, Link, Preview, Row, Section, Text } from "react-email";
-import type { CSSProperties, ReactNode } from "react";
+import { Column, Hr, Link, Row, Section, Text } from "react-email";
 
-import { BRAND, CAFE_ADDRESS_ONE_LINE } from "@/lib/brand";
-
-const TEAL_DEEP = "#0E7C86";
-const MAGENTA_DEEP = "#B81C74";
-const INK = "#1a1a1a";
-const MUTED = "#5b5b5b";
-const LINE = "#e7e2dc";
-const FONT = "'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif";
-const HEADING_FONT = "'Baloo 2', 'Trebuchet MS', 'Helvetica Neue', Arial, sans-serif";
+import { ActionButton, INK, LINE, Layout, MAGENTA_DEEP, TEAL_DEEP, Title, muted, text, textFooter } from "./layout";
 
 export interface EmailLine {
   quantity: number;
@@ -47,46 +38,6 @@ export interface OrderEmailData {
   trackUrl: string;
 }
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
-
-const text: CSSProperties = { color: INK, fontSize: "15px", lineHeight: "22px", margin: "0 0 12px" };
-const muted: CSSProperties = { ...text, color: MUTED, fontSize: "13px", lineHeight: "19px" };
-
-function Layout({ preview, children }: { preview: string; children: ReactNode }) {
-  return (
-    <Html lang="en">
-      <Head />
-      <Preview>{preview}</Preview>
-      <Body style={{ backgroundColor: "#f7f3ee", fontFamily: FONT, margin: 0, padding: "24px 0" }}>
-        <Container style={{ backgroundColor: "#ffffff", borderRadius: "16px", maxWidth: "560px", overflow: "hidden" }}>
-          <Section style={{ backgroundColor: TEAL_DEEP, padding: "22px 28px" }}>
-            {/* Logo placeholder: the lowercase wordmark until artwork arrives. */}
-            <Text style={{ color: "#ffffff", fontFamily: HEADING_FONT, fontSize: "26px", fontWeight: 800, letterSpacing: "0.5px", lineHeight: "30px", margin: 0 }}>
-              {BRAND.wordmark}
-            </Text>
-            <Text style={{ color: "#e6f6f7", fontSize: "13px", lineHeight: "18px", margin: "2px 0 0" }}>{BRAND.taglines.primary}</Text>
-          </Section>
-          <Section style={{ padding: "28px" }}>{children}</Section>
-          <Section style={{ borderTop: `1px solid ${LINE}`, padding: "18px 28px" }}>
-            <Text style={muted}>
-              {BRAND.name} · {CAFE_ADDRESS_ONE_LINE}
-            </Text>
-            <Text style={{ ...muted, margin: 0 }}>
-              You&apos;re getting this email about an order you placed with us. Receipts and refund updates are always sent.
-            </Text>
-          </Section>
-        </Container>
-      </Body>
-    </Html>
-  );
-}
-
-function Title({ children }: { children: ReactNode }) {
-  return <Text style={{ color: INK, fontFamily: HEADING_FONT, fontSize: "26px", fontWeight: 800, lineHeight: "32px", margin: "0 0 8px" }}>{children}</Text>;
-}
-
 function OrderNumber({ value }: { value: string }) {
   return (
     <Text style={{ ...muted, margin: "0 0 16px" }}>
@@ -96,14 +47,7 @@ function OrderNumber({ value }: { value: string }) {
 }
 
 function TrackButton({ href, label = "Track your order" }: { href: string; label?: string }) {
-  return (
-    <Button
-      href={href}
-      style={{ backgroundColor: TEAL_DEEP, borderRadius: "999px", color: "#ffffff", display: "inline-block", fontSize: "15px", fontWeight: 700, padding: "12px 22px", textDecoration: "none" }}
-    >
-      {label}
-    </Button>
-  );
+  return <ActionButton href={href} label={label} />;
 }
 
 function Pickup({ data }: { data: OrderEmailData }) {
@@ -270,8 +214,6 @@ function textPickup(data: OrderEmailData): string {
     .filter(Boolean)
     .join("\n");
 }
-
-const textFooter = `--\n${BRAND.name} · ${CAFE_ADDRESS_ONE_LINE}\n${BRAND.taglines.primary}`;
 
 export function orderReceiptText(data: OrderEmailData): string {
   return [

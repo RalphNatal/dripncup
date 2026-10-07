@@ -3,9 +3,11 @@ import "server-only";
 /**
  * The email outbox sender.
  *
- * Rows are written by the database, in the same transaction as the order
- * status change that owes the email (enqueue_order_emails). This module
- * delivers them afterwards:
+ * Rows are written by the database, in the same transaction as the change
+ * that owes the email (enqueue_order_emails for orders; the catering
+ * triggers for catering requests, quotes and messages). Catering reminders
+ * are queued by enqueue_catering_reminders() at the start of each sweep.
+ * This module delivers them afterwards:
  *
  *   claim → compose from the order as it is now → send → mark sent
  *
@@ -24,6 +26,7 @@ import { after } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { composeCateringEmail, isCateringEmailKind } from "./catering-email";
 import { composeOrderEmail, type EmailKind } from "./order-email";
 import { emailProvider } from "./provider";
 import { retryDelayMinutes } from "./retry";
@@ -39,13 +42,20 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
   const db = createAdminClient();
   const report: OutboxReport = { sent: 0, skipped: 0, retrying: 0, failed: 0 };
 
+  // Reminders due before confirmed catering events (one per request, ever).
+  const { error: reminderError } = await db.rpc("enqueue_catering_reminders");
+  if (reminderError) console.warn(`Could not queue catering reminders: ${reminderError.message}`);
+
   const { data: rows, error } = await db.rpc("claim_email_outbox", { p_limit: limit });
   if (error) throw new Error(`Could not claim outbox rows: ${error.message}`);
 
   for (const row of rows ?? []) {
     try {
-      if (!row.order_id) throw new Error("Outbox row has no order");
-      const email = await composeOrderEmail(row.kind as EmailKind, row.order_id);
+      const email = isCateringEmailKind(row.kind)
+        ? await composeCateringEmail({ ...row, kind: row.kind })
+        : row.order_id
+          ? await composeOrderEmail(row.kind as EmailKind, row.order_id)
+          : { send: false as const, reason: "Outbox row has no order" };
       if (!email.send) {
         await db.from("email_outbox").update({ status: "skipped", last_error: email.reason, locked_at: null }).eq("id", row.id);
         report.skipped += 1;
@@ -81,10 +91,10 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
         .update(giveUp ? { status: "failed", last_error: message, locked_at: null } : { status: "pending", last_error: message, next_attempt_at: next, locked_at: null })
         .eq("id", row.id);
       if (giveUp) {
-        console.error(`Email ${row.kind} for order ${row.order_id} failed for good: ${message}`);
+        console.error(`Email ${row.kind} for ${row.order_id ?? row.catering_request_id} failed for good: ${message}`);
         report.failed += 1;
       } else {
-        console.warn(`Email ${row.kind} for order ${row.order_id} failed (attempt ${row.attempts}); retrying at ${next}: ${message}`);
+        console.warn(`Email ${row.kind} for ${row.order_id ?? row.catering_request_id} failed (attempt ${row.attempts}); retrying at ${next}: ${message}`);
         report.retrying += 1;
       }
     }

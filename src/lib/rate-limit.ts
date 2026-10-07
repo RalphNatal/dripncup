@@ -27,6 +27,12 @@ export const LIMITS = {
   /** Failed promo codes only -- guessing is the thing being limited. */
   promoFailuresPerUser: { scope: "promo:user", max: 8, windowSeconds: 900 },
   promoFailuresPerIp: { scope: "promo:ip", max: 25, windowSeconds: 900 },
+  /** Catering requests: a handful an hour is plenty for a real customer. */
+  cateringRequestPerUser: { scope: "catering:user", max: 5, windowSeconds: 3600 },
+  cateringRequestPerIp: { scope: "catering:ip", max: 20, windowSeconds: 3600 },
+  /** Starting a catering payment (each one asks Stripe for a PaymentIntent). */
+  cateringPaymentPerUser: { scope: "catering-pay:user", max: 12, windowSeconds: 600 },
+  cateringPaymentPerIp: { scope: "catering-pay:ip", max: 40, windowSeconds: 600 },
 } satisfies Record<string, Limit>;
 
 /**

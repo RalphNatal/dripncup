@@ -15,6 +15,15 @@ describe("route rules", () => {
     expect(findRouteRule("/staffing")).toBeNull();
   });
 
+  it("keeps /catering, /events and /collections public, but paying for a quote needs an account", () => {
+    for (const path of ["/catering", "/events", "/events/kakaako", "/collections/summer-sunset"]) {
+      expect(findRouteRule(path)).toBeNull();
+    }
+    expect(findRouteRule("/catering/123/pay")?.prefix).toBe("/catering/");
+    expect(roleCanAccess("customer", "/catering/123/pay")).toBe(true);
+    expect(findRouteRule("/cateringx")).toBeNull();
+  });
+
   it("keeps customers out of staff and admin areas", () => {
     expect(roleCanAccess("customer", "/staff")).toBe(false);
     expect(roleCanAccess("customer", "/admin/reports")).toBe(false);

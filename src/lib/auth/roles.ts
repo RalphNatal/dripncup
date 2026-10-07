@@ -11,7 +11,11 @@ export type UserRole = Enums<"user_role">;
 
 const ANY_SIGNED_IN: readonly UserRole[] = ["customer", "staff", "admin"];
 
-/** Prefixes that require a signed-in user, and the roles allowed through. */
+/**
+ * Prefixes that require a signed-in user, and the roles allowed through. A
+ * prefix ending in "/" guards only what is below it: "/catering/" protects
+ * /catering/[id]/pay but leaves the /catering page itself public.
+ */
 export const PROTECTED_ROUTES: readonly { prefix: string; roles: readonly UserRole[] }[] = [
   { prefix: "/admin", roles: ["admin"] },
   { prefix: "/staff", roles: ["staff", "admin"] },
@@ -19,12 +23,15 @@ export const PROTECTED_ROUTES: readonly { prefix: string; roles: readonly UserRo
   { prefix: "/orders", roles: ANY_SIGNED_IN },
   // /rewards is public: guests get the programme explained and an invitation.
   { prefix: "/checkout", roles: ANY_SIGNED_IN },
+  // /catering, /events and /collections are public; paying for a quote is not.
+  { prefix: "/catering/", roles: ANY_SIGNED_IN },
 ];
 
 /** Pages that make no sense once signed in; the proxy sends users onward. */
 export const GUEST_ONLY_ROUTES: readonly string[] = ["/sign-in", "/sign-up"];
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
+  if (prefix.endsWith("/")) return pathname.startsWith(prefix) && pathname.length > prefix.length;
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
