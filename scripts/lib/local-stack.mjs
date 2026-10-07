@@ -86,18 +86,24 @@ const COUNTED_TABLES = [
   "public.promo_redemptions",
   "public.favorites",
   "public.catering_requests",
+  "public.catering_quotes",
+  "public.catering_messages",
+  "public.catering_status_history",
+  "public.event_menu_items",
+  "public.collections",
+  "public.collection_products",
   "public.staff_locations",
   "public.location_availability_log",
 ];
 
 /** Rows whose content matters, not just their number (hashed). */
 const HASHED = {
-  "pause / event windows": "select id, accepting_orders, paused_until, paused_by, starts_at, ends_at from public.locations",
+  "pause / event windows": "select id, accepting_orders, paused_until, paused_by, starts_at, ends_at, is_published from public.locations",
   "opening hours": "select location_id, day_of_week, opens_at, closes_at from public.location_hours",
   closures: "select location_id, closure_date, is_closed, opens_at, closes_at from public.closures",
   "sold-out flags": "select location_id, product_id, modifier_option_id, is_available, available_from from public.location_availability",
   settings: "select key, value from public.settings",
-  "menu prices": "select id, base_price_cents, is_active from public.products",
+  "menu prices": "select id, base_price_cents, is_active, available_from, available_until from public.products",
   "promo usage": "select id, times_used from public.promos",
   "points balances": "select id, loyalty_points, role from public.profiles",
   "daily counters": "select scope, counter_day, last_value from public.daily_counters",

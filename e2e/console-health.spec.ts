@@ -9,8 +9,9 @@
  */
 import { expect, test, type Page } from "./support/test";
 
+import { arrangeCateringRequest, arrangeQuote } from "./support/catering";
 import { addFromMenu, signIn } from "./support/checkout";
-import { SEEDED, TEST_PASSWORD, createCustomer } from "./support/db";
+import { SEEDED, TEST_PASSWORD, createCustomer, db, must } from "./support/db";
 import { BARISTA, arrangePlacedOrder, forceStatus } from "./support/orders";
 import { openStaffQueue } from "./support/staff";
 import { arrangePendingOrder } from "./support/stripe";
@@ -34,7 +35,20 @@ const SHOP_PAGES = ["/", "/menu", "/menu/latte", "/rewards", "/orders", "/cart",
 
 test.describe("pages hydrate cleanly", () => {
   test("signed out", async ({ page }) => {
-    for (const path of ["/", "/menu", "/menu/latte", "/rewards", "/cart", "/sign-in", "/sign-up", "/forgot-password"]) {
+    for (const path of [
+      "/",
+      "/menu",
+      "/menu/latte",
+      "/rewards",
+      "/cart",
+      "/sign-in",
+      "/sign-up",
+      "/forgot-password",
+      "/catering",
+      "/events",
+      `/events/${SEEDED.eventSlug}`,
+      "/collections/summer-sunset",
+    ]) {
       await visit(page, path);
     }
     await expect(page.locator("[data-testid=orders-dot]")).toHaveCount(0);
@@ -43,7 +57,7 @@ test.describe("pages hydrate cleanly", () => {
   test("a customer with no orders", async ({ page }) => {
     const user = await createCustomer("health-none");
     await signIn(page, user.email, user.password, "/");
-    for (const path of [...SHOP_PAGES, "/account/favorites", "/account/password"]) await visit(page, path);
+    for (const path of [...SHOP_PAGES, "/account/favorites", "/account/password", "/catering", "/account/catering", "/events"]) await visit(page, path);
     await expect(page.locator("[data-testid=orders-dot]")).toHaveCount(0);
   });
 
@@ -97,6 +111,38 @@ test.describe("pages hydrate cleanly", () => {
     // Signs in, loads the server-rendered Start shift screen, starts the shift.
     await openStaffQueue(page, BARISTA);
     for (const path of ["/", "/menu", "/account"]) await visit(page, path);
+  });
+
+  test("a customer with a quoted catering request", async ({ page }) => {
+    const user = await createCustomer("health-catering");
+    const request = await arrangeCateringRequest({ userId: user.id, email: user.email });
+    await arrangeQuote(request.id);
+    await signIn(page, user.email, user.password, "/account/catering");
+    for (const path of ["/account/catering", `/account/catering/${request.id}`, `/catering/${request.id}/pay`]) await visit(page, path);
+  });
+
+  test("the admin pages", async ({ page }) => {
+    const user = await createCustomer("health-admin-catering");
+    const request = await arrangeCateringRequest({ userId: user.id, email: user.email, fulfillment: "delivery" });
+    const event = must(await db().from("locations").select("id").eq("slug", SEEDED.eventSlug).single(), "event");
+    const collection = must(await db().from("collections").select("id").eq("slug", "summer-sunset").single(), "collection");
+    await signIn(page, SEEDED.admin, TEST_PASSWORD, "/admin");
+    for (const path of [
+      "/admin",
+      "/admin/catering",
+      "/admin/catering?status=new",
+      "/admin/catering?view=calendar",
+      "/admin/catering?view=calendar&mode=week",
+      `/admin/catering/${request.id}`,
+      "/admin/events",
+      "/admin/events/new",
+      `/admin/events/${event.id}`,
+      "/admin/collections",
+      "/admin/collections/new",
+      `/admin/collections/${collection.id}`,
+    ]) {
+      await visit(page, path);
+    }
   });
 
   test("the admin", async ({ page }) => {
