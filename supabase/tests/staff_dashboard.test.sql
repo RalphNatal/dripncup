@@ -353,7 +353,12 @@ insert into public.catering_request_items (catering_request_id, product_name, qu
 values ('b7000000-0000-0000-0000-000000000001', 'Cold Brew', 20);
 update public.catering_requests set event_at = (public.cafe_today() + time '12:00') at time zone 'Pacific/Honolulu'
  where id::text like 'b7000000%';
-update public.catering_requests set status = 'quoted', quote_amount_cents = 30000
+insert into public.catering_quotes (id, catering_request_id, version, items_subtotal_cents, taxable_cents, tax_rate,
+                                    tax_cents, total_cents, expires_at, payment_deadline_at)
+select ('b8' || substr(c.id::text, 3))::uuid, c.id, 1, 30000, 30000, 0, 0, 30000, now() - interval '1 day', now() - interval '1 day'
+  from public.catering_requests c
+ where c.id in ('b7000000-0000-0000-0000-000000000001', 'b7000000-0000-0000-0000-000000000002');
+update public.catering_requests set status = 'quoted', current_quote_id = ('b8' || substr(id::text, 3))::uuid
  where id in ('b7000000-0000-0000-0000-000000000001', 'b7000000-0000-0000-0000-000000000002');
 update public.catering_requests set status = 'confirmed'
  where id in ('b7000000-0000-0000-0000-000000000001', 'b7000000-0000-0000-0000-000000000002');

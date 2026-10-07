@@ -86,17 +86,21 @@ values ('30000000-0000-0000-0000-000000000001', 'pi_del_test', 'cus_del_test', '
 -- A catering enquiry still open, and one already fulfilled.
 insert into public.catering_requests (
   id, user_id, contact_name, contact_email, contact_phone, event_at, headcount,
-  fulfillment, delivery_address, notes, status, quote_amount_cents
+  fulfillment, delivery_address, notes, status
 ) values
   ('40000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001',
    'Kai Leaving', 'leaving@drincup.test', '+18085550199', now() + interval '10 days', 20,
-   'delivery', '1 Private Lane, Honolulu', 'Birthday for my partner', 'submitted', null),
+   'delivery', '1 Private Lane, Honolulu', 'Birthday for my partner', 'submitted'),
   ('40000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000001',
    'Kai Leaving', 'leaving@drincup.test', null, now() + interval '20 days', 40,
-   'pickup', null, null, 'submitted', null);
+   'pickup', null, null, 'submitted');
 
 -- Walk the second one to fulfilled through the real transitions.
-update public.catering_requests set status = 'quoted', quote_amount_cents = 40000
+insert into public.catering_quotes (id, catering_request_id, version, items_subtotal_cents, taxable_cents, tax_rate,
+                                    tax_cents, total_cents, expires_at, payment_deadline_at)
+values ('41000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 1, 40000, 40000, 0,
+        0, 40000, now() + interval '5 days', now() + interval '5 days');
+update public.catering_requests set status = 'quoted', current_quote_id = '41000000-0000-0000-0000-000000000002'
  where id = '40000000-0000-0000-0000-000000000002';
 update public.catering_requests set status = 'confirmed'
  where id = '40000000-0000-0000-0000-000000000002';
@@ -232,9 +236,11 @@ select is(
 );
 
 select is(
-  (select quote_amount_cents from public.catering_requests where id = '40000000-0000-0000-0000-000000000002'),
+  (select q.total_cents from public.catering_quotes q
+     join public.catering_requests c on c.current_quote_id = q.id
+    where c.id = '40000000-0000-0000-0000-000000000002'),
   40000,
-  'catering revenue is kept'
+  'catering revenue (the quote) is kept'
 );
 
 -- Everything else

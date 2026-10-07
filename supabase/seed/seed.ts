@@ -18,7 +18,9 @@ import {
 } from "@supabase/supabase-js";
 import { config } from "dotenv";
 
-import type { Database } from "../../src/types/database";
+import type { Database, Json } from "../../src/types/database";
+
+type JsonObject = { [key: string]: Json | undefined };
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -91,6 +93,8 @@ const CUSTOMER_EMAIL = TEST_ACCOUNTS[2].email;
 // Wipe, in foreign-key-safe order
 // ---------------------------------------------------------------------------
 
+// Deleting catering_requests cascades to their quotes, lines, messages,
+// history, payments, refunds and outbox rows.
 const WIPE_ORDER = [
   "order_rewards",
   "loyalty_reservations",
@@ -209,17 +213,49 @@ async function seedLocations() {
         state: "HI",
         postal_code: "96814",
         pickup_instructions: "Look for the teal canopy near the Ala Moana Blvd entrance.",
+        map_url: "https://www.google.com/maps/search/?api=1&query=919+Ala+Moana+Blvd+Honolulu+HI",
         prep_time_minutes: 12,
         starts_at: eventStart.toISOString(),
         ends_at: eventEnd.toISOString(),
         sort_order: 1,
+        // Published once its menu is in (seedEventMenu): a published event
+        // must have a menu.
+        is_published: false,
       })
       .select()
       .single(),
     "insert event",
   );
 
-  return { cafe, event };
+  // A sample pop-up that has already happened (last week, 10:00-14:00 HST),
+  // so the admin's "Past" list has something in it. Customers never see it.
+  const pastStart = new Date();
+  pastStart.setUTCDate(pastStart.getUTCDate() - 7);
+  pastStart.setUTCHours(20, 0, 0, 0);
+  const pastEvent = ok(
+    await db
+      .from("locations")
+      .insert({
+        type: "event",
+        name: "Sample: Aloha Friday Pop-Up",
+        slug: "sample-aloha-friday-popup",
+        description: "A sample past pop-up (seed data).",
+        address_line1: "1 Sample Plaza",
+        city: "Honolulu",
+        state: "HI",
+        postal_code: "96813",
+        prep_time_minutes: 10,
+        starts_at: pastStart.toISOString(),
+        ends_at: new Date(pastStart.getTime() + 4 * 60 * 60 * 1000).toISOString(),
+        sort_order: 2,
+        is_published: false,
+      })
+      .select()
+      .single(),
+    "insert past event",
+  );
+
+  return { cafe, event, pastEvent };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +665,17 @@ const CATALOG: { slug: string; name: string; description: string; products: Prod
         dietary: ["vegan", "dairy_free"],
         modifierGroups: COLD_DRINK_GROUPS,
       },
+      // Limited time: sold only while the seeded collection runs (its
+      // availability window is set in seedCollection). Sample item.
+      {
+        slug: "sunset-hibiscus-spritz",
+        name: "Sunset Hibiscus Spritz",
+        description: "Limited time: hibiscus, lilikoʻi and sparkling water over ice.",
+        sizes: [["Medium", 5.5, 16], ["Large", 6.25, 24]],
+        dietary: ["vegan", "dairy_free"],
+        modifierGroups: ["sweetness", "ice-level"],
+        catering: true,
+      },
     ],
   },
   {
@@ -888,7 +935,21 @@ async function seedCatalog(groupIds: Map<string, string>, optionIds: Map<string,
 // Everything else
 // ---------------------------------------------------------------------------
 
-async function seedEventMenu(eventId: string, productIds: Map<string, string>) {
+async function seedEventMenu(eventId: string, pastEventId: string, productIds: Map<string, string>) {
+  ok(
+    await db
+      .from("event_menu_items")
+      .insert(
+        ["cold-brew", "pog-refresher"].map((slug, index) => ({
+          location_id: pastEventId,
+          product_id: productIds.get(slug)!,
+          sort_order: index * 10,
+        })),
+      )
+      .select(),
+    "insert past event menu",
+  );
+
   const eventProducts = [
     "cold-brew",
     "pog-refresher",
@@ -911,6 +972,13 @@ async function seedEventMenu(eventId: string, productIds: Map<string, string>) {
       )
       .select(),
     "insert event menu",
+  );
+
+  // Both have menus now, so both can be published (the past one stays out of
+  // the storefront because it has ended).
+  ok(
+    await db.from("locations").update({ is_published: true }).in("id", [eventId, pastEventId]).select(),
+    "publish events",
   );
 }
 
@@ -963,7 +1031,17 @@ async function seedCollection(productIds: Map<string, string>) {
     "insert collection",
   );
 
-  const members = ["mango-sunrise", "lilikoi-lemonade", "rainbow-shave-ice", "coconut-cream-soda"];
+  const members = ["sunset-hibiscus-spritz", "mango-sunrise", "lilikoi-lemonade", "rainbow-shave-ice", "coconut-cream-soda"];
+
+  // The limited-time product sells only while the collection runs.
+  ok(
+    await db
+      .from("products")
+      .update({ available_from: start.toISOString(), available_until: end.toISOString() })
+      .eq("id", productIds.get("sunset-hibiscus-spritz")!)
+      .select(),
+    "limit the seasonal product to the collection",
+  );
 
   ok(
     await db
@@ -1131,130 +1209,184 @@ async function seedAccounts(cafeId: string, eventId: string) {
   return ids;
 }
 
-async function seedCatering(customerId: string, cafeId: string, productIds: Map<string, string>) {
-  const inTwoWeeks = new Date();
-  inTwoWeeks.setDate(inTwoWeeks.getDate() + 14);
+/**
+ * Catering samples (all clearly fake: .test addresses, 555 numbers, notes
+ * marked as samples). NEEDS_CONFIRMATION: prices on the quotes are stand-ins.
+ *
+ *   - Submitted: an office party waiting for a quote
+ *   - Quoted: a launch party with a custom signature drink, quoted through
+ *     the real catering_issue_quote function (version 1, payable for a week)
+ *   - Confirmed, today: on the staff screen's "Today's catering" prep list
+ *
+ * The emails their creation queued are marked skipped: seed data should not
+ * fill the local Mailpit inbox.
+ */
+async function seedCatering(customerId: string, adminId: string, cafeId: string, productIds: Map<string, string>) {
+  const inTwoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const inSixWeeks = new Date(Date.now() + 42 * 24 * 60 * 60 * 1000);
+  const sizeId = async (productSlug: string, size: string) =>
+    ok(
+      await db.from("product_sizes").select("id").eq("product_id", productIds.get(productSlug)!).eq("name", size).single(),
+      `size ${size} of ${productSlug}`,
+    ).id;
 
-  const inSixWeeks = new Date();
-  inSixWeeks.setDate(inSixWeeks.getDate() + 42);
+  const create = async (request: JsonObject, items: JsonObject[]) => {
+    const rows = ok(await db.rpc("create_catering_request", { p_user_id: customerId, p_request: request, p_items: items }), "create catering request");
+    return rows[0].request_id;
+  };
 
-  const requests = ok(
-    await db
-      .from("catering_requests")
-      .insert([
-        {
-          user_id: customerId,
-          contact_name: "Leilani Customer",
-          contact_email: CUSTOMER_EMAIL,
-          contact_phone: "+18085550101",
-          event_at: inTwoWeeks.toISOString(),
-          headcount: 30,
-          fulfillment: "pickup",
-          budget_cents: 45000,
-          notes: "Office anniversary. Half iced coffee, half refreshers if possible.",
-          status: "submitted",
-        },
-        {
-          user_id: customerId,
-          contact_name: "Leilani Customer",
-          contact_email: CUSTOMER_EMAIL,
-          event_at: inSixWeeks.toISOString(),
-          headcount: 75,
-          fulfillment: "delivery",
-          delivery_address: "500 Ala Moana Blvd, Honolulu, HI 96813",
-          budget_cents: 120000,
-          custom_drink_request: "Something with lilikoʻi for a launch party — our brand color is teal.",
-          notes: "Would love a custom signature drink.",
-          status: "submitted",
-        },
-      ])
-      .select(),
-    "insert catering requests",
+  const submitted = await create(
+    {
+      location_id: cafeId,
+      contact_name: "Leilani Customer",
+      contact_email: CUSTOMER_EMAIL,
+      contact_phone: "(808) 555-0101",
+      event_at: inTwoWeeks.toISOString(),
+      headcount: 30,
+      fulfillment: "pickup",
+      budget_cents: 45000,
+      notes: "Sample request: office anniversary. Half iced coffee, half refreshers if possible.",
+    },
+    [
+      { product_id: productIds.get("cold-brew"), product_size_id: await sizeId("cold-brew", "Medium"), product_name: "Cold Brew", size_name: "Medium", quantity: 15 },
+      { product_id: productIds.get("pog-refresher"), product_size_id: await sizeId("pog-refresher", "Medium"), product_name: "POG Refresher", size_name: "Medium", quantity: 15 },
+    ],
   );
+
+  const quoted = await create(
+    {
+      location_id: cafeId,
+      contact_name: "Leilani Customer",
+      contact_email: CUSTOMER_EMAIL,
+      contact_phone: "(808) 555-0101",
+      event_at: inSixWeeks.toISOString(),
+      headcount: 75,
+      fulfillment: "delivery",
+      delivery_address: "500 Sample St, Honolulu, HI",
+      delivery_postal_code: "96813",
+      budget_cents: 120000,
+      custom_drink_request: "Something with lilikoʻi for a launch party; our brand color is teal.",
+      notes: "Sample request: would love a custom signature drink.",
+    },
+    [{ product_id: null, product_size_id: null, product_name: "Custom signature drink", size_name: null, quantity: 75 }],
+  );
+
+  // 75 x $6.50 signature drink + $25.00 delivery, GET on both (the default
+  // settings), payable for a week.
+  const items = 75 * 650;
+  const fee = 2500;
+  const tax = Math.round(((items + fee) * 4712) / 100000);
+  ok(
+    await db.rpc("catering_issue_quote", {
+      p_actor: adminId,
+      p_request_id: quoted,
+      p_quote: {
+        items_subtotal_cents: items,
+        discount_cents: 0,
+        delivery_fee_cents: fee,
+        delivery_fee_taxable: true,
+        taxable_cents: items + fee,
+        tax_rate: 0.04712,
+        tax_cents: tax,
+        gratuity_cents: 0,
+        total_cents: items + fee + tax,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        note_to_customer: "Sample quote: a teal-tinted lilikoʻi spritz, served in 12 oz cups with lids.",
+      },
+      p_lines: [
+        {
+          kind: "custom",
+          product_id: null,
+          product_size_id: null,
+          description: "Signature drink: Lilikoʻi Launch Spritz",
+          size_name: null,
+          quantity: 75,
+          unit_price_cents: 650,
+          line_total_cents: items,
+        },
+      ],
+    }),
+    "quote the launch party",
+  );
+
+  const today = await seedTodaysCatering(adminId, cafeId, productIds, create);
 
   ok(
     await db
-      .from("catering_request_items")
-      .insert([
-        {
-          catering_request_id: requests[0].id,
-          product_id: productIds.get("cold-brew")!,
-          product_name: "Cold Brew",
-          quantity: 15,
-        },
-        {
-          catering_request_id: requests[0].id,
-          product_id: productIds.get("pog-refresher")!,
-          product_name: "POG Refresher",
-          quantity: 15,
-        },
-        {
-          catering_request_id: requests[1].id,
-          product_id: null,
-          product_name: "Custom signature drink",
-          quantity: 75,
-          notes: "Lilikoʻi based, teal coloured.",
-        },
-      ])
-      .select(),
-    "insert catering items",
+      .from("email_outbox")
+      .update({ status: "skipped", last_error: "Seed data" })
+      .in("catering_request_id", [submitted, quoted, today])
+      .select("id"),
+    "skip seeded catering emails",
   );
-
-  await seedTodaysCatering(customerId, cafeId, productIds);
 }
 
 /**
  * A confirmed request for today at noon (Honolulu), so the staff screen's
  * "Today's catering" prep list has something on it. The lead-time trigger
- * only checks inserts, so it is created next week, then moved to today and
- * walked through quoted → confirmed the way an admin would.
+ * only checks inserts, so it is created next week, quoted, then moved to
+ * today and marked paid (no payment record: it is a sample, and refunding
+ * it from the admin screen says there is nothing to refund).
  */
-async function seedTodaysCatering(customerId: string, cafeId: string, productIds: Map<string, string>) {
+async function seedTodaysCatering(
+  adminId: string,
+  cafeId: string,
+  productIds: Map<string, string>,
+  create: (request: JsonObject, items: JsonObject[]) => Promise<string>,
+): Promise<string> {
   const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const request = ok(
-    await db
-      .from("catering_requests")
-      .insert({
-        user_id: customerId,
-        location_id: cafeId,
-        contact_name: "Malia Office Manager",
-        contact_email: CUSTOMER_EMAIL,
-        contact_phone: "+18085550123",
-        event_at: nextWeek.toISOString(),
-        headcount: 12,
-        fulfillment: "pickup",
-        notes: "Team meeting. Please label each drink with the name on the list we emailed.",
-        status: "submitted",
-      })
-      .select()
-      .single(),
-    "insert today's catering request",
+  const id = await create(
+    {
+      location_id: cafeId,
+      contact_name: "Malia Office Manager",
+      contact_email: CUSTOMER_EMAIL,
+      contact_phone: "(808) 555-0123",
+      event_at: nextWeek.toISOString(),
+      headcount: 12,
+      fulfillment: "pickup",
+      notes: "Sample request: team meeting. Please label each drink with the name on the list we emailed.",
+    },
+    [
+      { product_id: productIds.get("latte"), product_size_id: null, product_name: "Latte", size_name: null, quantity: 6, notes: "3 oat, 3 whole" },
+      { product_id: productIds.get("pog-refresher"), product_size_id: null, product_name: "POG Refresher", size_name: null, quantity: 6 },
+    ],
   );
 
-  ok(
-    await db
-      .from("catering_request_items")
-      .insert([
-        { catering_request_id: request.id, product_id: productIds.get("latte")!, product_name: "Latte", quantity: 6, notes: "3 oat, 3 whole" },
-        { catering_request_id: request.id, product_id: productIds.get("pog-refresher")!, product_name: "POG Refresher", quantity: 6 },
-      ])
-      .select(),
-    "insert today's catering items",
+  const latte = 6 * 575;
+  const pog = 6 * 525;
+  const tax = Math.round(((latte + pog) * 4712) / 100000);
+  const quoteId = ok(
+    await db.rpc("catering_issue_quote", {
+      p_actor: adminId,
+      p_request_id: id,
+      p_quote: {
+        items_subtotal_cents: latte + pog,
+        discount_cents: 0,
+        delivery_fee_cents: 0,
+        delivery_fee_taxable: true,
+        taxable_cents: latte + pog,
+        tax_rate: 0.04712,
+        tax_cents: tax,
+        gratuity_cents: 0,
+        total_cents: latte + pog + tax,
+        expires_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        note_to_customer: null,
+      },
+      p_lines: [
+        { kind: "product", product_id: productIds.get("latte"), product_size_id: null, description: "Latte (3 oat, 3 whole)", size_name: "Medium", quantity: 6, unit_price_cents: 575, line_total_cents: latte },
+        { kind: "product", product_id: productIds.get("pog-refresher"), product_size_id: null, description: "POG Refresher", size_name: "Medium", quantity: 6, unit_price_cents: 525, line_total_cents: pog },
+      ],
+    }),
+    "quote today's catering",
   );
 
   // Noon today in Honolulu: the HST date, then 12:00 at UTC-10.
   const hstDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Honolulu" }).format(new Date());
   const noonToday = new Date(`${hstDate}T12:00:00-10:00`).toISOString();
-  for (const update of [
-    { event_at: noonToday },
-    { status: "quoted" as const, quote_amount_cents: 9600 },
-    { status: "confirmed" as const },
-  ]) {
-    ok(
-      await db.from("catering_requests").update(update).eq("id", request.id).select().single(),
-      "confirm today's catering request",
-    );
-  }
+  ok(await db.from("catering_requests").update({ event_at: noonToday }).eq("id", id).select().single(), "move today's catering to today");
+  ok(await db.from("catering_quotes").update({ status: "paid" }).eq("id", quoteId).select().single(), "mark today's quote paid");
+  ok(await db.from("catering_requests").update({ status: "confirmed" }).eq("id", id).select().single(), "confirm today's catering");
+  return id;
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,7 +1397,7 @@ async function main() {
   await wipe();
   console.log("  cleared existing data");
 
-  const { cafe, event } = await seedLocations();
+  const { cafe, event, pastEvent } = await seedLocations();
   console.log("  locations + hours");
 
   const { groupIds, optionIds } = await seedModifiers();
@@ -1274,7 +1406,7 @@ async function main() {
   const productIds = await seedCatalog(groupIds, optionIds);
   console.log(`  ${CATALOG.length} categories, ${productIds.size} products`);
 
-  await seedEventMenu(event.id, productIds);
+  await seedEventMenu(event.id, pastEvent.id, productIds);
   await seedSoldOut(cafe.id, productIds, optionIds);
   await seedCollection(productIds);
   await seedRewardsAndPromos();
@@ -1283,7 +1415,7 @@ async function main() {
   const ids = await seedAccounts(cafe.id, event.id);
   console.log("  test accounts");
 
-  await seedCatering(ids.customer, cafe.id, productIds);
+  await seedCatering(ids.customer, ids.admin, cafe.id, productIds);
   console.log("  catering requests");
 
   console.log("\nDone. Test accounts (password for all: " + TEST_PASSWORD + "):");

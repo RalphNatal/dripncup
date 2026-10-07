@@ -146,8 +146,8 @@ select is(
 
 select is(
   pg_temp.try_as('authenticated', 'select public.next_catering_number()'),
-  'ok',
-  'a signed-in customer can take today''s catering number (the column default needs it)'
+  '42501',
+  'a signed-in customer cannot take a catering number (since Phase 8 the server creates requests)'
 );
 
 select is(

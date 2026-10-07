@@ -70,6 +70,221 @@ export type Database = {
         }
         Relationships: []
       }
+      catering_messages: {
+        Row: {
+          author_id: string | null
+          author_role: string
+          body: string
+          catering_request_id: string
+          created_at: string
+          id: string
+          kind: string
+          quote_id: string | null
+        }
+        Insert: {
+          author_id?: string | null
+          author_role: string
+          body: string
+          catering_request_id: string
+          created_at?: string
+          id?: string
+          kind: string
+          quote_id?: string | null
+        }
+        Update: {
+          author_id?: string | null
+          author_role?: string
+          body?: string
+          catering_request_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          quote_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catering_messages_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_messages_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_messages_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "catering_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catering_quote_lines: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          kind: string
+          line_total_cents: number
+          product_id: string | null
+          product_size_id: string | null
+          quantity: number
+          quote_id: string
+          size_name: string | null
+          sort_order: number
+          unit_price_cents: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          kind: string
+          line_total_cents: number
+          product_id?: string | null
+          product_size_id?: string | null
+          quantity: number
+          quote_id: string
+          size_name?: string | null
+          sort_order?: number
+          unit_price_cents: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          kind?: string
+          line_total_cents?: number
+          product_id?: string | null
+          product_size_id?: string | null
+          quantity?: number
+          quote_id?: string
+          size_name?: string | null
+          sort_order?: number
+          unit_price_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catering_quote_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_quote_lines_product_size_id_fkey"
+            columns: ["product_size_id"]
+            isOneToOne: false
+            referencedRelation: "product_sizes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_quote_lines_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "catering_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catering_quotes: {
+        Row: {
+          catering_request_id: string
+          created_at: string
+          created_by: string | null
+          delivery_fee_cents: number
+          delivery_fee_taxable: boolean
+          discount_cents: number
+          discount_label: string | null
+          expires_at: string
+          gratuity_cents: number
+          gratuity_percent: number | null
+          gratuity_taxable: boolean
+          id: string
+          items_subtotal_cents: number
+          note_to_customer: string | null
+          payment_deadline_at: string
+          status: string
+          superseded_at: string | null
+          superseded_reason: string | null
+          tax_cents: number
+          tax_rate: number
+          taxable_cents: number
+          total_cents: number
+          version: number
+        }
+        Insert: {
+          catering_request_id: string
+          created_at?: string
+          created_by?: string | null
+          delivery_fee_cents?: number
+          delivery_fee_taxable?: boolean
+          discount_cents?: number
+          discount_label?: string | null
+          expires_at: string
+          gratuity_cents?: number
+          gratuity_percent?: number | null
+          gratuity_taxable?: boolean
+          id?: string
+          items_subtotal_cents: number
+          note_to_customer?: string | null
+          payment_deadline_at: string
+          status?: string
+          superseded_at?: string | null
+          superseded_reason?: string | null
+          tax_cents: number
+          tax_rate: number
+          taxable_cents: number
+          total_cents: number
+          version: number
+        }
+        Update: {
+          catering_request_id?: string
+          created_at?: string
+          created_by?: string | null
+          delivery_fee_cents?: number
+          delivery_fee_taxable?: boolean
+          discount_cents?: number
+          discount_label?: string | null
+          expires_at?: string
+          gratuity_cents?: number
+          gratuity_percent?: number | null
+          gratuity_taxable?: boolean
+          id?: string
+          items_subtotal_cents?: number
+          note_to_customer?: string | null
+          payment_deadline_at?: string
+          status?: string
+          superseded_at?: string | null
+          superseded_reason?: string | null
+          tax_cents?: number
+          tax_rate?: number
+          taxable_cents?: number
+          total_cents?: number
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catering_quotes_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_quotes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catering_request_items: {
         Row: {
           catering_request_id: string
@@ -78,7 +293,9 @@ export type Database = {
           notes: string | null
           product_id: string | null
           product_name: string
+          product_size_id: string | null
           quantity: number
+          size_name: string | null
         }
         Insert: {
           catering_request_id: string
@@ -87,7 +304,9 @@ export type Database = {
           notes?: string | null
           product_id?: string | null
           product_name: string
+          product_size_id?: string | null
           quantity?: number
+          size_name?: string | null
         }
         Update: {
           catering_request_id?: string
@@ -96,7 +315,9 @@ export type Database = {
           notes?: string | null
           product_id?: string | null
           product_name?: string
+          product_size_id?: string | null
           quantity?: number
+          size_name?: string | null
         }
         Relationships: [
           {
@@ -113,94 +334,136 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "catering_request_items_product_size_id_fkey"
+            columns: ["product_size_id"]
+            isOneToOne: false
+            referencedRelation: "product_sizes"
+            referencedColumns: ["id"]
+          },
         ]
       }
       catering_requests: {
         Row: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
           anonymized_at: string | null
           budget_cents: number | null
           cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
           cancelled_at: string | null
           confirmed_at: string | null
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
           created_at: string
+          created_by: string | null
+          current_quote_id: string | null
           custom_drink_request: string | null
           delivery_address: string | null
+          delivery_postal_code: string | null
           event_at: string
+          flagged_for_review_at: string | null
           fulfilled_at: string | null
           fulfillment: Database["public"]["Enums"]["fulfillment_type"]
           headcount: number
           id: string
           location_id: string | null
           notes: string | null
-          payment_link_url: string | null
-          quote_amount_cents: number | null
-          quote_notes: string | null
           quoted_at: string | null
           request_number: string
+          review_reason: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
+          updated_by: string | null
           user_id: string | null
         }
         Insert: {
+          admin_attention_at?: string | null
+          admin_seen_at?: string | null
           anonymized_at?: string | null
           budget_cents?: number | null
           cancellation_reason?: string | null
+          cancellation_request_reason?: string | null
+          cancellation_requested_at?: string | null
           cancelled_at?: string | null
           confirmed_at?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          created_by?: string | null
+          current_quote_id?: string | null
           custom_drink_request?: string | null
           delivery_address?: string | null
+          delivery_postal_code?: string | null
           event_at: string
+          flagged_for_review_at?: string | null
           fulfilled_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           headcount: number
           id?: string
           location_id?: string | null
           notes?: string | null
-          payment_link_url?: string | null
-          quote_amount_cents?: number | null
-          quote_notes?: string | null
           quoted_at?: string | null
           request_number?: string
+          review_reason?: string | null
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
+          updated_by?: string | null
           user_id?: string | null
         }
         Update: {
+          admin_attention_at?: string | null
+          admin_seen_at?: string | null
           anonymized_at?: string | null
           budget_cents?: number | null
           cancellation_reason?: string | null
+          cancellation_request_reason?: string | null
+          cancellation_requested_at?: string | null
           cancelled_at?: string | null
           confirmed_at?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          created_by?: string | null
+          current_quote_id?: string | null
           custom_drink_request?: string | null
           delivery_address?: string | null
+          delivery_postal_code?: string | null
           event_at?: string
+          flagged_for_review_at?: string | null
           fulfilled_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           headcount?: number
           id?: string
           location_id?: string | null
           notes?: string | null
-          payment_link_url?: string | null
-          quote_amount_cents?: number | null
-          quote_notes?: string | null
           quoted_at?: string | null
           request_number?: string
+          review_reason?: string | null
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
+          updated_by?: string | null
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "catering_requests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_requests_current_quote_fk"
+            columns: ["current_quote_id"]
+            isOneToOne: false
+            referencedRelation: "catering_quotes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "catering_requests_location_id_fkey"
             columns: ["location_id"]
@@ -209,8 +472,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "catering_requests_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "catering_requests_user_id_fkey"
             columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catering_status_history: {
+        Row: {
+          catering_request_id: string
+          changed_by: string | null
+          created_at: string
+          from_status: Database["public"]["Enums"]["catering_status"] | null
+          id: string
+          reason: string | null
+          to_status: Database["public"]["Enums"]["catering_status"]
+        }
+        Insert: {
+          catering_request_id: string
+          changed_by?: string | null
+          created_at?: string
+          from_status?: Database["public"]["Enums"]["catering_status"] | null
+          id?: string
+          reason?: string | null
+          to_status: Database["public"]["Enums"]["catering_status"]
+        }
+        Update: {
+          catering_request_id?: string
+          changed_by?: string | null
+          created_at?: string
+          from_status?: Database["public"]["Enums"]["catering_status"] | null
+          id?: string
+          reason?: string | null
+          to_status?: Database["public"]["Enums"]["catering_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catering_status_history_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_status_history_changed_by_fkey"
+            columns: ["changed_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -265,18 +580,21 @@ export type Database = {
         Row: {
           collection_id: string
           created_at: string
+          created_by: string | null
           product_id: string
           sort_order: number
         }
         Insert: {
           collection_id: string
           created_at?: string
+          created_by?: string | null
           product_id: string
           sort_order?: number
         }
         Update: {
           collection_id?: string
           created_at?: string
+          created_by?: string | null
           product_id?: string
           sort_order?: number
         }
@@ -286,6 +604,13 @@ export type Database = {
             columns: ["collection_id"]
             isOneToOne: false
             referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collection_products_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -302,6 +627,7 @@ export type Database = {
           accent_color: string | null
           banner_image_url: string | null
           created_at: string
+          created_by: string | null
           description: string | null
           ends_at: string
           id: string
@@ -311,11 +637,13 @@ export type Database = {
           sort_order: number
           starts_at: string
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           accent_color?: string | null
           banner_image_url?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           ends_at: string
           id?: string
@@ -325,11 +653,13 @@ export type Database = {
           sort_order?: number
           starts_at: string
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           accent_color?: string | null
           banner_image_url?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           ends_at?: string
           id?: string
@@ -339,8 +669,24 @@ export type Database = {
           sort_order?: number
           starts_at?: string
           updated_at?: string
+          updated_by?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "collections_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       daily_counters: {
         Row: {
@@ -363,6 +709,9 @@ export type Database = {
       email_outbox: {
         Row: {
           attempts: number
+          catering_message_id: string | null
+          catering_quote_id: string | null
+          catering_request_id: string | null
           created_at: string
           dedupe_key: string
           id: string
@@ -380,6 +729,9 @@ export type Database = {
         }
         Insert: {
           attempts?: number
+          catering_message_id?: string | null
+          catering_quote_id?: string | null
+          catering_request_id?: string | null
           created_at?: string
           dedupe_key: string
           id?: string
@@ -397,6 +749,9 @@ export type Database = {
         }
         Update: {
           attempts?: number
+          catering_message_id?: string | null
+          catering_quote_id?: string | null
+          catering_request_id?: string | null
           created_at?: string
           dedupe_key?: string
           id?: string
@@ -414,6 +769,27 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "email_outbox_catering_message_id_fkey"
+            columns: ["catering_message_id"]
+            isOneToOne: false
+            referencedRelation: "catering_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_outbox_catering_quote_id_fkey"
+            columns: ["catering_quote_id"]
+            isOneToOne: false
+            referencedRelation: "catering_quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_outbox_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "email_outbox_order_id_fkey"
             columns: ["order_id"]
             isOneToOne: false
@@ -425,23 +801,33 @@ export type Database = {
       event_menu_items: {
         Row: {
           created_at: string
+          created_by: string | null
           location_id: string
           product_id: string
           sort_order: number
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           location_id: string
           product_id: string
           sort_order?: number
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           location_id?: string
           product_id?: string
           sort_order?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "event_menu_items_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "event_menu_items_location_id_fkey"
             columns: ["location_id"]
@@ -697,13 +1083,16 @@ export type Database = {
           address_line2: string | null
           city: string
           created_at: string
+          created_by: string | null
           description: string | null
           ends_at: string | null
           id: string
           image_url: string | null
           is_active: boolean
+          is_published: boolean
           latitude: number | null
           longitude: number | null
+          map_url: string | null
           name: string
           paused_at: string | null
           paused_by: string | null
@@ -719,6 +1108,7 @@ export type Database = {
           timezone: string
           type: Database["public"]["Enums"]["location_type"]
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           accepting_orders?: boolean
@@ -726,13 +1116,16 @@ export type Database = {
           address_line2?: string | null
           city?: string
           created_at?: string
+          created_by?: string | null
           description?: string | null
           ends_at?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_published?: boolean
           latitude?: number | null
           longitude?: number | null
+          map_url?: string | null
           name: string
           paused_at?: string | null
           paused_by?: string | null
@@ -748,6 +1141,7 @@ export type Database = {
           timezone?: string
           type?: Database["public"]["Enums"]["location_type"]
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           accepting_orders?: boolean
@@ -755,13 +1149,16 @@ export type Database = {
           address_line2?: string | null
           city?: string
           created_at?: string
+          created_by?: string | null
           description?: string | null
           ends_at?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_published?: boolean
           latitude?: number | null
           longitude?: number | null
+          map_url?: string | null
           name?: string
           paused_at?: string | null
           paused_by?: string | null
@@ -777,11 +1174,26 @@ export type Database = {
           timezone?: string
           type?: Database["public"]["Enums"]["location_type"]
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "locations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "locations_paused_by_fkey"
             columns: ["paused_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "locations_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1348,6 +1760,8 @@ export type Database = {
       payments: {
         Row: {
           amount_cents: number
+          catering_quote_id: string | null
+          catering_request_id: string | null
           created_at: string
           currency: string
           failure_code: string | null
@@ -1356,7 +1770,7 @@ export type Database = {
           method_brand: string | null
           method_last4: string | null
           method_wallet: string | null
-          order_id: string
+          order_id: string | null
           provider: string
           provider_charge_id: string | null
           provider_customer_id: string | null
@@ -1369,6 +1783,8 @@ export type Database = {
         }
         Insert: {
           amount_cents: number
+          catering_quote_id?: string | null
+          catering_request_id?: string | null
           created_at?: string
           currency?: string
           failure_code?: string | null
@@ -1377,7 +1793,7 @@ export type Database = {
           method_brand?: string | null
           method_last4?: string | null
           method_wallet?: string | null
-          order_id: string
+          order_id?: string | null
           provider?: string
           provider_charge_id?: string | null
           provider_customer_id?: string | null
@@ -1390,6 +1806,8 @@ export type Database = {
         }
         Update: {
           amount_cents?: number
+          catering_quote_id?: string | null
+          catering_request_id?: string | null
           created_at?: string
           currency?: string
           failure_code?: string | null
@@ -1398,7 +1816,7 @@ export type Database = {
           method_brand?: string | null
           method_last4?: string | null
           method_wallet?: string | null
-          order_id?: string
+          order_id?: string | null
           provider?: string
           provider_charge_id?: string | null
           provider_customer_id?: string | null
@@ -1410,6 +1828,20 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "payments_catering_quote_id_fkey"
+            columns: ["catering_quote_id"]
+            isOneToOne: false
+            referencedRelation: "catering_quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "payments_order_id_fkey"
             columns: ["order_id"]
@@ -1524,6 +1956,8 @@ export type Database = {
       products: {
         Row: {
           allergens: Database["public"]["Enums"]["allergen"][]
+          available_from: string | null
+          available_until: string | null
           base_price_cents: number
           calories: number | null
           category_id: string | null
@@ -1538,9 +1972,12 @@ export type Database = {
           slug: string
           sort_order: number
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          available_from?: string | null
+          available_until?: string | null
           base_price_cents?: number
           calories?: number | null
           category_id?: string | null
@@ -1555,9 +1992,12 @@ export type Database = {
           slug: string
           sort_order?: number
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          available_from?: string | null
+          available_until?: string | null
           base_price_cents?: number
           calories?: number | null
           category_id?: string | null
@@ -1572,6 +2012,7 @@ export type Database = {
           slug?: string
           sort_order?: number
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -1579,6 +2020,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1765,10 +2213,11 @@ export type Database = {
         Row: {
           amount_cents: number
           attempts: number
+          catering_request_id: string | null
           created_at: string
           failure_reason: string | null
           id: string
-          order_id: string
+          order_id: string | null
           payment_id: string | null
           provider: string
           provider_refund_id: string | null
@@ -1780,10 +2229,11 @@ export type Database = {
         Insert: {
           amount_cents: number
           attempts?: number
+          catering_request_id?: string | null
           created_at?: string
           failure_reason?: string | null
           id?: string
-          order_id: string
+          order_id?: string | null
           payment_id?: string | null
           provider?: string
           provider_refund_id?: string | null
@@ -1795,10 +2245,11 @@ export type Database = {
         Update: {
           amount_cents?: number
           attempts?: number
+          catering_request_id?: string | null
           created_at?: string
           failure_reason?: string | null
           id?: string
-          order_id?: string
+          order_id?: string | null
           payment_id?: string | null
           provider?: string
           provider_refund_id?: string | null
@@ -1808,6 +2259,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "refunds_catering_request_id_fkey"
+            columns: ["catering_request_id"]
+            isOneToOne: false
+            referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "refunds_order_id_fkey"
             columns: ["order_id"]
@@ -1926,20 +2384,30 @@ export type Database = {
       staff_locations: {
         Row: {
           created_at: string
+          created_by: string | null
           location_id: string
           profile_id: string
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           location_id: string
           profile_id: string
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           location_id?: string
           profile_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "staff_locations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "staff_locations_location_id_fkey"
             columns: ["location_id"]
@@ -2014,6 +2482,108 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "loyalty_transactions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      admin_catering_cancel: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      admin_catering_mark_seen: {
+        Args: { p_request_id: string }
+        Returns: undefined
+      }
+      admin_duplicate_event: {
+        Args: { p_date: string; p_event_id: string }
+        Returns: string
+      }
+      admin_save_collection: {
+        Args: { p_collection: Json; p_products: Json }
+        Returns: string
+      }
+      admin_save_event: {
+        Args: { p_event: Json; p_menu: string[]; p_staff: string[] }
+        Returns: string
+      }
+      admin_set_event_published: {
+        Args: { p_event_id: string; p_published: boolean }
+        Returns: {
+          accepting_orders: boolean
+          address_line1: string | null
+          address_line2: string | null
+          city: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          is_published: boolean
+          latitude: number | null
+          longitude: number | null
+          map_url: string | null
+          name: string
+          paused_at: string | null
+          paused_by: string | null
+          paused_until: string | null
+          phone: string | null
+          pickup_instructions: string | null
+          postal_code: string | null
+          prep_time_minutes: number
+          slug: string
+          sort_order: number
+          starts_at: string | null
+          state: string
+          timezone: string
+          type: Database["public"]["Enums"]["location_type"]
+          updated_at: string
+          updated_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "locations"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -2095,10 +2665,254 @@ export type Database = {
         Args: { p_actor_id: string; p_order_id: string; p_reason: string }
         Returns: string
       }
+      catering_cancel: {
+        Args: { p_reason?: string; p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      catering_cancel_for_refund: {
+        Args: { p_actor: string; p_reason: string; p_request_id: string }
+        Returns: string
+      }
+      catering_issue_quote: {
+        Args: {
+          p_actor: string
+          p_lines: Json
+          p_quote: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
+      catering_lock_own_request: {
+        Args: { p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      catering_mark_fulfilled: {
+        Args: { p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      catering_payable_quote: {
+        Args: { p_quote_id: string; p_request_id: string }
+        Returns: Json
+      }
+      catering_request_cancellation: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      catering_request_changes: {
+        Args: { p_message: string; p_request_id: string }
+        Returns: {
+          admin_attention_at: string | null
+          admin_seen_at: string | null
+          anonymized_at: string | null
+          budget_cents: number | null
+          cancellation_reason: string | null
+          cancellation_request_reason: string | null
+          cancellation_requested_at: string | null
+          cancelled_at: string | null
+          confirmed_at: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string | null
+          current_quote_id: string | null
+          custom_drink_request: string | null
+          delivery_address: string | null
+          delivery_postal_code: string | null
+          event_at: string
+          flagged_for_review_at: string | null
+          fulfilled_at: string | null
+          fulfillment: Database["public"]["Enums"]["fulfillment_type"]
+          headcount: number
+          id: string
+          location_id: string | null
+          notes: string | null
+          quoted_at: string | null
+          request_number: string
+          review_reason: string | null
+          status: Database["public"]["Enums"]["catering_status"]
+          updated_at: string
+          updated_by: string | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "catering_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      catering_setting_int: {
+        Args: { p_fallback: number; p_key: string }
+        Returns: number
+      }
       claim_email_outbox: {
         Args: { p_limit?: number }
         Returns: {
           attempts: number
+          catering_message_id: string | null
+          catering_quote_id: string | null
+          catering_request_id: string | null
           created_at: string
           dedupe_key: string
           id: string
@@ -2121,6 +2935,13 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      create_catering_request: {
+        Args: { p_items: Json; p_request: Json; p_user_id: string }
+        Returns: {
+          request_id: string
+          request_number: string
+        }[]
+      }
       create_checkout_order: {
         Args: { p_items: Json; p_order: Json; p_rewards?: Json }
         Returns: {
@@ -2132,6 +2953,7 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: undefined
       }
+      enqueue_catering_reminders: { Args: never; Returns: number }
       expire_loyalty_points: { Args: { p_as_of?: string }; Returns: number }
       generate_member_code: { Args: never; Returns: string }
       get_promo_for_checkout: {
@@ -2145,6 +2967,13 @@ export type Database = {
       get_setting: { Args: { setting_key: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
+      is_valid_catering_transition: {
+        Args: {
+          from_status: Database["public"]["Enums"]["catering_status"]
+          to_status: Database["public"]["Enums"]["catering_status"]
+        }
+        Returns: boolean
+      }
       is_valid_order_transition: {
         Args: {
           from_status: Database["public"]["Enums"]["order_status"]
@@ -2191,6 +3020,18 @@ export type Database = {
           points: number
           reservation_status: string
         }[]
+      }
+      mark_catering_paid: {
+        Args: {
+          p_amount_cents: number
+          p_charge_id: string
+          p_currency: string
+          p_payment_intent_id: string
+          p_quote_id: string
+          p_raw?: Json
+          p_request_id: string
+        }
+        Returns: string
       }
       mark_order_paid: {
         Args: {
@@ -2241,13 +3082,16 @@ export type Database = {
           address_line2: string | null
           city: string
           created_at: string
+          created_by: string | null
           description: string | null
           ends_at: string | null
           id: string
           image_url: string | null
           is_active: boolean
+          is_published: boolean
           latitude: number | null
           longitude: number | null
+          map_url: string | null
           name: string
           paused_at: string | null
           paused_by: string | null
@@ -2263,6 +3107,7 @@ export type Database = {
           timezone: string
           type: Database["public"]["Enums"]["location_type"]
           updated_at: string
+          updated_by: string | null
         }
         SetofOptions: {
           from: "*"
@@ -2295,6 +3140,7 @@ export type Database = {
           items: Json
           notes: string
           request_number: string
+          status: Database["public"]["Enums"]["catering_status"]
         }[]
       }
       staff_lookup_member: {
