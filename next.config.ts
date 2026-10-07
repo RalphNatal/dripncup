@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   // ignores it. `*` is one label of the hostname, so these cover the private
   // IPv4 ranges.
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
+  // Admin image uploads go through a Server Action (src/lib/admin/images.ts):
+  // 5 MB images plus the multipart overhead.
+  experimental: {
+    serverActions: { bodySizeLimit: "6mb" },
+  },
   images: {
     remotePatterns: [
       {
