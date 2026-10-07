@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { StaffDashboard } from "@/components/staff/staff-dashboard";
 import { StaffNotice } from "@/components/staff/staff-notice";
 import { requireRole } from "@/lib/auth/dal";
+import { appClockOffsetMs } from "@/lib/clock";
 import { getStaffLocationOptions, loadStaffLocationContext, resolveStaffLocation } from "@/lib/staff/locations";
 
 export const metadata: Metadata = { title: "Staff" };
@@ -50,6 +51,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Search
     return <StaffNotice title="Location not found" body="That location no longer exists." actionHref="/staff" actionLabel="Open my queue" />;
   }
 
+  const clockOffsetMs = await appClockOffsetMs();
   return (
     <StaffDashboard
       key={context.id}
@@ -57,6 +59,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Search
       options={options}
       viewer={{ id: profile.id, name: profile.first_name ?? profile.full_name ?? profile.email ?? "Staff", role: profile.role }}
       renderedAt={new Date().toISOString()}
+      clockOffsetMs={clockOffsetMs}
     />
   );
 }

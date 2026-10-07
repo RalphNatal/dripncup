@@ -1,16 +1,20 @@
-import { ArrowRight, Gift, MapPin } from "lucide-react";
+import { ArrowRight, CalendarDays, ChefHat, Gift, MapPin } from "lucide-react";
 import Link from "next/link";
 
 import { AccountDeletedNotice } from "@/components/account/account-deleted-notice";
 import { Swirl } from "@/components/brand/logo";
+import { EventCard } from "@/components/events/event-card";
 import { FavoritesRow } from "@/components/favorites/favorites-list";
 import { StatusDot } from "@/components/locations/status-dot";
+import { CollectionBanner } from "@/components/menu/banners";
 import { ActiveOrderCards, PastOrderRow } from "@/components/orders/order-lists";
 import { RewardsSummary } from "@/components/rewards/rewards-summary";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { BRAND } from "@/lib/brand";
+import { listPublicEvents } from "@/lib/events/queries";
 import { listFavorites } from "@/lib/favorites/queries";
 import { getStorefront } from "@/lib/locations/storefront";
+import { getMenuPageData } from "@/lib/menu/queries";
 import { listActiveOrders, listPastOrders } from "@/lib/orders/queries";
 import { getMyRewards } from "@/lib/rewards/queries";
 import { firstParam, type SearchParams } from "@/lib/search-params";
@@ -18,11 +22,18 @@ import { firstParam, type SearchParams } from "@/lib/search-params";
 /**
  * Home tab: greeting with the Overflow Rewards balance, live cards for
  * orders on their way, the customer's favourites, "Order again" from recent
- * orders, and the pickup location. Upcoming pop-ups arrive in Phase 8.
+ * orders, the current seasonal collection, the pickup location, upcoming
+ * pop-ups and catering.
  */
 export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
   const accountDeleted = firstParam((await searchParams).account) === "deleted";
-  const [{ selected }, profile] = await Promise.all([getStorefront(), getCurrentProfile()]);
+  const [{ selected }, profile, menuData, events] = await Promise.all([
+    getStorefront(),
+    getCurrentProfile(),
+    getMenuPageData(),
+    listPublicEvents({ limit: 3 }),
+  ]);
+  const collection = menuData?.menu.collection ?? null;
   const greeting = profile?.first_name ? `Aloha, ${profile.first_name}!` : "Aloha!";
   const [active, recent, favorites, rewards] = profile
     ? await Promise.all([listActiveOrders(), listPastOrders(null, 3), listFavorites(), getMyRewards()])
@@ -94,6 +105,8 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
         </section>
       ) : null}
 
+      {collection ? <CollectionBanner collection={collection} /> : null}
+
       {selected ? (
         <section aria-labelledby="home-pickup" className="rounded-3xl border bg-card p-5">
           <h2 id="home-pickup" className="flex items-center gap-2 text-lg font-bold">
@@ -110,6 +123,35 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
           </p>
         </section>
       ) : null}
+
+      <section aria-labelledby="home-events" className="space-y-3" data-testid="home-events">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="home-events" className="flex items-center gap-2 text-lg font-bold">
+            <CalendarDays className="size-5 text-brand-teal-deep" aria-hidden="true" />
+            Upcoming pop-ups
+          </h2>
+          <Link href="/events" className="focus-ring rounded text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
+            All events
+          </Link>
+        </div>
+        {events.length > 0 ? (
+          events.map((event) => <EventCard key={event.id} event={event} compact />)
+        ) : (
+          <p className="rounded-3xl border border-dashed p-5 text-sm text-muted-foreground">No pop-ups on the calendar right now. Check back soon!</p>
+        )}
+      </section>
+
+      <Link
+        href="/catering"
+        className="focus-ring flex items-center gap-4 rounded-3xl border bg-card p-5 hover:border-brand-teal-deep"
+      >
+        <ChefHat className="size-8 shrink-0 text-brand-magenta-deep" aria-hidden="true" />
+        <span>
+          <span className="block text-lg font-bold">Catering for your event</span>
+          <span className="block text-sm text-muted-foreground">Offices, parties and celebrations across Oʻahu, with custom signature drinks.</span>
+        </span>
+        <ArrowRight className="ml-auto size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </Link>
     </div>
   );
 }

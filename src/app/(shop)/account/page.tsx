@@ -1,4 +1,4 @@
-import { ChevronRight, Gift, Heart, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
+import { ChefHat, ChevronRight, Gift, Heart, KeyRound, LayoutDashboard, Store, UserX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -68,6 +68,9 @@ export default async function AccountPage() {
         </LinkRow>
         <LinkRow href="/account/favorites" icon={<Heart aria-hidden="true" />}>
           Favorites
+        </LinkRow>
+        <LinkRow href="/account/catering" icon={<ChefHat aria-hidden="true" />}>
+          My catering
         </LinkRow>
         <LinkRow href="/account/password" icon={<KeyRound aria-hidden="true" />}>
           Change password

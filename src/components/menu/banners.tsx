@@ -1,7 +1,9 @@
-import { CalendarDays, CirclePause, Clock, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarDays, CirclePause, Clock, Sparkles } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 import type { LocationView } from "@/lib/locations/storefront";
+import { isLoopbackUrl } from "@/lib/menu/images";
 import type { MenuCollection } from "@/lib/menu/model";
 
 /**
@@ -32,9 +34,10 @@ export function OrderingUnavailableBanner({ location }: { location: LocationView
 }
 
 /**
- * The current seasonal collection. The collection's own accent colour (data,
- * optional) tints the decoration only -- text always stays on a light
- * surface, so any colour the owner picks keeps AA contrast.
+ * The current seasonal collection, on the menu and Home. The collection's own
+ * accent colour (data, optional) tints the decoration only -- text always
+ * stays on a light surface, so any colour the owner picks keeps AA contrast.
+ * The banner artwork (the cafe's own) sits above the text, never behind it.
  */
 export function CollectionBanner({ collection }: { collection: MenuCollection }) {
   const accent = collection.accentColor ?? "var(--brand-magenta)";
@@ -46,6 +49,18 @@ export function CollectionBanner({ collection }: { collection: MenuCollection })
       style={{ borderColor: `color-mix(in oklab, ${accent} 35%, var(--border))` }}
     >
       <span aria-hidden="true" className="absolute inset-y-0 left-0 w-2" style={{ backgroundColor: accent }} />
+      {collection.bannerImageUrl ? (
+        <div className="relative -mt-4 mb-3 -ml-6 aspect-[4/1] overflow-hidden">
+          <Image
+            src={collection.bannerImageUrl}
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 960px, 100vw"
+            className="object-cover"
+            unoptimized={isLoopbackUrl(collection.bannerImageUrl)}
+          />
+        </div>
+      ) : null}
       <span
         aria-hidden="true"
         className="absolute -top-10 -right-10 size-32 rounded-full opacity-15"
@@ -60,6 +75,13 @@ export function CollectionBanner({ collection }: { collection: MenuCollection })
           {collection.name}
         </h2>
         {collection.description ? <p className="text-sm text-foreground/80">{collection.description}</p> : null}
+        <Link
+          href={`/collections/${collection.slug}`}
+          className="focus-ring mt-1 inline-flex min-h-11 items-center gap-1 rounded text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline"
+        >
+          See the collection
+          <ArrowRight className="size-4" aria-hidden="true" />
+        </Link>
       </div>
       {/* One swipeable row keeps the banner short on a phone. */}
       <ul

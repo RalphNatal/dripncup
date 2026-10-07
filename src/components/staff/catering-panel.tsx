@@ -2,16 +2,19 @@
 
 /**
  * Today's catering, as a prep list: confirmed requests for today (Honolulu
- * date) at this counter. Read-only; the catering workflow itself arrives in
- * Phase 8. Comes from staff_catering_prep(), which hands out only what the
- * counter needs (no quote, budget or email).
+ * date) at this counter, with the paid quote's lines -- what was sold, not
+ * just what was asked for. Comes from staff_catering_prep(), which hands out
+ * only what the counter needs (no prices, budget or email). After the event
+ * the team marks each one fulfilled.
  */
-import { Phone, Truck, Store } from "lucide-react";
+import { CircleCheck, Phone, Truck, Store } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatCafeTimeOfDay } from "@/lib/time";
 
-import type { CateringPrep } from "@/lib/staff/client";
+import { markCateringFulfilled, type CateringPrep } from "@/lib/staff/client";
 
 export function CateringPanel({
   open,
@@ -20,6 +23,7 @@ export function CateringPanel({
   requests,
   loading,
   failed,
+  onChanged,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,7 +31,22 @@ export function CateringPanel({
   requests: CateringPrep[];
   loading: boolean;
   failed: boolean;
+  onChanged: () => void;
 }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function fulfil(request: CateringPrep) {
+    setBusyId(request.id);
+    try {
+      const result = await markCateringFulfilled(request.id);
+      if (result.outcome === "error") toast.error(result.message);
+      else toast.success(`${request.requestNumber} marked fulfilled`);
+      onChanged();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-xl [&_[data-slot=sheet-close]]:size-14 [&_[data-slot=sheet-close]_svg]:size-7">
@@ -50,7 +69,15 @@ export function CateringPanel({
               <article key={request.id} className="space-y-3 rounded-2xl border-2 bg-card p-4" data-testid="catering-request">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-heading text-3xl font-extrabold">{formatCafeTimeOfDay(new Date(request.eventAt))}</p>
-                  <p className="tabular text-base text-muted-foreground">{request.requestNumber}</p>
+                  <p className="tabular text-base text-muted-foreground">
+                    {request.requestNumber}
+                    {request.status === "fulfilled" ? (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-brand-teal-soft px-2 py-0.5 font-bold text-brand-teal-deep">
+                        <CircleCheck className="size-4" aria-hidden="true" />
+                        Fulfilled
+                      </span>
+                    ) : null}
+                  </p>
                 </div>
                 <p className="flex flex-wrap items-center gap-2 text-lg font-bold">
                   <span className="rounded-lg bg-muted px-2.5 py-1">{request.headcount} people</span>
@@ -70,6 +97,7 @@ export function CateringPanel({
                   {request.items.map((item, index) => (
                     <li key={index}>
                       <span className="tabular font-extrabold">{item.quantity}×</span> {item.name}
+                      {item.size ? <span className="text-muted-foreground"> ({item.size})</span> : null}
                       {item.notes ? <span className="text-muted-foreground"> — {item.notes}</span> : null}
                     </li>
                   ))}
@@ -93,6 +121,17 @@ export function CateringPanel({
                     </a>
                   ) : null}
                 </p>
+                {request.status === "confirmed" ? (
+                  <button
+                    type="button"
+                    onClick={() => void fulfil(request)}
+                    disabled={busyId === request.id}
+                    className="focus-ring inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-brand-teal-deep px-4 text-lg font-bold text-brand-teal-deep hover:bg-brand-teal-soft disabled:opacity-60"
+                  >
+                    <CircleCheck className="size-5" aria-hidden="true" />
+                    {busyId === request.id ? "Saving…" : "Mark fulfilled"}
+                  </button>
+                ) : null}
               </article>
             ))
           )}

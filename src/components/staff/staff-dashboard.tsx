@@ -99,12 +99,19 @@ export function StaffDashboard({
   options,
   viewer,
   renderedAt,
+  clockOffsetMs = 0,
 }: {
   location: StaffLocationContext;
   options: StaffLocationOption[];
   viewer: { id: string; name: string; role: "customer" | "staff" | "admin" };
   /** When the server rendered the page (ISO): the Start shift heading's clock until hydrated. */
   renderedAt: string;
+  /**
+   * The server's request clock minus real time: always 0, except under the
+   * e2e suite's controllable clock (src/lib/test-clock.ts), which moves the
+   * catering prep list to "the day of the event".
+   */
+  clockOffsetMs?: number;
 }) {
   const [started, setStarted] = useState(false);
   const wakeLock = useWakeLock(started);
@@ -125,7 +132,7 @@ export function StaffDashboard({
       />
     );
   }
-  return <Dashboard location={location} options={options} wakeLock={wakeLock} />;
+  return <Dashboard location={location} options={options} wakeLock={wakeLock} clockOffsetMs={clockOffsetMs} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,10 +288,12 @@ function Dashboard({
   location,
   options,
   wakeLock,
+  clockOffsetMs,
 }: {
   location: StaffLocationContext;
   options: StaffLocationOption[];
   wakeLock: ReturnType<typeof useWakeLock>;
+  clockOffsetMs: number;
 }) {
   const queryClient = useQueryClient();
   const now = useNow() ?? new Date();
@@ -318,9 +327,11 @@ function Dashboard({
     staleTime: 0,
     refetchInterval: 20_000,
   });
+  // The prep list's day: today in Honolulu (by the server's clock).
+  const prepDay = clockOffsetMs ? cafeDateKey(new Date(now.getTime() + clockOffsetMs)) : dateKey;
   const catering = useQuery({
-    queryKey: ["staff-catering", location.id, dateKey],
-    queryFn: () => fetchCateringPrep(location.id),
+    queryKey: ["staff-catering", location.id, prepDay],
+    queryFn: () => fetchCateringPrep(location.id, prepDay),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
   });
@@ -764,6 +775,7 @@ function Dashboard({
         requests={catering.data ?? []}
         loading={catering.isPending}
         failed={catering.isError}
+        onChanged={() => void queryClient.invalidateQueries({ queryKey: ["staff-catering", location.id] })}
       />
       <CompletedDrawer
         open={panel === "completed"}
