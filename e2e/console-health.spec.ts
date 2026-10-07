@@ -48,6 +48,9 @@ test.describe("pages hydrate cleanly", () => {
       "/events",
       `/events/${SEEDED.eventSlug}`,
       "/collections/summer-sunset",
+      "/about",
+      "/privacy",
+      "/terms",
     ]) {
       await visit(page, path);
     }
@@ -140,6 +143,59 @@ test.describe("pages hydrate cleanly", () => {
       "/admin/collections",
       "/admin/collections/new",
       `/admin/collections/${collection.id}`,
+    ]) {
+      await visit(page, path);
+    }
+  });
+
+  test("the Phase 9 admin pages", async ({ page }) => {
+    // About thirty pages, each waited on until the network is idle.
+    test.setTimeout(180_000);
+    const user = await createCustomer("health-admin-p9");
+    const { orderId } = await arrangePlacedOrder({ userId: user.id, lines: [LATTE] });
+    const pick = async (table: "products" | "modifier_groups" | "promos" | "rewards", column: string, value: string) =>
+      must(await db().from(table).select("id").eq(column, value).single(), `${table} ${value}`).id;
+    const [latte, milk, promo, reward] = await Promise.all([
+      pick("products", "slug", "latte"),
+      pick("modifier_groups", "slug", "milk"),
+      pick("promos", "code", "MAHALO10"),
+      pick("rewards", "name", "Free drink"),
+    ]);
+    await signIn(page, SEEDED.admin, TEST_PASSWORD, "/admin");
+    for (const path of [
+      "/admin/orders",
+      `/admin/orders/${orderId}`,
+      "/admin/menu",
+      "/admin/menu?archived=1",
+      "/admin/menu/categories",
+      "/admin/menu/modifiers",
+      `/admin/menu/modifiers/${milk}`,
+      "/admin/menu/modifiers/new",
+      "/admin/menu/products/new",
+      `/admin/menu/products/${latte}`,
+      "/admin/menu/sold-out",
+      "/admin/menu/import",
+      "/admin/locations",
+      "/admin/promos",
+      "/admin/promos/new",
+      `/admin/promos/${promo}`,
+      "/admin/rewards",
+      `/admin/rewards/tiers/${reward}`,
+      "/admin/rewards/tiers/new",
+      "/admin/rewards/members?q=kai",
+      `/admin/rewards/members/${user.id}`,
+      "/admin/users",
+      "/admin/users?role=staff",
+      `/admin/users/${user.id}`,
+      "/admin/reports",
+      "/admin/reports?preset=last_month",
+      "/admin/settings",
+      "/admin/setup",
+      "/admin/content",
+      "/admin/audit",
+      "/about",
+      "/privacy",
+      "/terms",
     ]) {
       await visit(page, path);
     }
