@@ -136,6 +136,8 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `npm run db:seed` | Load demo data and test accounts |
 | `npm run db:clean-test-data` | Remove data automated tests left in the dev database (asks first; `-- --yes` to skip) |
 | `npm run db:e2e:stop` | Stop the e2e suite's Supabase stack (frees about 1 GB of Docker memory) |
+| `npm run stripe:listen` | Forward the sandbox's webhook events to `npm run dev` (`-- --port 3001` for another port) |
+| `npm run stripe:doctor` | Check the Stripe setup end to end and say what to fix (prints no secrets) |
 
 ---
 
@@ -243,6 +245,15 @@ npm run test:e2e    # Playwright: the app in a real browser
 
 `test:db` needs the local stack running (`npm run db:start`). `test:e2e` sets up
 its own (below); Docker must be running.
+
+**The e2e clock.** Tests that need "the day of the event" or "after the
+collection ends" set a `dc_test_clock` cookie (an offset in milliseconds) on
+their browser context (`setClock` in `e2e/support/catering.ts`). Only the
+Playwright test server honours it: it needs `E2E_RUN_ID` (set only there) and
+a local database, so `npm run dev` and any deployment ignore it. It moves the
+server's request clock (which events are live, which collections and
+limited-time products show, the staff prep list's day, catering deadlines
+checked in TypeScript), never the database's own `now()`.
 
 ### Test isolation: the e2e suite has its own database
 
@@ -393,10 +404,15 @@ the browser to Stripe; the app never sees them. How an order moves from
    `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (`pk_test_…`) and `STRIPE_SECRET_KEY`
    (`sk_test_…`).
 2. Install the [Stripe CLI](https://docs.stripe.com/stripe-cli).
-3. In a second PowerShell window, forward webhooks to the dev server. Pass the
-   sandbox's secret key with `--api-key`, so the CLI listens to the same
-   account the payments are made in (a plain `stripe login` can point at a
-   different account):
+3. In a second PowerShell window, forward webhooks to the dev server:
+
+   ```powershell
+   npm run stripe:listen
+   ```
+
+   It reads `STRIPE_SECRET_KEY` from `.env.local` and hands it to the CLI, so
+   the CLI listens to the same account the payments are made in (a plain
+   `stripe login` can point at a different account). It is the same as:
 
    ```powershell
    stripe listen --api-key <STRIPE_SECRET_KEY> --events payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled,charge.refunded --forward-to localhost:3000/api/webhooks/stripe
@@ -405,15 +421,25 @@ the browser to Stripe; the app never sees them. How an order moves from
 4. It prints a signing secret (`whsec_…`). Put it in `.env.local` as
    `STRIPE_WEBHOOK_SECRET` and restart `npm run dev`. The secret stays the
    same between runs for the same account and machine.
+5. Check everything with `npm run stripe:doctor` (with `npm run dev`
+   running): keys set and in test mode, both from the same account, the CLI
+   installed, the webhook secret the one `stripe listen` signs with, and the
+   dev server's webhook route answering. It prints no secrets.
 
-**Orders only become Placed when the webhook arrives.** Without the listener,
-checkout still takes the money but the confirmation page stays on
-"Confirming your payment…".
+**Payments land through the webhook.** If it is slow or missing (the
+listener is not running), the confirmation page and the catering pay page
+ask the server after about 6 seconds to read the payment from Stripe's API
+and apply it the same way (the reconcile fallback), so you still get to
+"Mahalo!". Keep the listener running anyway: refunds made in the Stripe
+dashboard, declines and cancellations only arrive through it.
 
-The `--events` list is exactly what the app handles; update it if
-`src/lib/payments/stripe.ts` learns a new event. In production, create a
-webhook endpoint in the dashboard for `https://<domain>/api/webhooks/stripe`
-with the same four events, and use its signing secret.
+The four events are exactly what the app handles (one list:
+`scripts/lib/stripe-events.mjs`, checked against the webhook by a unit
+test). Catering payments use the same four (they are PaymentIntents tagged
+`metadata.type = catering`): **no new events in Phase 8**. In production,
+create a webhook endpoint in the dashboard for
+`https://<domain>/api/webhooks/stripe` with the same four events, and use its
+signing secret.
 
 ### Test cards
 
@@ -430,12 +456,12 @@ More at [docs.stripe.com/testing](https://docs.stripe.com/testing).
 
 ### Trying it by hand
 
-With `npm run dev` and `stripe listen` running:
+With `npm run dev` and `npm run stripe:listen` running:
 
 1. Sign in as `customer@drincup.test`, add a Latte, open the cart, press
    **Checkout**.
 2. Pay with `4242…`. You land on "Confirming your payment…", then **Mahalo!**
-   with the order number once the webhook arrives (watch the `stripe listen`
+   with the order number once the webhook arrives (watch the `npm run stripe:listen`
    window for `[200] POST /api/webhooks/stripe`). The cart empties.
 3. Again with `4000 0000 0000 0002`: the decline shows on the checkout page;
    pay again with `4242…` and it completes the **same** order.
@@ -496,7 +522,7 @@ curl.exe -H "Authorization: Bearer $env:CRON_SECRET" http://localhost:3000/api/c
 
 Watch an order move without reloading:
 
-1. `npm run dev` (and `stripe listen …` from "Payments" if you pay through
+1. `npm run dev` (and `npm run stripe:listen` if you pay through
    checkout), sign in as `customer@drincup.test` and place an order. On the
    confirmation page, tap **Track your order** (`/orders/<id>`). Tap the page
    once so the browser allows the Ready sound, and optionally **Notify me when
@@ -572,7 +598,7 @@ the customer's activity log.
    under **Use a reward** tap **Use** on *Free drink*. The totals show
    "Free drink: Latte −$5.75", GET and the tip are worked out on what is
    left, and "You'll earn 3 points when you pick this up." Pay with
-   `4242 4242 4242 4242` (with `stripe listen` running). The confirmation
+   `4242 4242 4242 4242` (with `npm run stripe:listen` running). The confirmation
    and the receipt email (Mailpit, http://127.0.0.1:54324) show the reward,
    and `/rewards` shows 150 points redeemed.
 3. **Staff ticket.** As `barista@drincup.test` on `/staff`, the latte carries
@@ -590,7 +616,7 @@ the customer's activity log.
    another tab, tap **Cancel that checkout and use them now**. The activity
    log shows them returned.
 7. **Refunds.** Refund a picked-up order in the Stripe dashboard (with
-   `stripe listen` running): half the money reverses half its points
+   `npm run stripe:listen` running): half the money reverses half its points
    (rounded down); the rest reverses them all and returns any points spent
    on a reward. If those points were already spent, the balance goes below
    zero and rewards are paused until it is positive again.
@@ -653,7 +679,8 @@ and open `/staff`.
   Honolulu time) or **until I turn it back on**. The menu and every cart see
   it straight away. Who changed what is recorded (`location_availability_log`).
 - **Catering**: today's confirmed catering orders for this counter, as a prep
-  list (read-only for now).
+  list with the paid quote's lines (sizes and quantities, no prices), the
+  contact's phone and any notes. After the event, **Mark fulfilled**.
 - **Completed**: today's picked-up and cancelled orders, searchable by order
   number or cup name.
 - **Offline.** A red "Offline — reconnecting…" banner means new orders may be
@@ -662,7 +689,7 @@ and open `/staff`.
 
 ### Two windows by hand (customer and barista)
 
-1. `npm run dev` (plus `stripe listen …` from "Payments" if you pay through
+1. `npm run dev` (plus `npm run stripe:listen` if you pay through
    checkout).
 2. **Window A** (normal): sign in as `customer@drincup.test`. **Window B**
    (InPrivate / a second browser, so the sessions don't mix): sign in as
@@ -731,6 +758,115 @@ printer (or keep one of them on the normal print dialog). Chrome on Android
 and Safari on iPad have no silent printing: they always show the system print
 dialog, where you pick the printer and paper.
 
+---
+
+## Catering, pop-up events and collections (trying it by hand)
+
+How it works inside: [ARCHITECTURE.md](ARCHITECTURE.md#catering-workflow).
+
+**Before you start.** A database from before Phase 8 needs the two new
+migrations: `npx supabase migration up` applies them and keeps your data. For
+the Phase 8 samples (below) start fresh instead: `npm run db:reset`, then
+`npm run db:seed` (this wipes the dev database). Then `npm run dev` and, in a
+second window, `npm run stripe:listen`. Emails land in Mailpit at
+<http://127.0.0.1:54324>; admin notifications go to `catering@drincup.test`
+(setting `catering.admin_notification_email`).
+
+**Windows.** Use separate sessions so the sign-ins don't mix:
+
+| Window | Account | For |
+| ------ | ------- | --- |
+| A (normal) | `customer@drincup.test` | requesting, paying, events, collections |
+| B (InPrivate, or a second browser) | `admin@drincup.test`, then open `/admin` | quoting, cancelling, events, collections |
+| C (another browser profile) | `barista@drincup.test`, then open `/staff` | the prep list |
+
+**The samples** (from `npm run db:seed`, all marked as samples):
+a **Submitted** request (office anniversary, two weeks out), a **Quoted**
+one (launch party with a signature drink, six weeks out, payable for a
+week), a **Confirmed** one for today at noon (on the staff prep list); the
+**Kakaʻako** pop-up two weeks out (published) and a **past** sample pop-up
+(only in the admin's Past list); the **Summer Sunset** collection with the
+limited-time **Sunset Hibiscus Spritz**, which is on the menu only while the
+collection runs.
+
+### Catering
+
+1. **A:** Home → *Catering for your event* (or `/catering`). Signed out, the
+   page explains catering and asks you to sign in.
+2. **A:** pick tomorrow as the date and send: refused, *too soon* (72 hours'
+   notice). Pick a date five or more days away, 11:00, 30 guests; add *Cold
+   Brew* (Medium) and *POG Refresher*, set the quantities; tick *A custom
+   signature drink* and describe it; choose *Delivery*, type ZIP **96720**
+   (Hilo: "we don't deliver to 96720") then **96813**; **Send request**. You
+   get the `CAT-…` number and what happens next. Mailpit: *We got your
+   catering request* (to you) and *New catering request* (to
+   `catering@drincup.test`).
+3. **B:** `/admin` shows it in *New catering requests*, and Catering has a
+   badge. Open it: the quote builder is filled in from what was asked for at
+   menu prices. Set the signature line to "Signature drink: …" at $6.50,
+   leave the $25.00 delivery fee, try a 10% discount and the gratuity box,
+   watch the preview, **Send quote**. Mailpit: *Your catering quote*.
+4. **A:** Account → *My catering* → the request: the quote, its lines and the
+   pay-by time. **Request changes**, write something, send: the request goes
+   back to *Submitted*. Mailpit: *Changes requested on a catering quote*.
+5. **B:** reload: *Revise the quote* starts from version 1; change a price,
+   **Send revised quote**. *Quote versions* shows v1 (superseded) and v2.
+6. **A:** reload → **Accept & pay** → card `4000 0000 0000 0002` (declined;
+   try again on the same page) then `4242 4242 4242 4242` → *Mahalo! You're
+   confirmed.* Mailpit: the receipt (lines, totals, Visa •••• 4242) and
+   *Catering payment received*. **B:** the payment shows under *Payments and
+   refunds*.
+7. **A:** on the confirmed request, **Ask to cancel**, give a reason. Mailpit:
+   *Cancellation requested*. **B:** the request shows the reason;
+   **Cancel and refund** → *Partial refund* → $10.00. The refund appears in
+   the Stripe dashboard and under *Payments and refunds*; Mailpit: *was
+   cancelled*, "We've refunded $10.00 of the $… you paid".
+8. **C:** `/staff` → Start shift → **Catering**: today's sample (Malia Office
+   Manager, noon) with its quoted lines. **Mark fulfilled**. (A request you
+   made in step 2 appears here on its event day; to see one today, set its
+   `event_at` to today in Studio before paying.)
+9. **B:** `/admin/catering?view=calendar`: quoted (pink) and confirmed (teal)
+   events by month or week. The inbox filters by status, pickup/delivery and
+   event dates, and searches by number, name or email.
+10. **An expired quote:** in B, send a quote expiring in 15 minutes (the
+    expiry picker is in Honolulu time); after it passes, A sees "This quote
+    has expired" and no **Accept & pay**; B can send a new one (until the
+    payment deadline, 48 hours before the event).
+
+### Pop-up events
+
+1. **B:** `/admin/events` → **New event**: a name, tomorrow, 10:00–14:00, an
+   address (or a Google/Apple Maps link), add two drinks with the menu
+   search, tick Kekoa Barista under Staff, optionally upload a photo
+   (JPEG/PNG/WebP up to 5 MB) → **Create event**. It is a draft. **A:**
+   `/events` doesn't show it.
+2. **B:** **Publish**. **A:** `/events` shows it under *Coming up*, with the
+   menu preview and Directions; Home lists it under *Upcoming pop-ups*.
+3. **Live:** edit the event so it started an hour ago today (date today,
+   start time an hour back) and save. **A:** `/events` shows *Open now* →
+   **Order for pickup here** → the menu has only its drinks; checkout works
+   while it runs. **C:** the barista can open its queue from the location
+   menu on `/staff`.
+4. **B:** **Duplicate to another date** → a copy on that date with the same
+   times, menu and staff, unpublished.
+5. **B:** **Unpublish**: it disappears from `/events`, Home and the pickup
+   location switcher at once. An event that has ended disappears by itself.
+
+### Seasonal collections
+
+1. **B:** `/admin/collections` → **New collection**: a name, starting now-ish
+   and ending in a few days; accent **#1AB3C0** (the form warns it fails
+   contrast for text and explains it is only used for decoration); upload a
+   banner (the form reminds you artwork must be the cafe's own) and watch the
+   preview; add products, and tick **Limited time** on one that is not in
+   another collection (e.g. Matcha Latte) → **Create collection**.
+2. **A:** `/menu`: your collection takes the banner (the newest running one
+   wins) → *See the collection* → `/collections/<slug>`.
+3. **B:** set the end to earlier today and save. **A:** the limited-time
+   product is gone from the menu; a cart holding it says "This limited-time
+   item is no longer on the menu."; the collection page says "This
+   collection has ended" with a link to the menu.
+
 ## Testing on a phone
 
 To try checkout on a real phone on the same Wi-Fi as your PC:
@@ -752,7 +888,7 @@ To try checkout on a real phone on the same Wi-Fi as your PC:
 
    Make sure Windows calls your Wi-Fi a **Private** network (Settings →
    Network & internet → Wi-Fi → your network).
-4. Run `npm run dev:lan` (plus `stripe listen` as above) and open
+4. Run `npm run dev:lan` (plus `npm run stripe:listen` as above) and open
    `http://192.168.1.23:3000` on the phone.
 
 Private-network addresses are already allowed in `next.config.ts`
@@ -813,8 +949,12 @@ src/
     api/cron/send-emails/    Delivers due emails from the outbox
     api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (the dashboard calls it)
     auth/callback/     Landing route for emailed confirmation / reset links
+      catering/        Catering info and request form; [id]/pay pays a quote
+      account/catering/  The customer's catering requests and one request's page
+      events/          Live and upcoming pop-ups; [slug] for one
+      collections/     A seasonal collection's page
     staff/             Barista dashboard (own plain frame, no customer tab bar)
-    admin/             Admin dashboard (Phase 9)
+    admin/             Admin: home, catering (inbox, calendar, request), events, collections
   components/
     account/           Profile form, delete-account form
     auth/              Auth forms, shared form fields, sign-out
@@ -827,6 +967,11 @@ src/
     orders/            Tracker, timeline, Ready alert, order lists, reorder dialog
     favorites/         Save-as-favourite form, favourites row and manager
     staff/             Barista dashboard: queue, tickets, alerts, sold out, pause, printing
+    admin/             Admin shell and building blocks: data table, form layout, confirm
+                       dialog, image upload, Honolulu date/time, product picker; event
+                       and collection forms
+    catering/          Request form, quote summary, quote builder, timeline, pay page
+    events/            Event card, Order for pickup here
     ui/                shadcn/ui primitives
     providers.tsx      TanStack Query + Tooltip + Toaster
   lib/
@@ -841,6 +986,12 @@ src/
     favorites/         Favourite rules, queries and Server Actions
     staff/             Queue columns and lateness, sold-out reset time, ticket layout
                        (pure, tested); counter access; dashboard reads and writes
+    catering/          Status (mirrored from SQL), rules (lead time, deadline, ZIPs),
+                       schemas, settings, queries, customer and admin actions, payments
+    events/            Event windows and slugs (pure), queries, admin actions
+    collections/       Contrast checks (pure), queries, admin actions
+    admin/             Image upload action (sharp)
+    clock.ts           The request's "now" (the e2e test clock; test-clock.ts guards it)
     email/             EmailProvider (Resend / Mailpit), outbox sender, dev sweep
     rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
     client-id.ts       Browser ids / idempotency keys (works over plain HTTP)
@@ -862,7 +1013,7 @@ src/
       server.ts        Server Components / Actions / Route Handlers
       admin.ts         Service role — bypasses RLS, server only
       session.ts       Cookie refresh + /staff and /admin gating
-  emails/              React Email templates (receipt, cancelled/refunded, ready)
+  emails/              React Email templates: orders, catering, shared layout
   instrumentation.ts   Starts the dev-only email outbox sweep
   types/database.ts    Generated database types
   proxy.ts             Next 16 proxy (formerly middleware)
@@ -872,6 +1023,7 @@ supabase/
   tests/               pgTAP database tests (npm run test:db)
 e2e/                   Playwright specs and their DB helpers (npm run test:e2e)
 scripts/test-db.mjs    Runs supabase/tests against the local database
+scripts/stripe-*.mjs   npm run stripe:listen / stripe:doctor
 docs/SPEC.md           The build spec -- read before starting any phase
 ```
 
@@ -909,8 +1061,13 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 - [ ] Whether flavours are charged once or per pump (seeded as once per flavour; `modifier_groups.charge_per_quantity`)
 - [ ] Product photography (a generated brand-coloured placeholder shows until then)
 - [ ] Pickup-shelf wording
-- [ ] Whether catering delivery is offered (assumed yes)
+- [ ] Whether catering delivery is offered (assumed yes), and where (`catering.delivery_zip_codes`, seeded with Oʻahu street-delivery ZIP codes)
 - [ ] Catering minimum lead time (seeded at 72 hours)
+- [ ] Catering payment deadline (48 hours before the event) and quote expiry (7 days)
+- [ ] Catering default delivery fee ($25.00), and whether GET applies to it (assumed yes) and to a gratuity (assumed no)
+- [ ] Where admin catering notifications go (`catering.admin_notification_email`, placeholder `catering@drincup.test`)
+- [ ] Catering cancellation and refund policy (`catering.refund_policy`, placeholder wording; the admin picks full / partial / no refund each time)
+- [ ] Full payment for catering, or a deposit (full payment for now; deposits are on the post-launch list)
 - [ ] Ordering ahead while closed: a cart already built can be scheduled for the next open day at checkout, but the menu still blocks adding while closed. Allow adding too?
 - [ ] Checkout timings: unpaid checkouts expire after 30 minutes; the ASAP estimate adds 2 minutes per order in the queue; 8 orders per 15-minute slot; last slot 15 minutes before closing
 - [ ] Custom tip cap (seeded at $100 or 100% of the subtotal, whichever is lower)
@@ -935,7 +1092,7 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 5. ✅ **Order tracking & history** — live tracker with Ready alerts, active-order cards and tab dot, history with pagination, reorder, favourites, email outbox (receipt, cancellation/refund, opt-in ready)
 6. ✅ **Staff dashboard** — live queue with alerts and undo, tickets and printing, cancel with refund, sold out, pause with auto-resume, catering prep list
 7. ✅ **Rewards** — points ledger with reservations, earning at pickup, refund reversals, data-driven reward tiers redeemed at checkout, rewards page with activity log, member QR, admin adjustments (data layer)
-8. ⬜ Catering, events & seasonal collections
+8. ✅ **Catering, events & seasonal collections** — catering requests, versioned quotes, payment with the Payment Element, changes and cancellations with refunds, emails and reminders, prep list; pop-up events with publishing and duplication; seasonal collections with limited-time products; image uploads; the admin shell; the reconcile fallback and Stripe tooling
 9. ⬜ Admin dashboard
 10. ⬜ Polish (PWA, a11y, performance)
 11. ⬜ Testing & deploy

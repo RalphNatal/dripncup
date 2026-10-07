@@ -1,7 +1,8 @@
 # Architecture
 
 How Drincup Cafe's order-ahead app is put together: the data model, the order
-lifecycle, the catering workflow, and where pricing is decided.
+lifecycle, the catering workflow, events and seasonal collections, the admin
+shell, and where pricing is decided.
 
 ---
 
@@ -24,7 +25,7 @@ Four rules explain most of the design decisions below.
 
 ## Data model
 
-33 tables in `public`. Grouped by what they are for:
+39 tables in `public`. Grouped by what they are for:
 
 ### People and places
 
@@ -32,7 +33,7 @@ Four rules explain most of the design decisions below.
 | ----- | ------- |
 | `profiles` | One row per `auth.users` row. Carries `role`, loyalty balance, member code, notification preferences. |
 | `staff_locations` | Which baristas see which queues. Admins bypass it. |
-| `locations` | The Kapiolani cafe (`type = 'cafe'`) and pop-up booths (`type = 'event'`, with `starts_at`/`ends_at`). The staff pause toggle is `accepting_orders`, with `paused_until` (automatic resume), `paused_at` and `paused_by`. |
+| `locations` | The Kapiolani cafe (`type = 'cafe'`) and pop-up booths (`type = 'event'`, with `starts_at`/`ends_at`, at most 24 hours: one row per day). Events are `is_published` or drafts invisible to customers, with an optional `map_url`. The staff pause toggle is `accepting_orders`, with `paused_until` (automatic resume), `paused_at` and `paused_by`. `created_by` / `updated_by` record the admin. |
 | `location_hours` | Weekly opening hours. Multiple rows per day allow split service. |
 | `closures` | One-off closures and holiday-hour overrides. A null `location_id` applies everywhere. |
 
@@ -41,15 +42,15 @@ Four rules explain most of the design decisions below.
 | Table | Purpose |
 | ----- | ------- |
 | `categories` | Coffee & Espresso, Tropical Refreshers, Shave Ice, … |
-| `products` | Name, description, allergens, dietary tags, catering eligibility. |
+| `products` | Name, description, allergens, dietary tags, catering eligibility, and an optional availability window (`available_from` / `available_until`) for limited-time items. |
 | `product_sizes` | Each size carries its own **absolute** price, not a delta — a large cold brew is not reliably "small plus a fixed amount". |
 | `modifier_groups` | Reusable customisation groups: Milk, Syrups, Sweetness, Ice. `quantity_unit` names one unit ("pump", "shot"); `charge_per_quantity` says whether a delta is charged per unit (extra shots) or once (a flavour at any number of pumps). |
 | `modifier_options` | The choices inside a group, each with a `price_delta_cents`. |
 | `product_modifier_groups` | Links products to groups, with optional per-product overrides of required/min/max, and `visible_when_option_id` for conditional groups. |
 | `location_availability` | Sold-out overrides. **A row exists only when something is unavailable** — no row means available. `available_from` is the automatic reset ("until end of day"); null means until someone turns it back on. Written only through `set_sold_out()`. |
 | `location_availability_log` | Append-only: who marked what sold out or back on, where and when (trigger on `location_availability`). Readable by staff of that location. |
-| `event_menu_items` | The subset of the catalog a pop-up booth carries. |
-| `collections` / `collection_products` | Seasonal ranges, shown and hidden purely by date window. |
+| `event_menu_items` | The subset of the catalog a pop-up booth carries. A published event always has at least one (checked at commit). |
+| `collections` / `collection_products` | Seasonal ranges, shown and hidden purely by date window, products in order. Hex-only `accent_color`; `created_by` / `updated_by`. |
 
 The customisation sheet is entirely data-driven. **No modifier is hardcoded in
 UI code.** How data becomes controls:
@@ -80,11 +81,11 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | `orders` | One per checkout. Holds the full money breakdown plus the tax rate in force at the time. `user_id` is null only after an account deletion (`anonymized_at` set). |
 | `order_items` | Immutable snapshot lines. `modifiers` is JSONB. |
 | `order_status_history` | Append-only audit, written by a trigger on every status change. |
-| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. Never stores a client secret. Records the last failure (`failure_code`, `failure_message`), the running `refunded_cents`, and for the receipt the card brand, last four and wallet (`method_*`, copied from the charge by the webhook). |
-| `refunds` | One row per refund attempt, written **before** the provider is called, so a crash or a decline still leaves a record. `failed` rows are the admin retry queue. Customers can read refunds on their own orders. |
+| `payments` | Provider-agnostic. Only Stripe identifiers and status — card data never reaches us. Never stores a client secret. Records the last failure (`failure_code`, `failure_message`), the running `refunded_cents`, and for the receipt the card brand, last four and wallet (`method_*`, copied from the charge by the webhook). Belongs to an order **or** a catering request (and its quote): exactly one. |
+| `refunds` | One row per refund attempt, written **before** the provider is called, so a crash or a decline still leaves a record. `failed` rows are the admin retry queue. Customers can read refunds on their own orders and catering requests. Like payments, for an order or a catering request. |
 | `webhook_events` | One row per provider event id: the dedupe log. Service role only. |
 | `rate_limit_hits` | Fixed-window counters for checkout and promo-code limits. Service role only. |
-| `email_outbox` | Customer emails owed by order status changes, written by trigger in the same transaction and delivered by the server-side sender. Unique `dedupe_key` (kind + order). Admins can read it; only the server writes. |
+| `email_outbox` | Emails owed by order and catering changes, written by trigger in the same transaction and delivered by the server-side sender. Unique `dedupe_key` (kind + order, request, quote or message). Admins can read it; only the server writes. |
 
 ### Money and loyalty
 
@@ -101,7 +102,10 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 
 | Table | Purpose |
 | ----- | ------- |
-| `catering_requests` / `catering_request_items` | Enquiries and their line items. `location_id` is the counter that prepares it (defaults to the cafe). Contact fields and `user_id` are cleared by account deletion (`anonymized_at` set). |
+| `catering_requests` / `catering_request_items` | Enquiries and what was asked for (product, size, quantity). `location_id` is the counter that prepares it (the cafe). `current_quote_id` is the payable (or paid) quote. The admin inbox's "new" marker is `admin_attention_at` after `admin_seen_at`. Contact fields and `user_id` are cleared by account deletion (`anonymized_at` set). |
+| `catering_quotes` / `catering_quote_lines` | Versioned quotes: immutable once issued, one `active` at a time, earlier versions kept `superseded`; `paid` or `void` at the end. Totals from `calculateCateringQuote`, checked to add up by constraint. |
+| `catering_messages` | Change requests, cancellation requests and notes sent with a quote. |
+| `catering_status_history` | Every status change with its actor, written by trigger. |
 | `settings` | Admin-editable key/value config. `is_public` decides anonymous readability. |
 | `daily_counters` | Backs the human-readable `DC-260923-0042` order numbers. Not client-readable. |
 
@@ -160,6 +164,26 @@ Guardrails alongside the policies:
   refundable amount (`staff_order_activity`) hand out just those fields for
   the caller's own counters; staff still cannot read `catering_requests`,
   `profiles` or `payments`.
+- **Catering is written only by functions.** Nobody (admins included) has
+  INSERT, UPDATE or DELETE on `catering_requests`, their items, quotes,
+  quote lines, messages or history. The server creates requests
+  (`create_catering_request`, after Zod, the delivery-area check and the
+  rate limit) and quotes (`catering_issue_quote`, totals from
+  `calculateCateringQuote`, the admin named and re-checked); customers act
+  through definer functions that check `auth.uid()` owns the request; staff
+  read only `staff_catering_prep()` (no prices). Another customer's id gets
+  the same 42501 as a missing one.
+- **Admin tools are definer functions too** (`admin_save_event`,
+  `admin_set_event_published`, `admin_duplicate_event`,
+  `admin_save_collection`, `admin_catering_cancel`), each starting with
+  `is_admin()` and running as the admin, so `created_by` / `updated_by`
+  stamps (trigger) name who did it.
+- **Images:** admins upload (Storage policy plus the upload action);
+  guests and customers may list only images that published content uses.
+  The buckets are public so `next/image` can load published images by URL;
+  a public bucket serves any object to whoever has its exact URL, which no
+  policy can prevent, so uploads get random names and a draft's image is
+  never guessable.
 - `get_setting()` reads any setting (it is how triggers read admin-only
   keys), so clients cannot call it. Staff read the `staff.*` settings through
   the `settings` policy.
@@ -177,7 +201,7 @@ Guardrails alongside the policies:
   service-role `cancel_order_for_refund()` and then refunds. Both record
   the staff member in `order_status_history.changed_by`.
 
-`/staff` and `/admin` are also gated in `src/proxy.ts` before any page code
+`/staff`, `/admin` and `/catering/[id]/pay` are also gated in `src/proxy.ts` before any page code
 runs. That check reads the database rather than a JWT claim, so a role change
 takes effect immediately instead of whenever the access token next rotates.
 
@@ -543,6 +567,12 @@ api/cron/expire-points     points expiry, off by default (outside the proxy matc
 api/cron/send-emails       email outbox sweep (outside the proxy matcher)
 api/staff/orders/[id]/cancel   cancel-with-refund for staff (session + same-origin JSON)
 staff                      the barista dashboard (staff and admins; ?location= deep link)
+(shop)/catering            catering: what we offer (public) and the request form (signed in)
+(shop)/catering/[id]/pay   pay a quote (owner only; current, unexpired, before the deadline)
+(shop)/account/catering    the customer's requests; /[id] for one, with its quote and history
+(shop)/events              live and upcoming published pop-ups; /[slug] for one
+(shop)/collections/[slug]  a seasonal collection; "has ended" after its window
+admin                      admin home; catering (inbox + calendar, /[id]), events, collections
 ```
 
 Closing the sheet calls `router.back()`, so the menu keeps its scroll
@@ -605,9 +635,11 @@ declined or abandoned payment leaves the cart as it was.
  poll sees Placed → "Mahalo!", order number; the cart empties
 ```
 
-**An order becomes Placed in the webhook and nowhere else.** A redirect back
-from Stripe proves nothing (anyone can type the URL), so the confirmation page
-only ever reads the order's status.
+**An order becomes Placed from Stripe's word, never the browser's.** A
+redirect back from Stripe proves nothing (anyone can type the URL), so the
+confirmation page only ever reads the order's status. Stripe's word arrives
+by the webhook, or, when that is slow, by the reconcile fallback (below):
+the server reading the PaymentIntent from Stripe's API with the secret key.
 
 ### Before payment
 
@@ -663,6 +695,14 @@ backoff.
 | `payment_intent.canceled` | A pending order is cancelled ("The payment was cancelled before it completed."). Anything already placed is left alone. |
 | `charge.refunded` | Every refund on the charge is recorded (ours are matched by the `refund_row_id` metadata; ones made in the dashboard are added). `refunded_cents` is updated. Fully refunded → the order is cancelled if still running, then Refunded. |
 
+**Catering payments** arrive as the same four events. The handler finds the
+owner from our `payments` row (or, before it exists, the PaymentIntent's
+metadata: `type=catering` with the request and quote ids) and routes them:
+success → `mark_catering_paid` (see "Catering workflow"), failure and
+cancellation → the payment row only (the quote stays payable), refunds →
+`apply_refund_state`, which cancels a confirmed request once its paid quote
+is fully refunded.
+
 **Out of order and replayed.** Every SQL function locks the order or payment
 row and only moves forward. A replayed success is `already_placed` and counts
 the promo once (`unique (promo_id, order_id)`). A late failure never
@@ -670,6 +710,22 @@ overwrites a success or a refund. A cancel never touches a placed order.
 Refund totals never go down. A success for an order already cancelled
 (expired, account deleted) is `not_pending`, and whatever has not already
 gone back is refunded.
+
+### The reconcile fallback
+
+A late or lost webhook (the listener down, a deploy in the way) would leave
+a customer on "Confirming your payment…". So the confirmation page, and the
+catering pay page, ask the server to reconcile after 6 seconds of waiting:
+`reconcileOrderPayment` / `reconcileCateringPayment`
+(`src/lib/payments/reconcile.ts`) check the caller owns the order or request
+and it is still waiting, read the latest PaymentIntent from Stripe, and if it
+has succeeded run `applyPaymentSucceeded`, exactly the webhook's handler
+(location re-check, `mark_order_paid` / `mark_catering_paid`, card details,
+refund on rejection), then send the emails it owes. Nothing is recorded in
+`webhook_events` (it is not a provider event), and every step is row-locked
+and forward-only, so the real webhook arriving later, or at the same moment,
+changes nothing twice. One provider read per payment per 8 seconds (the
+Postgres limiter), however many tabs poll.
 
 ### The confirmation page (`/orders/[id]/confirmed`)
 
@@ -1056,22 +1112,286 @@ favourite stays saved and says why it can't be added.
 ## Catering workflow
 
 ```
-  submitted ──► quoted ──► confirmed ──► fulfilled
-      │           │            │
-      └───────────┴────────────┴──► cancelled
+                 ┌─── changes asked for ───┐
+                 ▼                         │
+  submitted ──► quoted (v1, v2 …) ──────────┘
+      │           │  paid (webhook or reconcile)
+      │           ▼
+      │       confirmed ──► fulfilled   (admin or staff, from the event day)
+      │           │
+      └───────────┴──► cancelled        (free before payment; after it,
+                                          admin only, with a refund)
 ```
 
-- The customer submits. A `BEFORE INSERT` trigger rejects anything inside the
-  configured minimum lead time (`settings.catering.min_lead_time_hours`,
-  seeded at 72), so the rule holds even if the date picker is bypassed.
-- An admin sets `quote_amount_cents` and attaches a Stripe payment link →
-  **quoted**.
-- Payment confirms → **confirmed**. Event day → **fulfilled**.
-- A trigger enforces the transitions and stamps the timestamps, the same way
-  orders work.
-- Each step sends the customer an email (Phase 8).
+`is_valid_catering_transition()` is the enforcing copy, a trigger stamps
+the timestamps, and `CATERING_TRANSITIONS` (`src/lib/catering/status.ts`)
+mirrors it with a parity test, the same as orders. Every change lands in
+`catering_status_history` with its actor: `auth.uid()` for customer and
+admin functions run in the session, the admin a service-role function names
+(`app.catering_actor`) for quoting and cancel-with-refund, null for the
+webhook. Request numbers follow the order-number pattern: `CAT-260923-004`.
 
-Request numbers follow the order-number pattern: `CAT-260923-004`.
+### Requesting (`/catering`)
+
+Guests read what catering offers, the lead time and how quoting works, and
+are asked to sign in. The form takes the event date and time (Honolulu),
+headcount, drinks (catering-eligible products, a size and a quantity, from
+`getCateringMenu`), an optional "custom signature drink" brief, pickup or
+delivery, contact details (prefilled from the profile), a budget and notes.
+`submitCateringRequestAction` validates with Zod, checks the lead time with
+the request clock (`appNow`) and, for delivery, the ZIP against
+`catering.delivery_zip_codes` (`checkDeliveryArea`, unit-tested), checks
+each drink is a catering drink on the menu **on the event date** (its
+availability window), rate-limits (5 per user / 20 per IP per hour), and
+creates the request through `create_catering_request` with the cafe as
+`location_id`. The lead-time trigger still has the last word. The
+confirmation shows the number and what happens next.
+
+### Quoting (`/admin/catering/[id]`)
+
+The quote builder starts from what was asked for at today's menu prices (or
+the current quote, for a revision), and takes menu lines (price editable for
+catering pricing), custom lines, a delivery fee (setting default, editable),
+an optional discount (amount or percent, items only), an optional gratuity
+(off by default), the expiry (default 7 days, never past the payment
+deadline) and a note. The preview is `calculateCateringQuote`
+(`src/lib/pricing/catering-quote.ts`), the same pure function the server
+runs when the quote is sent:
+
+```
+  lines      = quantity × unit price (integer cents)
+  items      = Σ lines
+  discount   = amount, or percentOf(items, %), capped at items
+  gratuity   = percentOf(items − discount, %) or an amount   (optional)
+  taxable    = items − discount
+               + delivery fee  if catering.delivery_fee_taxable
+               + gratuity      if catering.gratuity_taxable
+  tax (GET)  = divideRounded(taxable × rate units, 100000)   once per quote
+  total      = items − discount + delivery fee + tax + gratuity
+```
+
+`issueQuoteAction` re-checks the admin, recomputes, and calls the
+service-role `catering_issue_quote(actor, request, quote, lines)`: it
+re-checks the actor is an admin, the status (submitted or quoted), the
+deadline and the expiry, supersedes the active version, inserts the next
+version and its lines (a constraint checks the totals add up; the function
+checks the lines sum to the items), points the request at it and records
+the history ("Quote sent (version 1)", "Quote revised (version 3)"). The
+customer is emailed the quote.
+
+### Quote versions
+
+A quote never changes once issued (a trigger allows only its status and the
+superseded stamp). There is at most one `active` quote per request (unique
+partial index). A revision supersedes it; a change request supersedes it and
+sends the request back to submitted with no payable quote; cancelling voids
+it; paying marks it `paid`. Every version stays readable by the customer and
+the admin, with why it was replaced.
+
+### The customer's side (`/account/catering`)
+
+The list shows each request's number, status, event date and total; the
+detail page shows the progress, the current quote (or receipt) with its pay-by
+time, earlier versions, what was asked for, and the timeline of status
+changes and messages ("You" / "Drincup Cafe" to the customer; names to the
+admin). By state: **submitted** cancel (free); **quoted** accept & pay,
+request changes (a message; `catering_request_changes`), cancel (free);
+**confirmed** ask to cancel (`catering_request_cancellation`; only an admin
+can then cancel, with a refund).
+
+### Paying (`/catering/[id]/pay`)
+
+Not a hosted Payment Link: the Payment Element and a PaymentIntent, as at
+checkout, so the page is on-brand and catering shares the webhook, its
+dedupe and amount check, the reconcile fallback and the refund machinery.
+
+- **Who and when.** The page and `startCateringPaymentAction` check, with
+  the request clock, that the quote is the current one, unexpired and before
+  the payment deadline (`catering.payment_deadline_hours`, 48 before the
+  event; `quotePayability`), then ask the database as the customer
+  (`catering_payable_quote`: 42501 not yours, DC010 not waiting for payment,
+  DC011 not the current quote, DC012 expired, DC013 past the deadline).
+- **One PaymentIntent per quote version**, idempotency key
+  `catering-<quote>-<attempt>` (a fresh attempt only after a cancelled one),
+  the amount the quote's stored total, metadata `type=catering`,
+  `catering_request_id`, `catering_quote_id`. Reopening the page or retrying
+  after a decline pays the same intent. Superseding or cancelling a quote
+  cancels its unpaid intent.
+- **Confirmed** by `mark_catering_paid` (webhook or reconcile), under the
+  request's row lock: the current, active quote paid at its exact amount →
+  quote paid, request confirmed. A replay is `already_confirmed`. A payment
+  for a quote replaced or a request cancelled meanwhile (`not_payable`), or
+  landing more than an hour after the deadline (`too_late`), is recorded and
+  refunded in full. A wrong amount or currency is recorded and flagged for
+  the admin, not confirmed.
+- **Full payment only** for now; deposits are on the post-launch list.
+- **No points:** catering never earns Overflow Rewards
+  (`loyalty.catering_earns_points` stays false; nothing earns for it).
+
+### Cancelling and refunds
+
+Before payment the customer or an admin cancels for free (the active quote
+is voided). After it, `adminCancelCateringAction` cancels through the
+service-role `catering_cancel_for_refund` (admin re-checked under the row
+lock, recorded in the history) and then refunds through `refundPayment`
+(the same function orders use: a `refunds` row first, idempotency per
+attempt, failures kept for a retry): full, a partial amount, or none, chosen
+each time (refund policy: `NEEDS_CONFIRMATION`). A refund made in the Stripe
+dashboard that covers the whole paid quote cancels a still-confirmed request
+(`apply_refund_state`); refunding a stray payment changes nothing else.
+Account deletion refunds a confirmed request in full and cancels any unpaid
+PaymentIntent first (as for orders), then cancels and anonymises the
+request, now including the delivery ZIP and the customer's messages.
+
+### Fulfilling and the prep list
+
+`staff_catering_prep(location, day)` hands staff at that counter the
+confirmed (and fulfilled) requests for a Honolulu day with the **paid
+quote's lines** (falling back to what was asked for), never prices or email.
+The staff panel shows sizes, notes and a **Mark fulfilled** button
+(`catering_mark_fulfilled`: admin or staff at the counter, confirmed, from
+the event's Honolulu date). The dashboard asks for "today" by the server's
+clock (see "The e2e clock").
+
+### Emails
+
+Through the outbox, like orders, each in the transaction that owes it:
+
+| Change | To | Email |
+| ------ | -- | ----- |
+| request created | customer | received, with the number and what happens next |
+| request created | admin | new request |
+| quote issued (each version) | customer | quote ready (skipped if replaced before sending) |
+| change requested | admin | the customer's message |
+| → confirmed | customer | receipt (lines, totals, card) |
+| → confirmed | admin | payment received |
+| cancellation requested | admin | the customer's reason |
+| → cancelled | customer | the reason and what was refunded |
+| the event is near | customer | reminder (`catering.reminder_hours_before`, 24; `catering.reminder_enabled`) |
+
+The admin address is `catering.admin_notification_email` (placeholder,
+`NEEDS_CONFIRMATION`). Reminders are queued by `enqueue_catering_reminders()`
+at the start of every outbox sweep, once per request, so no new schedule is
+needed. Templates share the order emails' layout (`src/emails/layout.tsx`)
+and each has a plain-text version.
+
+### Settings (all `NEEDS_CONFIRMATION` unless noted)
+
+| Setting | Default | Meaning |
+| ------- | ------- | ------- |
+| `catering.min_lead_time_hours` | 72 | Form, server and trigger |
+| `catering.payment_deadline_hours` | 48 | No payment later than this before the event |
+| `catering.quote_valid_days` | 7 | Default quote expiry (capped at the deadline) |
+| `catering.delivery_offered` | true | Assumption |
+| `catering.delivery_zip_codes` | Oʻahu street ZIPs | Where delivery is offered |
+| `catering.delivery_fee_cents` | 2500 | Default fee on a quote |
+| `catering.delivery_fee_taxable` | true | GET on the delivery fee |
+| `catering.gratuity_taxable` | false | GET on a gratuity (tips are not taxed) |
+| `catering.reminder_enabled` / `_hours_before` | true / 24 | The reminder (confirmed defaults) |
+| `catering.admin_notification_email` | catering@drincup.test | Admin notifications |
+| `catering.refund_policy` | placeholder copy | Shown to customers |
+
+---
+
+## Pop-up events
+
+An event is a `locations` row of type `event`: one day of a pop-up (at most
+24 hours, so a night market past midnight is fine; a weekend market is two
+rows), with its own prep time, menu (`event_menu_items`), staff roster,
+address or map link, and photo.
+
+- **Admin** (`/admin/events`): lists live, upcoming and past; the form saves
+  the event, its menu (picked from the menu, with search, in order) and its
+  staff in one transaction (`admin_save_event`). **Publish** is a separate
+  step (`admin_set_event_published`) and needs a menu; a deferred trigger
+  also refuses a published event with no menu at commit, however it was
+  written. **Duplicate to another date** (`admin_duplicate_event`) copies
+  everything to the same Honolulu wall-clock times on the new date
+  (`shiftEventToDate` mirrors it, unit-tested), unpublished, with a slug for
+  its date.
+- **Customers** see only published events (RLS on `locations` and
+  `event_menu_items`; checkout's `loadLocationSnapshot` refuses an
+  unpublished one too). `/events` lists live and upcoming ones with the
+  window, place, directions (the admin's map link, else Google/Apple Maps)
+  and a menu preview; a live one has **Order for pickup here**, which selects
+  it through `selectLocation` (offered locations only) and opens its menu.
+  Home shows the next three. Past and unpublished events never reach the
+  location switcher (`getStorefront` keeps the cafe and published events
+  that have not ended).
+- Saving or publishing expires the cached catalogue (`updateTag("menu")`),
+  so customers see the change on their next page load.
+
+## Seasonal collections and limited-time products
+
+A collection (`/admin/collections`) has a name, slug, description, banner,
+accent colour, a Honolulu start and end, and products in order. The menu
+and Home banners show the active one (lowest sort order, then the most
+recently started, and only if it has something on this location's menu);
+`/collections/[slug]` shows its banner and products, and after it ends a
+friendly "This collection has ended" with a link to the menu (before it
+starts, a 404).
+
+- **Accent colour:** `#RRGGBB` only (a check constraint, and `safeCssColor`
+  at render, so nothing else reaches an inline style). It is decoration only
+  (the stripe, a circle, the border); the form shows its contrast against
+  white and warns below 4.5:1 (`checkAccentColor`, unit-tested against the
+  brand's documented ratios).
+- **Artwork** must be the cafe's own; the form says so next to the upload,
+  and shows a live preview of the banner before saving.
+- **Limited-time products:** `products.available_from` / `available_until`.
+  Outside the window a product is off the menu everywhere availability is
+  checked, through one function (`isProductAvailableAt`): the menu and
+  product page (`buildMenu` / `buildProductDetail`), cart re-validation and
+  checkout ("This limited-time item is no longer on the menu."), reorder and
+  favourites (via `buildProductDetail`), the staff sold-out list, and the
+  catering form (on the event date). The catalogue cache holds the columns,
+  and the filter runs per request with the request clock, so windows open
+  and close on time. The collection form's **Limited time** box sets a
+  product's window to the collection's (and clears it when unticked, if it
+  still matches); the menu editor (Phase 9) will set windows directly.
+
+## Images
+
+Banners and event photos are uploaded by `uploadImageAction`
+(`src/lib/admin/images.ts`): admins only; JPEG, PNG or WebP judged by the
+file's bytes; at most 5 MB (the buckets enforce type and size too);
+re-encoded with sharp, upright from the EXIF orientation and **without
+metadata** (no GPS or camera data), at most 2400 px; stored under a random
+name with the admin's own session, so the Storage policies are the real
+boundary. Rows store the bucket path; pages render it with `next/image`
+(unoptimised for the local stack's 127.0.0.1) and fall back to the
+placeholder when there is none. See "Security model" for who can list what.
+
+## The admin shell
+
+`/admin` has its own frame (`AdminShell`): a sidebar from `lg` up, a menu
+sheet on phones. Catering, Events and Collections are built; Menu,
+Locations, Settings, Promotions, Rewards, Users and Reports are listed as
+"Coming soon" (text, not links). The home shows new catering requests,
+events this week and active collections. Admin only at every layer: the
+proxy, the layout, every page, every Server Action and every database
+function.
+
+Building blocks for Phase 9 (`src/components/admin/`): `DataTable`
+(URL-driven search and pagination, cards on phones), `FormSection` /
+`AdminField` / `FormActions` / `AuditTrail` (created and last changed by
+whom), `ConfirmDialog`, `ImageUploadField`, `HonoluluDateTimeField`,
+`ProductPicker`, and sonner toasts. Everything admins create or change
+records `created_by` / `updated_by` and timestamps.
+
+## The e2e clock
+
+End-to-end tests need "the day of the event" or "after the collection
+ends". `appNow()` (`src/lib/clock.ts`) is the request's "now": real time,
+except on the e2e test server, where a `dc_test_clock` cookie (an offset in
+milliseconds, per browser context) shifts it. It is honoured only when
+`E2E_RUN_ID` is set (only Playwright's server has it) **and** the Supabase
+URL is local (`testClockAllowed`, unit-tested), so a deployment against a
+hosted database cannot use it. The database keeps its own `now()`: every
+rule it enforces uses real time; the clock moves only what the server
+decides in TypeScript (live events, showing collections and limited-time
+products, the staff prep list's day, catering checks before the database is
+asked).
 
 ---
 
@@ -1304,9 +1624,21 @@ Known follow-ups for later phases:
 
 ## Post-launch
 
-Agreed for after launch (Decisions Log, Phases 2, 5 and 7). v1 auth is email +
-password only, order updates are in-app and by email only, and points are
-earned online only.
+Agreed for after launch (Decisions Log, Phases 2, 5, 7 and 8). v1 auth is email +
+password only, order updates are in-app and by email only, points are
+earned online only, and catering is paid in full.
+
+### Catering deposits
+
+v1 takes the whole quote at once. A deposit would mean: a deposit amount or
+percentage on the quote (a setting for the default), two PaymentIntents per
+quote version (deposit at acceptance, balance by the payment deadline, each
+with its own idempotency key and `metadata.part`), a `deposit_paid` state
+between quoted and confirmed (`is_valid_catering_transition`, the TypeScript
+mirror and its parity test), reminder and receipt emails for the balance,
+and a rule for what a cancellation refunds of each part (the refund policy
+is still `NEEDS_CONFIRMATION`). `mark_catering_paid`'s amount check would
+compare against the part being paid.
 
 ### In-store scanning and POS point earning
 
