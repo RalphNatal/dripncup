@@ -60,6 +60,12 @@ export interface ProductCustomizerProps {
     specialInstructions: string;
     onSave: (line: NewCartLine) => void;
   };
+  /**
+   * The admin menu editor's live preview: exactly what customers see, but
+   * Add to Cart only checks the choices (nothing reaches a cart) and there
+   * is no favourite to save.
+   */
+  preview?: boolean;
 }
 
 /** "Required", "Optional · up to 3", "Required · at least 2". */
@@ -82,7 +88,7 @@ function optionPrice(group: DetailGroup, option: DetailOption): string {
 const isStepperOnly = (group: DetailGroup) =>
   group.selectionType === "multi" && group.options.length === 1 && group.options[0].maxQuantity > 1;
 
-export function ProductCustomizer({ detail, location, ordering, layout, onAdded, editing }: ProductCustomizerProps) {
+export function ProductCustomizer({ detail, location, ordering, layout, onAdded, editing, preview = false }: ProductCustomizerProps) {
   const { product, groups } = detail;
   const uid = useId();
   const addLine = useCartStore((state) => state.addLine);
@@ -165,6 +171,11 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded,
     if (errors.length > 0) {
       setAttempted(true);
       focusFirstProblem();
+      return;
+    }
+    if (preview) {
+      setAttempted(true);
+      toast.success("Preview: this would be added to the cart.");
       return;
     }
 
@@ -416,7 +427,7 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded,
           </p>
         </div>
 
-        {!editing ? (
+        {!editing && !preview ? (
           <SaveFavoriteFromSheet
             productName={product.name}
             prepare={() => {
