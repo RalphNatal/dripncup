@@ -1,10 +1,11 @@
 import "server-only";
 
 /**
- * Refunds. Every attempt gets a `refunds` row *before* the provider is
- * called, so a crash, a timeout or a decline all leave a record: a `failed`
- * row is the admin retry queue (screen in Phase 9). The row id travels to the
- * provider as metadata, which is how the refund webhook finds it again.
+ * Refunds, for orders and catering requests alike. Every attempt gets a
+ * `refunds` row *before* the provider is called, so a crash, a timeout or a
+ * decline all leave a record: a `failed` row is the admin retry queue
+ * (screen in Phase 9). The row id travels to the provider as metadata, which
+ * is how the refund webhook finds it again.
  */
 import { paymentProvider } from "@/lib/payments";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,17 +15,31 @@ export type RefundOutcome =
   | { ok: false; reason: "nothing_to_refund" | "no_payment" }
   | { ok: false; reason: "failed"; refundId: string; message: string };
 
-/** Money on the order's payment not yet refunded or on its way back. */
-async function outstanding(orderId: string) {
+/**
+ * What the money was for. A catering request can hold more than one payment
+ * (a stray one for a quote revised mid-payment); `paymentIntentId` picks it,
+ * otherwise the latest captured one is refunded.
+ */
+export type RefundSubject =
+  | { kind: "order"; orderId: string }
+  | { kind: "catering"; requestId: string; paymentIntentId?: string };
+
+/** Money on the subject's payment not yet refunded or on its way back. */
+async function outstanding(subject: RefundSubject) {
   const db = createAdminClient();
-  const { data: payment } = await db
+  let query = db
     .from("payments")
     .select("id, provider_payment_intent_id, amount_cents, refunded_cents, status")
-    .eq("order_id", orderId)
     .in("status", ["succeeded", "partially_refunded"])
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  query =
+    subject.kind === "order"
+      ? query.eq("order_id", subject.orderId)
+      : subject.paymentIntentId
+        ? query.eq("catering_request_id", subject.requestId).eq("provider_payment_intent_id", subject.paymentIntentId)
+        : query.eq("catering_request_id", subject.requestId);
+  const { data: payment } = await query.maybeSingle();
   if (!payment?.provider_payment_intent_id) return null;
 
   const { data: inFlight } = await db
@@ -41,24 +56,30 @@ async function outstanding(orderId: string) {
   };
 }
 
+/** What a subject's payment could still give back (0 when nothing was taken). */
+export async function refundableCents(subject: RefundSubject): Promise<number> {
+  const state = await outstanding(subject);
+  return Math.max(0, state?.remainingCents ?? 0);
+}
+
 /**
- * Refunds part or all of an order's payment. Never throws for a provider
- * failure: the failure is recorded and reported, so callers such as account
- * deletion can carry on.
+ * Refunds part or all of a payment. Never throws for a provider failure: the
+ * failure is recorded and reported, so callers such as account deletion can
+ * carry on.
  */
-export async function refundOrder({
-  orderId,
+export async function refundPayment({
+  subject,
   amountCents,
   reason,
   requestedBy,
 }: {
-  orderId: string;
+  subject: RefundSubject;
   /** Omit for everything still outstanding. */
   amountCents?: number;
   reason: string;
   requestedBy: string | null;
 }): Promise<RefundOutcome> {
-  const state = await outstanding(orderId);
+  const state = await outstanding(subject);
   if (!state) return { ok: false, reason: "no_payment" };
 
   const amount = Math.min(amountCents ?? state.remainingCents, state.remainingCents);
@@ -68,7 +89,8 @@ export async function refundOrder({
   const { data: row, error } = await db
     .from("refunds")
     .insert({
-      order_id: orderId,
+      order_id: subject.kind === "order" ? subject.orderId : null,
+      catering_request_id: subject.kind === "catering" ? subject.requestId : null,
       payment_id: state.payment.id,
       provider: paymentProvider().name,
       amount_cents: amount,
@@ -78,9 +100,23 @@ export async function refundOrder({
     })
     .select("id, attempts")
     .single();
-  if (error || !row) throw new Error(`Could not record a refund for order ${orderId}: ${error?.message}`);
+  const label = subject.kind === "order" ? `order ${subject.orderId}` : `catering request ${subject.requestId}`;
+  if (error || !row) throw new Error(`Could not record a refund for ${label}: ${error?.message}`);
 
   return attemptRefund(row.id, state.payment.provider_payment_intent_id!, amount, reason, row.attempts);
+}
+
+/** Refunds part or all of an order's payment (see refundPayment). */
+export function refundOrder({
+  orderId,
+  ...rest
+}: {
+  orderId: string;
+  amountCents?: number;
+  reason: string;
+  requestedBy: string | null;
+}): Promise<RefundOutcome> {
+  return refundPayment({ subject: { kind: "order", orderId }, ...rest });
 }
 
 async function attemptRefund(
@@ -124,7 +160,7 @@ export async function retryRefund(refundId: string): Promise<RefundOutcome> {
   const db = createAdminClient();
   const { data: row } = await db
     .from("refunds")
-    .select("id, order_id, amount_cents, reason, status, attempts, payments(provider_payment_intent_id)")
+    .select("id, amount_cents, reason, status, attempts, payments(provider_payment_intent_id)")
     .eq("id", refundId)
     .single();
   const paymentId = row?.payments?.provider_payment_intent_id;

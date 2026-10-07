@@ -18,6 +18,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { appNow } from "@/lib/clock";
 import { evaluateCart, type EvaluatedCart } from "@/lib/checkout/cart-check";
 import { loadLocationSnapshot, loadPickupContext, type LocationRecord } from "@/lib/checkout/location-context";
 import { getPickupOptions, resolvePickupChoice, type PickupOptions, type ResolvedPickup } from "@/lib/checkout/pickup";
@@ -88,7 +89,7 @@ async function selectedLocation(): Promise<LocationView> {
 
 export async function checkCart(lines: CartLineInput[]): Promise<CartCheck> {
   const view = await selectedLocation();
-  const cart = await evaluateCart(lines, view);
+  const cart = await evaluateCart(lines, view, await appNow());
   const location = cartLocation(view);
   return {
     lines: cart.lines,
@@ -177,7 +178,7 @@ interface PrepareInput {
 }
 
 async function prepare(input: PrepareInput, userId: string, idempotencyKey?: string): Promise<Prepared> {
-  const now = new Date();
+  const now = await appNow();
   const view = await selectedLocation();
   const ownKeys = [...(input.heldByKeys ?? []), ...(idempotencyKey ? [idempotencyKey] : [])];
   const [snapshot, settings, rewardsSettings, tiers, balance, held] = await Promise.all([
@@ -424,8 +425,7 @@ async function ensurePayment(order: OrderForPayment): Promise<CreateCheckoutResu
     const payment = existing?.provider_payment_intent_id
       ? await provider.retrievePayment(existing.provider_payment_intent_id)
       : await provider.createPayment({
-          orderId: order.id,
-          orderNumber: order.order_number,
+          subject: { kind: "order", orderId: order.id, orderNumber: order.order_number },
           amountCents: order.total_cents,
           currency: "usd",
           idempotencyKey: order.idempotency_key,

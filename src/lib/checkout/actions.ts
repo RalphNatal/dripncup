@@ -14,6 +14,7 @@ import type { CartCheck, CheckoutQuote, CreateCheckoutResult } from "@/lib/check
 import { getProductPageData, type ProductPageData } from "@/lib/menu/queries";
 import { getOrderConfirmation, type OrderConfirmation } from "@/lib/orders/confirmation";
 import { paymentProvider } from "@/lib/payments";
+import { reconcileOrderPayment } from "@/lib/payments/reconcile";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Cart page, guests included: every line against live data. */
@@ -44,6 +45,19 @@ export async function loadProductForEditAction(slug: unknown): Promise<ProductPa
 
 export async function getOrderConfirmationAction(orderId: unknown): Promise<OrderConfirmation | null> {
   return typeof orderId === "string" ? getOrderConfirmation(orderId) : null;
+}
+
+/**
+ * The reconcile fallback, asked for by the confirmation page while it waits:
+ * if the webhook is late, the server reads the order's payment from Stripe
+ * and, if it has succeeded, places the order exactly as the webhook would.
+ * The owner only; throttled per payment.
+ */
+export async function reconcileOrderPaymentAction(orderId: unknown): Promise<{ outcome: string }> {
+  if (!z.guid().safeParse(orderId).success) return { outcome: "no_payment" };
+  const profile = await getCurrentProfile();
+  if (!profile) return { outcome: "no_payment" };
+  return { outcome: await reconcileOrderPayment(orderId as string, profile.id) };
 }
 
 /**

@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * After payment. The order only becomes Placed when Stripe's webhook says the
- * money arrived, so this page shows "Confirming your payment…" and checks
- * back until it does. A failed payment can be retried here, on the same
+ * After payment. The order only becomes Placed once the server knows the
+ * money arrived -- from Stripe's webhook, or, if that is slow, from the
+ * reconcile fallback this page asks for after a few seconds (the server reads
+ * the payment from Stripe's API; nothing here is trusted). It shows
+ * "Confirming your payment…" and checks back until then. A failed payment can be retried here, on the same
  * order. Once it is Placed, "Track your order" leads to the live tracker
  * (/orders/[id]).
  */
@@ -17,7 +19,7 @@ import { getStripe, stripeAppearance, stripeFonts } from "@/components/checkout/
 import { useCartHydrated } from "@/lib/cart/hooks";
 import { useCartStore } from "@/lib/cart/store";
 import { BRAND } from "@/lib/brand";
-import { getOrderConfirmationAction, resumePaymentAction } from "@/lib/checkout/actions";
+import { getOrderConfirmationAction, reconcileOrderPaymentAction, resumePaymentAction } from "@/lib/checkout/actions";
 import { formatCents } from "@/lib/money";
 import { ORDER_STATUS_LABELS } from "@/lib/order-status";
 import type { OrderConfirmation } from "@/lib/orders/confirmation";
@@ -28,6 +30,8 @@ const POLL_MS = 1500;
 const SLOW_POLL_MS = 5000;
 /** After this long, say it is taking a while (but keep checking). */
 const PATIENCE_MS = 45_000;
+/** After this long without the webhook, ask the server to read the payment from Stripe. */
+const RECONCILE_AFTER_MS = 6000;
 
 type Phase = "confirming" | "unpaid" | "failed" | "placed" | "cancelled";
 
@@ -63,6 +67,8 @@ export function ConfirmationView({
     let stopped = false;
 
     const tick = async () => {
+      // The server throttles this per payment, so asking on every tick is fine.
+      if (Date.now() - started >= RECONCILE_AFTER_MS) await reconcileOrderPaymentAction(order.id).catch(() => null);
       const next = await getOrderConfirmationAction(order.id).catch(() => null);
       if (stopped) return;
       if (next) setOrder(next);

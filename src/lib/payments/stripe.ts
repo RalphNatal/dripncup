@@ -18,6 +18,8 @@ import {
   type PaymentMethodSummary,
   type PaymentProvider,
   type PaymentStatus,
+  type PaymentSubject,
+  type PaymentTarget,
   type ProviderPayment,
   type ProviderRefund,
   type RefundInput,
@@ -50,9 +52,44 @@ function toStatus(status: Stripe.PaymentIntent.Status): PaymentStatus {
   }
 }
 
+/**
+ * Who a PaymentIntent belongs to. Catering payments carry `type=catering`
+ * and the request and quote ids; order payments `type=order` (older ones no
+ * type at all) and the order id.
+ */
+function targetOf(metadata: Stripe.Metadata | null | undefined): PaymentTarget {
+  const catering = metadata?.type === "catering";
+  return {
+    kind: catering ? "catering" : "order",
+    orderId: catering ? null : (metadata?.order_id ?? null),
+    cateringRequestId: catering ? (metadata?.catering_request_id ?? null) : null,
+    cateringQuoteId: catering ? (metadata?.catering_quote_id ?? null) : null,
+  };
+}
+
 function toPayment(intent: Stripe.PaymentIntent): ProviderPayment {
   if (!intent.client_secret) throw new Error(`PaymentIntent ${intent.id} has no client secret`);
-  return { id: intent.id, clientSecret: intent.client_secret, status: toStatus(intent.status), amountCents: intent.amount };
+  return {
+    id: intent.id,
+    clientSecret: intent.client_secret,
+    status: toStatus(intent.status),
+    amountCents: intent.status === "succeeded" ? intent.amount_received || intent.amount : intent.amount,
+    currency: intent.currency,
+    chargeId: idOf(intent.latest_charge),
+    target: targetOf(intent.metadata),
+  };
+}
+
+function subjectMetadata(subject: PaymentSubject): Record<string, string> {
+  return subject.kind === "order"
+    ? { type: "order", order_id: subject.orderId, order_number: subject.orderNumber }
+    : {
+        type: "catering",
+        catering_request_id: subject.requestId,
+        catering_quote_id: subject.quoteId,
+        request_number: subject.requestNumber,
+        quote_version: String(subject.quoteVersion),
+      };
 }
 
 function toRefund(refund: Stripe.Refund): ProviderRefund & { refundRowId: string | null } {
@@ -113,9 +150,9 @@ export const stripeProvider: PaymentProvider = {
         automatic_payment_methods: { enabled: true },
         description: input.description ? `${tag.descriptionPrefix}${input.description}` : undefined,
         receipt_email: input.customerEmail ?? undefined,
-        metadata: { order_id: input.orderId, order_number: input.orderNumber, ...tag.metadata },
+        metadata: { ...subjectMetadata(input.subject), ...tag.metadata },
       },
-      { idempotencyKey: `checkout-${input.idempotencyKey}` },
+      { idempotencyKey: `${input.subject.kind === "order" ? "checkout" : "catering"}-${input.idempotencyKey}` },
     );
     return toPayment(intent);
   },
@@ -123,6 +160,8 @@ export const stripeProvider: PaymentProvider = {
   async retrievePayment(paymentId: string) {
     return toPayment(await stripe().paymentIntents.retrieve(paymentId));
   },
+
+  paymentMethodOf: methodOfCharge,
 
   async cancelPayment(paymentId: string) {
     try {
@@ -168,7 +207,7 @@ export const stripeProvider: PaymentProvider = {
           id: event.id,
           type: "payment.succeeded",
           paymentId: intent.id,
-          orderId: intent.metadata?.order_id ?? null,
+          target: targetOf(intent.metadata),
           amountCents: intent.amount_received || intent.amount,
           currency: intent.currency,
           chargeId,
@@ -181,7 +220,7 @@ export const stripeProvider: PaymentProvider = {
           id: event.id,
           type: "payment.failed",
           paymentId: intent.id,
-          orderId: intent.metadata?.order_id ?? null,
+          target: targetOf(intent.metadata),
           failureCode: intent.last_payment_error?.decline_code ?? intent.last_payment_error?.code ?? null,
           failureMessage: intent.last_payment_error?.message ?? null,
         };
@@ -192,7 +231,7 @@ export const stripeProvider: PaymentProvider = {
           id: event.id,
           type: "payment.canceled",
           paymentId: intent.id,
-          orderId: intent.metadata?.order_id ?? null,
+          target: targetOf(intent.metadata),
         };
       }
       case "charge.refunded": {

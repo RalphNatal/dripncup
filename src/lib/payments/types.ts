@@ -9,15 +9,35 @@
 
 export type ProviderName = "stripe";
 
+/**
+ * What a payment is for. Orders and catering quotes share the provider, the
+ * webhook, the dedupe log and the refund machinery; the provider tags each
+ * payment (Stripe metadata `type`) so its events find their way back.
+ */
+export type PaymentSubject =
+  | { kind: "order"; orderId: string; orderNumber: string }
+  | { kind: "catering"; requestId: string; requestNumber: string; quoteId: string; quoteVersion: number };
+
 export interface CreatePaymentInput {
-  orderId: string;
-  orderNumber: string;
+  subject: PaymentSubject;
   amountCents: number;
   currency: "usd";
-  /** One per checkout attempt; a retry returns the same payment. */
+  /**
+   * Orders: one per checkout attempt. Catering: the quote id, so each quote
+   * version has exactly one payment. A retry returns the same payment.
+   */
   idempotencyKey: string;
   customerEmail: string | null;
   description: string;
+}
+
+/** Who a payment belongs to, from the provider's metadata. */
+export interface PaymentTarget {
+  /** Payments made before catering existed carry no type; they are orders. */
+  kind: "order" | "catering";
+  orderId: string | null;
+  cateringRequestId: string | null;
+  cateringQuoteId: string | null;
 }
 
 export interface ProviderPayment {
@@ -27,6 +47,10 @@ export interface ProviderPayment {
   clientSecret: string;
   status: PaymentStatus;
   amountCents: number;
+  currency: string;
+  /** The charge, once it has succeeded (the reconcile fallback records it). */
+  chargeId: string | null;
+  target: PaymentTarget;
 }
 
 export type PaymentStatus = "requires_payment" | "requires_action" | "processing" | "succeeded" | "canceled";
@@ -63,13 +87,13 @@ export interface PaymentMethodSummary {
   wallet: string | null;
 }
 
-/** A verified webhook event, reduced to what order handling needs. */
+/** A verified webhook event, reduced to what order and catering handling need. */
 export type PaymentEvent =
   | {
       id: string;
       type: "payment.succeeded";
       paymentId: string;
-      orderId: string | null;
+      target: PaymentTarget;
       amountCents: number;
       currency: string;
       chargeId: string | null;
@@ -80,7 +104,7 @@ export type PaymentEvent =
       id: string;
       type: "payment.failed";
       paymentId: string;
-      orderId: string | null;
+      target: PaymentTarget;
       failureCode: string | null;
       failureMessage: string | null;
     }
@@ -88,7 +112,7 @@ export type PaymentEvent =
       id: string;
       type: "payment.canceled";
       paymentId: string;
-      orderId: string | null;
+      target: PaymentTarget;
     }
   | {
       id: string;
@@ -105,6 +129,8 @@ export interface PaymentProvider {
   createPayment(input: CreatePaymentInput): Promise<ProviderPayment>;
   /** Current state, including the client secret for a retry. */
   retrievePayment(paymentId: string): Promise<ProviderPayment>;
+  /** The card brand and last four of a charge, for the receipt; null if the provider can't say. */
+  paymentMethodOf(chargeId: string | null): Promise<PaymentMethodSummary | null>;
   /** Stops an unpaid payment being completed later. Returns the resulting status. */
   cancelPayment(paymentId: string): Promise<PaymentStatus>;
   refund(input: RefundInput): Promise<ProviderRefund>;
