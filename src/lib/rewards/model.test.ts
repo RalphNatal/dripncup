@@ -71,13 +71,14 @@ describe("tierProgress", () => {
 });
 
 describe("sortTiers", () => {
-  it("lists the cheapest first, then by the admin's order", () => {
+  it("follows the admin's order, cheapest first among equals", () => {
     const sorted = sortTiers([
       { id: "b", pointsCost: 150, sortOrder: 20 },
       { id: "a", pointsCost: 150, sortOrder: 10 },
       { id: "c", pointsCost: 50, sortOrder: 99 },
+      { id: "d", pointsCost: 40, sortOrder: 10 },
     ]);
-    expect(sorted.map((t) => t.id)).toEqual(["c", "a", "b"]);
+    expect(sorted.map((t) => t.id)).toEqual(["d", "a", "b", "c"]);
   });
 });
 

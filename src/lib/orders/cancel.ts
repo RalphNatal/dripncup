@@ -20,10 +20,13 @@ export async function cancelOrderWithRefund({
   orderId,
   reason,
   actorId,
+  amountCents,
 }: {
   orderId: string;
   reason: string;
   actorId: string;
+  /** Part of the payment (admin "partial refund"); omit to refund everything. */
+  amountCents?: number;
 }): Promise<CancelResult> {
   const trimmed = reason.trim();
   if (trimmed.length < 3) {
@@ -56,6 +59,6 @@ export async function cancelOrderWithRefund({
 
   // Cancelled first, then refunded: if the refund fails the order is still
   // off the queue and the failed refund row is waiting for an admin.
-  const refund = await refundOrder({ orderId, reason: trimmed, requestedBy: actorId });
+  const refund = await refundOrder({ orderId, reason: trimmed, requestedBy: actorId, amountCents });
   return { ok: true, refund };
 }

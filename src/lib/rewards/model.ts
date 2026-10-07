@@ -143,9 +143,9 @@ export function toRewardTier(row: RewardRow): RewardTier {
   };
 }
 
-/** Cheapest first, then the admin's order. */
+/** The admin's order (Rewards page, drag to reorder), cheapest first among equals. */
 export function sortTiers<T extends { pointsCost: number; sortOrder: number }>(tiers: readonly T[]): T[] {
-  return [...tiers].sort((a, b) => a.pointsCost - b.pointsCost || a.sortOrder - b.sortOrder);
+  return [...tiers].sort((a, b) => a.sortOrder - b.sortOrder || a.pointsCost - b.pointsCost);
 }
 
 /** The fine print under a tier's name: "Any drink, up to $7.50. Add-ons are extra." */

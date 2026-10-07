@@ -2,12 +2,14 @@ import { AlertTriangle, CalendarDays, Mail, Phone, Store, Truck, Users } from "l
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { ActionButton } from "@/components/admin/action-button";
 import { AdminPageHeader } from "@/components/admin/page-header";
 import { AdminCateringActions } from "@/components/catering/admin-actions";
 import { QuoteBuilder } from "@/components/catering/quote-builder";
 import { QuoteSummary } from "@/components/catering/quote-summary";
 import { RequestTimeline } from "@/components/catering/request-timeline";
 import { CateringStatusBadge } from "@/components/catering/status-badge";
+import { clearCateringFlagAction } from "@/lib/admin/attention-actions";
 import { requireRole } from "@/lib/auth/dal";
 import { eventWhen } from "@/lib/catering/format";
 import { getCateringRequest } from "@/lib/catering/queries";
@@ -48,7 +50,9 @@ export default async function AdminCateringRequestPage({ params }: { params: Par
   if (!request) notFound();
 
   // Opening a request clears its "new" marker (not counted as a change to it).
-  if (request.isNew) await (await createClient()).rpc("admin_catering_mark_seen", { p_request_id: id });
+  const supabase = await createClient();
+  if (request.isNew) await supabase.rpc("admin_catering_mark_seen", { p_request_id: id });
+  const { data: review } = await supabase.from("catering_requests").select("review_resolved_at, review_note").eq("id", id).maybeSingle();
 
   const quote = request.currentQuote;
   // A revision starts from the latest version, even one sent back with a change request.
@@ -82,13 +86,18 @@ export default async function AdminCateringRequestPage({ params }: { params: Par
         }
       />
 
-      {request.flaggedForReviewAt ? (
-        <p className="flex items-start gap-2 rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert">
+      {request.flaggedForReviewAt && !review?.review_resolved_at ? (
+        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm" role="alert">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-          <span>
+          <span className="min-w-0 flex-1">
             <strong>Needs review:</strong> {request.reviewReason}
           </span>
-        </p>
+          <ActionButton size="sm" action={clearCateringFlagAction.bind(null, id)} note={{ title: "Mark this payment reviewed?", label: "What did you decide?", confirmLabel: "Mark reviewed" }}>
+            Mark reviewed
+          </ActionButton>
+        </div>
+      ) : request.flaggedForReviewAt && review?.review_resolved_at ? (
+        <p className="rounded-2xl border p-4 text-sm">Payment review resolved: “{review.review_note}”</p>
       ) : null}
       {request.cancellationRequested && request.status === "confirmed" ? (
         <p className="flex items-start gap-2 rounded-2xl border border-warning/40 bg-[color-mix(in_oklab,var(--warning)_8%,var(--card))] p-4 text-sm" role="status">
