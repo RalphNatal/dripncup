@@ -1362,22 +1362,258 @@ boundary. Rows store the bucket path; pages render it with `next/image`
 (unoptimised for the local stack's 127.0.0.1) and fall back to the
 placeholder when there is none. See "Security model" for who can list what.
 
-## The admin shell
+## The admin dashboard
 
-`/admin` has its own frame (`AdminShell`): a sidebar from `lg` up, a menu
-sheet on phones. Catering, Events and Collections are built; Menu,
-Locations, Settings, Promotions, Rewards, Users and Reports are listed as
-"Coming soon" (text, not links). The home shows new catering requests,
-events this week and active collections. Admin only at every layer: the
-proxy, the layout, every page, every Server Action and every database
-function.
+`/admin` (Phase 9) is meant to let the owner run the cafe without opening
+Supabase Studio. Admin only at every layer: the proxy, the layout, every
+page (`requireRole(["admin"])`), every Server Action (`currentAdmin()`,
+`src/lib/admin/guard.ts`), every route handler (the CSV exports and the
+import template), and every database function.
 
-Building blocks for Phase 9 (`src/components/admin/`): `DataTable`
-(URL-driven search and pagination, cards on phones), `FormSection` /
-`AdminField` / `FormActions` / `AuditTrail` (created and last changed by
-whom), `ConfirmDialog`, `ImageUploadField`, `HonoluluDateTimeField`,
-`ProductPicker`, and sonner toasts. Everything admins create or change
-records `created_by` / `updated_by` and timestamps.
+### How admins write
+
+Nothing writes an admin-managed table from the browser, admins included.
+Migration `…026` dropped the `*_admin_write` policies **and** revoked
+`INSERT/UPDATE/DELETE` on the menu tables, locations, hours, closures,
+settings, promos, rewards and rosters from `anon` and `authenticated`
+(`profiles.role` too; customers keep their own name, phone and opt-ins).
+Every admin change goes Server Action → `admin_*` security-definer function
+(`…027` menu, `…028` operations, `…029` reports), which:
+
+1. checks the caller is an admin (`assert_admin()`, 42501 otherwise);
+2. validates what the app relies on, with messages written for the admin
+   (22023 and `DC0xx` codes; `rpcFailure()` shows them as they are);
+3. runs as the admin, so `auth.uid()` reaches the audit trigger.
+
+`supabase/tests/admin.test.sql` calls **every** `admin_*` function (found by
+name, so a new one is covered automatically) as a customer and as a barista
+and expects 42501; checks none is executable by `anon`; and checks the
+internal helpers behind them are not callable from the API at all.
+
+Reads use the admin's own session (RLS lets admins read everything) or a
+definer function for aggregates (`admin_list_orders`, `admin_list_users`,
+`admin_attention_items`, the reports). The service role is used only where
+the existing money paths already need it (refunds, cancel-with-refund,
+reconcile).
+
+### The audit log
+
+`admin_audit_log` records every create, update and delete an **admin**
+makes on admin-managed tables: who (id, and name at the time), when, which
+table and row (key and a readable label), and for each changed column its
+`from` and `to`. One shared trigger, `audit_admin_change()`, is attached to
+each table with its key columns and any columns never to record.
+
+- **Recorded:** the menu (categories, products, sizes, groups, options,
+  product links), locations, hours, closures, sold-out flags, event menus,
+  collections, promos, rewards, settings, site content, setup tasks,
+  profiles, staff rosters; admin changes to orders, refunds and emails
+  (resolving the attention queue, resends); manual points adjustments.
+- **Never recorded:** member codes (a bearer credential for the future
+  scanner), cached balances, `updated_at` / `updated_by`, checkout
+  fingerprints, outbox locks. Payment rows are not audited (and hold no card
+  data anyway).
+- **Who:** `auth.uid()`, or a service-role function's transaction-local
+  `app.audit_actor` / `app.order_status_actor`. Only admins are logged; the
+  system (webhook, jobs, seed) and staff have their own histories (order
+  status history, the sold-out log, catering history).
+- **The menu import** suppresses per-row entries (`app.audit_suppress`) and
+  writes one `import` entry with its summary.
+- **Append-only:** no client role may write it. Admins read it at
+  `/admin/audit` (filter by person, table and Honolulu dates; before → after);
+  a setting's history on the Settings page comes from the same rows.
+
+### The settings registry
+
+`src/lib/settings/registry.ts` defines every setting the admin can change:
+key, label, help, section, type (money, percent, minutes, hours, days,
+seconds, number, boolean, email, text, list), limits, default and whether the
+owner still has to confirm it. It turns form input into the stored JSON
+(cents; the GET rate as a fraction; whole percentages), says what is wrong in
+plain words, and checks rules across two settings (the preselected tip must
+be one of the choices; red after amber). The database keeps the same type
+and limits per key (`settings.value_type / min_value / max_value`) and
+`admin_update_setting()` enforces them; `registry.test.ts` parses the
+migration's `registry:start` block and fails if the two disagree. Who may
+read a setting (`is_public`; staff read `staff.*`) is unchanged.
+
+New settings that change behaviour: `tax.tips_taxed` (GET on the tip too,
+in `calculateOrderTotal`), `orders.order_ahead_while_closed` (a closed cafe
+with a known next opening lets customers add to the cart; checkout already
+schedules for that opening), `notifications.reply_to_email` (Reply-To on
+every customer email). `orders.max_scheduling_days_ahead` is read nowhere,
+so it is not in the registry.
+
+### Setup checklist and site content
+
+`/admin/setup` lists everything still running on a placeholder, from data:
+registry settings flagged `needsConfirmation`, every `site_content` row, and
+the `setup_tasks` rows (real menu, categories, photos, hours, the cafe's
+pickup wording, brand colours and fonts, POS, counter hardware). Each shows
+its current value and where it is edited; confirming stamps `confirmed_at` /
+`confirmed_by` on the row. The home shows "N of M confirmed" until done.
+
+`site_content` holds the About copy, phone, email, Instagram, Facebook, the
+logo (a `brand-assets` Storage path), privacy policy, terms and the refund
+policy (moved from the `catering.refund_policy` setting). Public read;
+`admin_save_content()` validates each kind. `/about`, `/privacy`, `/terms`,
+the header and sign-in logo, and the catering pages read it.
+
+### The menu editor: archive, never lose history
+
+- **Archive vs delete.** A product, size, modifier group or option that
+  anything refers to (past order lines, by id or inside the modifiers
+  snapshot via a GIN index; favourites; event menus; collections; catering
+  requests and quotes; reward eligibility) is **archived**: inactive, an
+  `archived_at` stamp, hidden from customers by the existing RLS, intact in
+  history. Only something never used is deleted (`DC030` otherwise).
+  Removing a used size or option inside the editor archives it the same way;
+  giving a new size an archived one's name brings it back. Carts live in the
+  browser, so they are not "uses": a cart holding a deleted or archived item
+  shows it as no longer available either way.
+- **Rules the pricing engine needs**, checked in the editor
+  (`src/lib/menu-admin/rules.ts`) and again in SQL: a required single-choice
+  group has exactly one default (`DC032`); min ≤ max; "Only show when" names
+  an option from another group on the same product (`DC031`) and the rules
+  never form a loop (`DC036`); an option a rule depends on cannot be removed
+  (`DC034`); a group still on products cannot be archived (`DC035`).
+- **Prices** change for new carts and orders only; carts re-price with the
+  Phase 4 notice; order lines are snapshots.
+- **The live preview** is the customer's `ProductCustomizer` in a preview
+  mode, fed by `buildProductDetail` over a one-product catalogue built from
+  the draft, so it cannot drift from the menu.
+
+### The menu import
+
+`/admin/menu/import`: template and filled-in example (CSV and XLSX), upload,
+preview, confirm. Columns and their rules live in
+`src/lib/menu-import/format.ts` (README, "Importing the menu").
+
+- **Reading.** Format by the file's bytes, at most 2 MB. CSV is parsed as
+  text; XLSX by a small reader on `fflate` that reads cell values only:
+  formula cells are reported as formulas, macro-enabled workbooks and
+  embedded objects are refused, old `.xls` is refused, and the unzip is
+  bounded by declared sizes (fflate inflates into a buffer of that size, so a
+  zip bomb cannot balloon). Nothing in a file is ever evaluated.
+- **Checking.** Every row: prices as dollars and cents with two decimals
+  (`$5`, `5` and `5.5` refused, saying how to write them; an XLSX number cell
+  with at most two decimals is fine), sizes as `Name=price` with `*` for the
+  default, modifier groups by short name (`ice-level if Iced` sets "Only show
+  when"), allergens and dietary tags from the enums, yes/no columns, unique
+  slugs, and any text cell starting with `=`, `+`, `-`, `@`, tab or CR refused
+  as formula injection.
+- **Applying.** Preview changes nothing. Apply re-reads the same file on the
+  server (never a plan the browser sends back) and calls
+  `admin_import_menu()`: one transaction, all or nothing; matched by slug, so
+  re-importing updates; never deletes; archives products missing from the
+  file only when that box is ticked; one audit entry with the summary.
+
+### The attention queue
+
+`admin_attention_items()` lists what needs a person; the Home badge counts
+it. Each item links to its page and leaves once resolved:
+
+| Item | Resolved by |
+| --- | --- |
+| A payment that didn't match its order (Phase 4 flag) | **Place** it (recording the promo as `mark_order_paid` would) or **refund and cancel** it, with a note (`admin_resolve_flagged_order`) |
+| A catering payment that didn't match | Mark reviewed, with a note |
+| A failed refund | Retry (`retryRefund`), or mark handled with a note |
+| A failed email | Retry (back in the outbox, sent at once), or dismiss with a note |
+| New catering request, change or cancellation request, payment | Opening the request |
+| An unpaid order stuck past expiry | **Check with Stripe**: paid → placed through the webhook's own handler; not paid → cancelled as the expiry job would; still processing → noted. "Stuck" = older than `orders.pending_expiry_minutes` and either the expiry job tried and had to leave it (it now stamps `expiry_attempted_at`) or a day has passed |
+
+### Orders, users, promotions, rewards
+
+- **Orders:** search by number, name or email, Honolulu dates, location,
+  status and payment state (`admin_list_orders`). The detail shows what the
+  ticket and receipt show, payments as brand and last four only, refunds,
+  status history with actors, emails and points. Cancel with a full or
+  partial refund (`cancel_order_for_refund` + `refundOrder`), refund a
+  picked-up order, resend the receipt (a new outbox row; one in flight at a
+  time). Items and totals never change after payment.
+- **Users:** role changes need the admin's password (the Phase 2
+  `verifyPassword`, plus our own 5 attempts per 10 minutes) and go through
+  `admin_set_role`: never your own role (`DC050`); it locks every admin row
+  and re-checks the caller after the lock, so two admins demoting each other
+  at once cannot both succeed (`admin_roles.concurrent.mjs`), and an admin
+  always remains (`DC051` is the backstop); demoting to customer clears
+  rosters. Password reset by email only; no account deletion from admin
+  (post-launch).
+- **Promotions:** once a code has been redeemed its code, type, amount and
+  cap are locked by trigger (`DC040`, whoever writes); dates, limits, the
+  minimum spend and the switch stay editable.
+- **Rewards:** tiers in the admin's order (customers now see that order;
+  progress still counts by cost), programme settings from the registry,
+  totals from the ledger, member lookup by code, email or name, adjustments
+  through `admin_adjust_points`.
+
+### Shared building blocks
+
+`src/components/admin/`: `DataTable`, `FormSection` / `AdminField` /
+`FormActions` / `AuditTrail`, `ConfirmDialog`, `ActionButton` (runs one
+action, with a confirm or a required note), `SortableList` (drag, or Move up
+/ Move down for keyboard and touch; saves each move), `InfoTip` (a popover,
+so definitions work by tap), `StatusPill`, `ImageUploadField`,
+`HonoluluDateTimeField`, `ProductPicker`. Server Actions handed from server
+pages to client components are bound with `.bind(null, …)`, never wrapped in
+closures.
+
+## Reports
+
+`/admin/reports`, aggregated in SQL (`…029`), never by loading orders into
+the browser. Everything is built on `report_order_facts(from, to, location)`:
+one row per counted order with its numbers worked out, so the sales report
+and the orders export cannot disagree (tested in `admin.test.sql` and
+`e2e/reports.spec.ts`). Dates are Honolulu calendar dates; a range is turned
+into instants once (`date::timestamp at time zone 'Pacific/Honolulu'`), so
+`orders_location_placed_idx` serves it.
+
+**Definitions** (also in the page's info popovers):
+
+- **Which orders count:** paid orders, i.e. every order that reached Placed
+  (`placed_at` set), including ones later cancelled or refunded. Unpaid,
+  abandoned and unresolved flagged checkouts never count. A $0.00 order paid
+  with a reward counts (gross sales, with an equal reward discount).
+- **Which day:** the Honolulu date the order was placed.
+- **Refunds, by order date.** A refund is subtracted on the day of the order
+  it belongs to, whenever it happened. Chosen so that a day always describes
+  the same set of orders and the orders export adds up to the report exactly.
+  The trade-off: a refund made today changes an earlier day's figures, so an
+  accountant closing a period should export it once refunds have settled. The
+  refunded amount is the payment's `refunded_cents`, so refunds made in the
+  Stripe dashboard count too.
+- **Splitting a refund:** across sales, tax and tip in the order's own
+  proportions (half-up to the cent; sales takes the remainder), so a full
+  refund takes back exactly what the order added. `splitRefund()` in
+  `src/lib/reports/definitions.ts` mirrors the SQL with the same examples.
+- **Gross sales:** item prices with add-ons, before discounts (the
+  subtotal). **Discounts:** the promo and reward parts, separately.
+- **Net sales** = gross − promo − reward − the sales part of refunds. Tax and
+  tips are not sales.
+- **Tax (GET):** charged on those orders, less the tax part of refunds.
+- **Tips:** charged, less the tip part of refunds; reported separately.
+- **Average order value:** gross − discounts (before refunds, tax and tips),
+  per order.
+- **Top products / add-ons:** quantities and line totals (before order-level
+  discounts) by the name on the order; add-ons count pumps and shots, and
+  their revenue follows each option's per-unit or once charging.
+- **Peak hours:** paid orders by Honolulu weekday and hour placed.
+- **Catering:** separate from orders, by the Honolulu date the request was
+  paid (confirmed), from the paid quote; refunds by the same rule.
+
+For every order: net sales + tax + tips = collected − refunded.
+
+**Exports:** one CSV per report, and the accountant's orders export (one row
+per order, every breakdown column), generated by route handlers for admins
+only, UTF-8 with a byte-order mark (ʻokina and kahakō survive Excel), and
+formula-safe: a text cell starting with `=`, `+`, `-`, `@`, tab or CR gets an
+apostrophe in front (`src/lib/csv.ts`); numbers the app computed are written
+as numbers.
+
+**Charts:** one series each in the brand teal (at least 3:1 on the card in
+light and dark), columns capped at 24 px with a 2 px gap, a single-hue
+sequential heatmap with a scale legend, hover and keyboard-focus tooltips, and
+a table behind every chart.
 
 ## The e2e clock
 
@@ -1611,9 +1847,10 @@ possible:
 
 Known follow-ups for later phases:
 
-- **Condition cycles** (Phase 9 admin): the database accepts group A shown
-  when B's option is chosen *and* B shown when A's option is chosen; the
-  engine would then hide both. The menu editor should refuse cycles.
+- **Condition cycles:** resolved in Phase 9. The editor and
+  `write_product_groups` refuse "Only show when" rules that form a loop
+  (`DC036`). A loop written by the service role directly is still possible;
+  the engine would then hide those groups.
 - **Deleting orders that have items:** `freeze_order_items` blocks deleting
   items of any order past `pending_payment`, cascades included, so a placed
   order cannot be deleted outright. That is deliberate for real data, but the

@@ -134,6 +134,7 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `npm run db:diff` | Diff local schema against migrations |
 | `npm run db:types` | Regenerate `src/types/database.ts` from the live schema |
 | `npm run db:seed` | Load demo data and test accounts |
+| `npm run db:seed:reports-demo` | Six weeks of clearly fake paid orders for the reports, local only (`-- --remove` takes them out); see "Admin dashboard" |
 | `npm run db:clean-test-data` | Remove data automated tests left in the dev database (asks first; `-- --yes` to skip) |
 | `npm run db:e2e:stop` | Stop the e2e suite's Supabase stack (frees about 1 GB of Docker memory) |
 | `npm run stripe:listen` | Forward the sandbox's webhook events to `npm run dev` (`-- --port 3001` for another port) |
@@ -867,6 +868,164 @@ collection runs.
    item is no longer on the menu."; the collection page says "This
    collection has ended" with a link to the menu.
 
+## Admin dashboard (`/admin`)
+
+Sign in as `admin@drincup.test` and open `/admin` (or **Account → Admin**).
+Everything the owner changes day to day is here; nothing needs Supabase
+Studio. Every change is recorded in the **Audit log** (who, when, what it was
+before and after). How it works inside:
+[ARCHITECTURE.md](ARCHITECTURE.md#the-admin-dashboard).
+
+**Before you start.** A database from before Phase 9 needs the four new
+migrations: `npx supabase migration up` keeps your data.
+
+### Day to day
+
+| To… | Go to |
+| --- | ----- |
+| See what needs you | **Home**. The *Needs attention* list (also a badge in the menu): payments that didn't match their order, failed refunds, failed emails, new catering requests and changes, unpaid orders stuck past expiry. Each links to its page and disappears once handled. Below it: today's sales, orders and average order value, and how much of the setup checklist is confirmed. |
+| Pause ordering for a while | **Home → Pause online orders**, or **Locations → Pause** (pick how long; it resumes by itself). Staff can pause from `/staff` too. |
+| Mark something sold out | **Menu → Sold out** (per location; the same switch staff use). |
+| Change a price, description or photo | **Menu → Products → the product**. The preview on the right is exactly what customers will see. A new price applies to new carts and orders; carts already holding the item show the new price with a notice; past orders keep what was paid. |
+| Add a product | **Menu → Products → New product**. Add sizes (each with its price, one default) or a single price; attach modifier groups and drag them into order; "Only show when" hides a group until an option is picked (Ice only when *Iced*). |
+| Change syrups, milks, toppings | **Menu → Modifiers**. A group's options, upcharges, defaults and limits are shared by every product it's on. |
+| Reorder the menu | **Menu → Categories** (drag, or use *Move up / Move down*). |
+| Remove an item | **Archive** it. Anything ever ordered, favourited or used on an event menu is kept for history and only hidden; only something never used can be deleted outright. |
+| Change hours or close for a holiday | **Locations → the cafe → Hours** (several ranges a day; a day with none is closed) and **Closures** (a whole day closed, or holiday hours). Customers see changes at once. |
+| Edit settings (tax, tips, pickup timing, rewards, catering, emails) | **Settings**. Each shows its help, checks its value and keeps its history (*History*). |
+| Edit About, contact, social links, logo, privacy, terms, refund policy | **Content**. The customer pages `/about`, `/privacy` and `/terms` read these. |
+| Work through the placeholders | **Setup**. Everything still marked to confirm with the cafe, its current value and a link to edit it; tick **Confirmed** when the cafe has signed it off. |
+| Run a promotion | **Promotions → New code**. Once a code has been used its code and discount are locked (dates, limits and the on/off switch stay editable). *Redemptions* lists each use. |
+| Look after rewards | **Rewards**: tiers (order, cost, on/off), programme settings, totals, and *Members* to look someone up and adjust their points (with a reason). |
+| Find or refund an order | **Orders**: search by number, name or email; filter by date, location, status and payment. The order page cancels with a full or partial refund, refunds a picked-up order, and resends the receipt. |
+| Give someone staff access | **Users → the person → Role** (your password is asked again), then tick their locations. Demoting staff to customer removes their locations. You can't change your own role, and the last admin can't be demoted. |
+| Catering, pop-ups, collections | **Catering**, **Events**, **Collections** (Phase 8). |
+| See how the cafe is doing | **Reports** (below). |
+| See who changed what | **Audit log**: filter by person, table and dates. |
+
+### Importing the menu
+
+For loading the real menu in one go (or a batch of changes) from a
+spreadsheet: **Menu → Import** (`/admin/menu/import`).
+
+1. Download the **template** (Excel or CSV) or the **filled-in example**. The
+   Excel file has a second sheet, *How to fill*, explaining each column.
+2. One row per product:
+   - **Category**, **Product** (required). A new category name creates the
+     category.
+   - **Slug**: the item's web address, e.g. `ube-latte`. Leave blank to make
+     one from the name. Importing again matches items by slug, so keep it the
+     same to update an item rather than add a second one.
+   - **Price** for single-price items (`3.75`: no `$`, always two decimals),
+     **or Sizes** as `Small=5.25; Medium*=6.00; Large=6.75` (`*` marks the
+     default size; otherwise the first).
+   - **Modifier groups** by their short name from Menu → Modifiers, separated
+     by semicolons. `ice-level if Iced` shows that group only when *Iced* is
+     picked.
+   - **Allergens** and **Dietary** from the listed words, comma-separated;
+     **Catering** `yes` if it can be ordered for catering; **Active** `no` to
+     add it switched off.
+3. Upload it and press **Preview**. Nothing changes yet. The preview shows
+   each row as new, changed (with what changes) or unchanged, any new
+   categories, and every problem by row and column ("Row 4, Price: write
+   $5.00 as 5.00"). Fix the file and preview again until there are no errors.
+4. Tick **Archive products that aren't in this file** only if the file is the
+   whole menu. Otherwise items not in the file are left alone. Nothing is
+   ever deleted.
+5. **Apply import** and confirm. It applies all of it or none of it, and adds
+   one entry to the audit log.
+
+Limits: `.xlsx` or `.csv`, up to 2 MB. Only the first sheet named *Menu* (or
+the first sheet) is read, as values only. Cells starting with `=`, `+`, `-`
+or `@` are refused (spreadsheet formulas), and macro-enabled workbooks
+(`.xlsm`) and old `.xls` files are refused. Photos are added afterwards in the
+product editor.
+
+**Try it with the example:** download *Filled-in example (Excel)*, upload it
+unchanged, **Preview**: *6 rows: 6 new*, new category *Bakery*. **Apply
+import**, confirm, then open `/menu`: Ube Latte (Iced shows the ice-level
+choice), Hōjicha Latte, Lilikoʻi Hibiscus Cooler, Spam Musubi, Butter Mochi
+and Haupia Pie Slice. Upload the same file again: *0 new, 0 changed, 6
+unchanged*. Change a price in the file and preview again: that row shows as
+changed, old → new. To undo, archive the six products (Menu → Products).
+
+### Reports
+
+**Reports** (`/admin/reports`): pick *Today*, *Yesterday*, *Last 7 days*,
+*This month*, *Last month* or your own dates (Hawaiʻi calendar days), and
+optionally one location or pop-up. Every card has an ⓘ explaining exactly
+what it counts; the full definitions are in
+[ARCHITECTURE.md](ARCHITECTURE.md#reports). In short: paid orders only, by
+the day they were placed; refunds come off the day of the order they belong
+to; net sales = gross − discounts − refunds, with tax and tips reported
+separately.
+
+Each report has a **CSV** download, and **Orders export (CSV)** gives the
+accountant one row per order with every breakdown (its totals add up to the
+report for the same range).
+
+**Demo data.** A fresh dev database has almost no paid orders, so the charts
+are empty. To fill them:
+
+```powershell
+npm run db:seed:reports-demo            # six weeks of fake paid orders (local only)
+npm run db:seed:reports-demo -- --remove   # take it all out again
+```
+
+It adds about six weeks of clearly fake orders (numbers `DC-…-9NNN`,
+customers `demo-N@reports.drincup.test`, codes `DEMO-WELCOME10` and
+`DEMO-5OFF`, two switched-off pop-ups, three paid catering requests), with
+promos, rewards, tips and refunds, plus one **failed email** and one
+**failed refund** for the Home attention list. It never calls Stripe or sends
+email, refuses to run against anything but the local database, replaces
+itself when run again, and `--remove` leaves the database as it was.
+`npm run db:clean-test-data` does not touch it.
+
+### Trying it by hand
+
+Run `npm run dev` and `npm run stripe:listen`. Use an InPrivate window for
+the admin and a normal one for the customer so the sign-ins don't mix.
+
+1. **Home and the attention list.** `npm run db:seed:reports-demo`, then
+   `/admin`: the badge shows 2 or more. The failed email shows its error;
+   **Retry** sends it (Mailpit, <http://127.0.0.1:54324>) and leaves
+   the list. Open the failed refund: **Mark handled** with a note.
+2. **Menu.** Products → *Cold Brew*: change Medium's price; the preview
+   updates as you type; **Save product**. In the customer window a cart that
+   already had Cold Brew shows the new price with a notice. Products → New
+   product → add sizes, attach *Hot or Iced* and *Ice*, set Ice to *Only show
+   when Iced is selected*; flip the preview between Hot and Iced. Type a
+   price like 5.255 and save: it says what's wrong. On a product that has
+   been ordered, **Delete** is unavailable ("Used in N orders") and
+   **Archive** hides it instead; a brand-new unused one can be deleted.
+3. **Import** with the example (above).
+4. **Locations.** Remove today's hours: the customer's menu shows *Closed*.
+   Add a closure for tomorrow: tomorrow's pickup times disappear at checkout.
+   Put the hours back.
+5. **Settings.** Change *Tip choices at checkout* to 0, 10, 15, 20; the checkout tips change;
+   *History* shows the change, and so does the Audit log.
+6. **Setup.** Tick *Confirmed* on the GET rate; Home's progress goes up.
+7. **Promotions.** New code `HANDTEST` for 10% off; use it at checkout in
+   the customer window; back in admin the code and discount are now locked,
+   and *Redemptions* lists the order.
+8. **Rewards → Members.** Find `customer@drincup.test`, **Adjust points** +25
+   with a reason; the customer's `/rewards` shows it in their activity.
+9. **Orders.** Open a picked-up order, **Cancel and refund**, choose a
+   partial amount; the confirm says exactly what will be refunded; the
+   customer's order page shows the refund.
+10. **Users.** Make `customer@drincup.test` staff (your password is asked),
+    tick a location; then back to customer: their locations are removed. Your
+    own role has no change button.
+11. **Reports.** *Last month*: sales, orders, the hourly chart, the peak-hours
+    heatmap, top products and add-ons, discounts, catering. Download *Orders
+    export (CSV)* and check its *Net sales* column adds up to the card.
+12. **Audit log.** Everything above is listed with before → after.
+13. Clean up: `npm run db:seed:reports-demo -- --remove`. A used code can't
+    be deleted, so switch `HANDTEST` off; put the tip choices back to 0, 15,
+    18, 25.
+
+---
+
 ## Testing on a phone
 
 To try checkout on a real phone on the same Wi-Fi as your PC:
@@ -953,8 +1112,11 @@ src/
       account/catering/  The customer's catering requests and one request's page
       events/          Live and upcoming pop-ups; [slug] for one
       collections/     A seasonal collection's page
+      about/ privacy/ terms/  The admin's site content
     staff/             Barista dashboard (own plain frame, no customer tab bar)
-    admin/             Admin: home, catering (inbox, calendar, request), events, collections
+    admin/             Admin: home (needs attention), menu (+ import), locations, settings,
+                       setup, content, promos, rewards, orders, users, reports (+ CSV
+                       exports), audit log; catering, events, collections
   components/
     account/           Profile form, delete-account form
     auth/              Auth forms, shared form fields, sign-out
@@ -968,8 +1130,9 @@ src/
     favorites/         Save-as-favourite form, favourites row and manager
     staff/             Barista dashboard: queue, tickets, alerts, sold out, pause, printing
     admin/             Admin shell and building blocks: data table, form layout, confirm
-                       dialog, image upload, Honolulu date/time, product picker; event
-                       and collection forms
+                       dialog, image upload, Honolulu date/time, product picker,
+                       sortable list, info tip; the editors for each admin section;
+                       report charts
     catering/          Request form, quote summary, quote builder, timeline, pay page
     events/            Event card, Order for pickup here
     ui/                shadcn/ui primitives
@@ -990,7 +1153,13 @@ src/
                        schemas, settings, queries, customer and admin actions, payments
     events/            Event windows and slugs (pure), queries, admin actions
     collections/       Contrast checks (pure), queries, admin actions
-    admin/             Image upload action (sharp)
+    admin/             Admin guard, attention queue, audit log reads, image uploads
+    menu-admin/        Product and group editor rules + live preview (pure, tested), actions
+    menu-import/       Spreadsheet import: columns, CSV/XLSX reading, checks, preview
+    settings/          The typed settings registry (pure, tested), reads, save action
+    content/ setup/    Site content (About, policies, logo) and the setup checklist
+    reports/           Report definitions and CSV layouts (pure, tested), report reads
+    csv.ts             Formula-safe CSV writer
     clock.ts           The request's "now" (the e2e test clock; test-clock.ts guards it)
     email/             EmailProvider (Resend / Mailpit), outbox sender, dev sweep
     rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
@@ -1024,6 +1193,7 @@ supabase/
 e2e/                   Playwright specs and their DB helpers (npm run test:e2e)
 scripts/test-db.mjs    Runs supabase/tests against the local database
 scripts/stripe-*.mjs   npm run stripe:listen / stripe:doctor
+scripts/seed-reports-demo.mjs  npm run db:seed:reports-demo (local only)
 docs/SPEC.md           The build spec -- read before starting any phase
 ```
 
@@ -1038,8 +1208,8 @@ docs/SPEC.md           The build spec -- read before starting any phase
 - **The server recalculates every amount.** Client-sent totals are never
   trusted.
 - **Modifiers are data, not code.** Nothing in the UI hardcodes a syrup or a
-  milk option. Swapping in the real menu means changing rows (seed now, admin
-  in Phase 9), never components.
+  milk option. Swapping in the real menu means changing rows (in the admin,
+  or the menu import), never components.
 - **The menu catalogue is cached for up to 60 seconds** (sold-out flags, hours
   and the pause toggle are always live). After `npm run db:seed`, restart
   `npm run dev` or wait a minute before the new menu shows.
@@ -1048,15 +1218,18 @@ docs/SPEC.md           The build spec -- read before starting any phase
 
 ## Still to confirm with the cafe
 
-Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
+The admin tracks these at **Admin → Setup** (`/admin/setup`): each item with
+its current value, a link to where it is edited, and a *Confirmed* tick once
+the cafe has signed it off (Home shows the progress). In the code, grep for
+`NEEDS_CONFIRMATION`. The open ones:
 
-- [ ] Approved About / story copy from the current site
+- [ ] Approved About / story copy from the current site (Admin → Content)
 - [ ] Official brand hex values and confirmed font names (currently Baloo 2 + Inter)
-- [ ] Logo files → `public/brand/`
-- [ ] Instagram handle, Facebook URL, contact email, phone number
+- [ ] Logo (upload in Admin → Content; the typeset wordmark shows until then)
+- [ ] Instagram handle, Facebook URL, contact email, phone number (Admin → Content)
 - [ ] Real trading hours for each day
 - [ ] **GET rate** — seeded at 4.712% (Oʻahu visible pass-on rate)
-- [ ] Whether tips should be excluded from the taxed amount (assumed yes)
+- [ ] Whether GET is charged on tips (setting `tax.tips_taxed`, assumed no)
 - [ ] Real menu, prices, sizes and modifier upcharges
 - [ ] Whether flavours are charged once or per pump (seeded as once per flavour; `modifier_groups.charge_per_quantity`)
 - [ ] Product photography (a generated brand-coloured placeholder shows until then)
@@ -1066,9 +1239,9 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 - [ ] Catering payment deadline (48 hours before the event) and quote expiry (7 days)
 - [ ] Catering default delivery fee ($25.00), and whether GET applies to it (assumed yes) and to a gratuity (assumed no)
 - [ ] Where admin catering notifications go (`catering.admin_notification_email`, placeholder `catering@drincup.test`)
-- [ ] Catering cancellation and refund policy (`catering.refund_policy`, placeholder wording; the admin picks full / partial / no refund each time)
+- [ ] Catering cancellation and refund policy (Admin → Content, placeholder wording; the admin picks full / partial / no refund each time)
 - [ ] Full payment for catering, or a deposit (full payment for now; deposits are on the post-launch list)
-- [ ] Ordering ahead while closed: a cart already built can be scheduled for the next open day at checkout, but the menu still blocks adding while closed. Allow adding too?
+- [ ] Ordering ahead while closed (setting `orders.order_ahead_while_closed`, off: the menu blocks adding while closed, though a cart already built can be scheduled for the next opening)
 - [ ] Checkout timings: unpaid checkouts expire after 30 minutes; the ASAP estimate adds 2 minutes per order in the queue; 8 orders per 15-minute slot; last slot 15 minutes before closing
 - [ ] Custom tip cap (seeded at $100 or 100% of the subtotal, whichever is lower)
 - [ ] **Overflow Rewards** (all settings or `rewards` rows, so answers are data changes):
@@ -1093,6 +1266,6 @@ Grep for `NEEDS_CONFIRMATION` to find every placeholder. The open ones:
 6. ✅ **Staff dashboard** — live queue with alerts and undo, tickets and printing, cancel with refund, sold out, pause with auto-resume, catering prep list
 7. ✅ **Rewards** — points ledger with reservations, earning at pickup, refund reversals, data-driven reward tiers redeemed at checkout, rewards page with activity log, member QR, admin adjustments (data layer)
 8. ✅ **Catering, events & seasonal collections** — catering requests, versioned quotes, payment with the Payment Element, changes and cancellations with refunds, emails and reminders, prep list; pop-up events with publishing and duplication; seasonal collections with limited-time products; image uploads; the admin shell; the reconcile fallback and Stripe tooling
-9. ⬜ Admin dashboard
+9. ✅ **Admin dashboard** — audit log, needs-attention queue, menu editor with live preview and archive rules, spreadsheet import, locations and hours, typed settings with history, setup checklist and site content, promotions, rewards, orders with refunds, users and roles, reports with CSV exports
 10. ⬜ Polish (PWA, a11y, performance)
 11. ⬜ Testing & deploy
