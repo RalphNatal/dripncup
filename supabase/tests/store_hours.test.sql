@@ -11,7 +11,10 @@
 -- GUC could be flipped on the hosted database, where NODE_ENV and the
 -- Supabase URL cannot be checked.
 --
--- So: no function in the public schema may read those tables. If you need
+-- So: no function in the public schema may read those tables to decide
+-- anything. The Phase 9 admin editors that only write them
+-- (admin_save_location_hours, admin_save_closure, admin_delete_closure) are
+-- the named exceptions below. If you need
 -- hours in SQL one day, have the server pass the decision in as a parameter
 -- (as the payment webhook does with mark_order_paid's p_reject_reason), and
 -- update docs/SPEC.md's Decisions Log.
@@ -29,9 +32,10 @@ select is(
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.prosrc ~* '\mlocation_hours\M'
+       and p.proname not in ('admin_save_location_hours')
   ),
   '',
-  'no public function reads location_hours'
+  'no public function reads location_hours (the admin writer aside)'
 );
 
 select is(
@@ -41,9 +45,10 @@ select is(
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.prosrc ~* '\mclosures\M'
+       and p.proname not in ('admin_save_closure', 'admin_delete_closure')
   ),
   '',
-  'no public function reads closures'
+  'no public function reads closures (the admin writers aside)'
 );
 
 -- 24:00 is how the app writes "until midnight" (a 24-hour day, and the e2e

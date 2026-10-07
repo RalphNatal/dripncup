@@ -34,6 +34,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_log: {
+        Row: {
+          action: string
+          actor_id: string
+          actor_name: string | null
+          changes: Json
+          created_at: string
+          id: number
+          row_id: string | null
+          row_label: string | null
+          summary: string | null
+          table_name: string
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          actor_name?: string | null
+          changes?: Json
+          created_at?: string
+          id?: never
+          row_id?: string | null
+          row_label?: string | null
+          summary?: string | null
+          table_name: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          actor_name?: string | null
+          changes?: Json
+          created_at?: string
+          id?: never
+          row_id?: string | null
+          row_label?: string | null
+          summary?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string
@@ -373,7 +412,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -408,7 +450,10 @@ export type Database = {
           notes?: string | null
           quoted_at?: string | null
           request_number?: string
+          review_note?: string | null
           review_reason?: string | null
+          review_resolved_at?: string | null
+          review_resolved_by?: string | null
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
           updated_by?: string | null
@@ -443,7 +488,10 @@ export type Database = {
           notes?: string | null
           quoted_at?: string | null
           request_number?: string
+          review_note?: string | null
           review_reason?: string | null
+          review_resolved_at?: string | null
+          review_resolved_by?: string | null
           status?: Database["public"]["Enums"]["catering_status"]
           updated_at?: string
           updated_by?: string | null
@@ -469,6 +517,13 @@ export type Database = {
             columns: ["location_id"]
             isOneToOne: false
             referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catering_requests_review_resolved_by_fkey"
+            columns: ["review_resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -714,6 +769,9 @@ export type Database = {
           catering_request_id: string | null
           created_at: string
           dedupe_key: string
+          dismissed_at: string | null
+          dismissed_by: string | null
+          dismissed_note: string | null
           id: string
           kind: string
           last_error: string | null
@@ -723,6 +781,7 @@ export type Database = {
           order_id: string | null
           provider: string | null
           provider_message_id: string | null
+          requested_by: string | null
           sent_at: string | null
           status: string
           updated_at: string
@@ -734,6 +793,9 @@ export type Database = {
           catering_request_id?: string | null
           created_at?: string
           dedupe_key: string
+          dismissed_at?: string | null
+          dismissed_by?: string | null
+          dismissed_note?: string | null
           id?: string
           kind: string
           last_error?: string | null
@@ -743,6 +805,7 @@ export type Database = {
           order_id?: string | null
           provider?: string | null
           provider_message_id?: string | null
+          requested_by?: string | null
           sent_at?: string | null
           status?: string
           updated_at?: string
@@ -754,6 +817,9 @@ export type Database = {
           catering_request_id?: string | null
           created_at?: string
           dedupe_key?: string
+          dismissed_at?: string | null
+          dismissed_by?: string | null
+          dismissed_note?: string | null
           id?: string
           kind?: string
           last_error?: string | null
@@ -763,6 +829,7 @@ export type Database = {
           order_id?: string | null
           provider?: string | null
           provider_message_id?: string | null
+          requested_by?: string | null
           sent_at?: string | null
           status?: string
           updated_at?: string
@@ -790,10 +857,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "email_outbox_dismissed_by_fkey"
+            columns: ["dismissed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "email_outbox_order_id_fkey"
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_outbox_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1328,6 +1409,7 @@ export type Database = {
       }
       modifier_groups: {
         Row: {
+          archived_at: string | null
           charge_per_quantity: boolean
           created_at: string
           description: string | null
@@ -1345,6 +1427,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           charge_per_quantity?: boolean
           created_at?: string
           description?: string | null
@@ -1362,6 +1445,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           charge_per_quantity?: boolean
           created_at?: string
           description?: string | null
@@ -1383,6 +1467,7 @@ export type Database = {
       modifier_options: {
         Row: {
           allergens: Database["public"]["Enums"]["allergen"][]
+          archived_at: string | null
           created_at: string
           description: string | null
           id: string
@@ -1397,6 +1482,7 @@ export type Database = {
         }
         Insert: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          archived_at?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -1411,6 +1497,7 @@ export type Database = {
         }
         Update: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          archived_at?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -1622,6 +1709,8 @@ export type Database = {
           customer_phone: string | null
           discount_cents: number
           estimated_ready_at: string | null
+          expiry_attempted_at: string | null
+          expiry_note: string | null
           flagged_for_review_at: string | null
           fulfillment: Database["public"]["Enums"]["fulfillment_type"]
           id: string
@@ -1638,7 +1727,10 @@ export type Database = {
           promo_code: string | null
           promo_id: string | null
           ready_at: string | null
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           reward_discount_cents: number
           scheduled_for: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -1663,6 +1755,8 @@ export type Database = {
           customer_phone?: string | null
           discount_cents?: number
           estimated_ready_at?: string | null
+          expiry_attempted_at?: string | null
+          expiry_note?: string | null
           flagged_for_review_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           id?: string
@@ -1679,7 +1773,10 @@ export type Database = {
           promo_code?: string | null
           promo_id?: string | null
           ready_at?: string | null
+          review_note?: string | null
           review_reason?: string | null
+          review_resolved_at?: string | null
+          review_resolved_by?: string | null
           reward_discount_cents?: number
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -1704,6 +1801,8 @@ export type Database = {
           customer_phone?: string | null
           discount_cents?: number
           estimated_ready_at?: string | null
+          expiry_attempted_at?: string | null
+          expiry_note?: string | null
           flagged_for_review_at?: string | null
           fulfillment?: Database["public"]["Enums"]["fulfillment_type"]
           id?: string
@@ -1720,7 +1819,10 @@ export type Database = {
           promo_code?: string | null
           promo_id?: string | null
           ready_at?: string | null
+          review_note?: string | null
           review_reason?: string | null
+          review_resolved_at?: string | null
+          review_resolved_by?: string | null
           reward_discount_cents?: number
           scheduled_for?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -1746,6 +1848,13 @@ export type Database = {
             columns: ["promo_id"]
             isOneToOne: false
             referencedRelation: "promos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_review_resolved_by_fkey"
+            columns: ["review_resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1908,6 +2017,7 @@ export type Database = {
       }
       product_sizes: {
         Row: {
+          archived_at: string | null
           created_at: string
           id: string
           is_active: boolean
@@ -1920,6 +2030,7 @@ export type Database = {
           volume_oz: number | null
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -1932,6 +2043,7 @@ export type Database = {
           volume_oz?: number | null
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -1956,6 +2068,7 @@ export type Database = {
       products: {
         Row: {
           allergens: Database["public"]["Enums"]["allergen"][]
+          archived_at: string | null
           available_from: string | null
           available_until: string | null
           base_price_cents: number
@@ -1976,6 +2089,7 @@ export type Database = {
         }
         Insert: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          archived_at?: string | null
           available_from?: string | null
           available_until?: string | null
           base_price_cents?: number
@@ -1996,6 +2110,7 @@ export type Database = {
         }
         Update: {
           allergens?: Database["public"]["Enums"]["allergen"][]
+          archived_at?: string | null
           available_from?: string | null
           available_until?: string | null
           base_price_cents?: number
@@ -2216,6 +2331,9 @@ export type Database = {
           catering_request_id: string | null
           created_at: string
           failure_reason: string | null
+          handled_at: string | null
+          handled_by: string | null
+          handled_note: string | null
           id: string
           order_id: string | null
           payment_id: string | null
@@ -2232,6 +2350,9 @@ export type Database = {
           catering_request_id?: string | null
           created_at?: string
           failure_reason?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          handled_note?: string | null
           id?: string
           order_id?: string | null
           payment_id?: string | null
@@ -2248,6 +2369,9 @@ export type Database = {
           catering_request_id?: string | null
           created_at?: string
           failure_reason?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          handled_note?: string | null
           id?: string
           order_id?: string | null
           payment_id?: string | null
@@ -2264,6 +2388,13 @@ export type Database = {
             columns: ["catering_request_id"]
             isOneToOne: false
             referencedRelation: "catering_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refunds_handled_by_fkey"
+            columns: ["handled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -2348,32 +2479,137 @@ export type Database = {
       }
       settings: {
         Row: {
+          confirmed_at: string | null
+          confirmed_by: string | null
           description: string | null
           is_public: boolean
           key: string
+          max_value: number | null
+          min_value: number | null
           updated_at: string
           updated_by: string | null
           value: Json
+          value_type: string | null
         }
         Insert: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
           description?: string | null
           is_public?: boolean
           key: string
+          max_value?: number | null
+          min_value?: number | null
           updated_at?: string
           updated_by?: string | null
           value: Json
+          value_type?: string | null
         }
         Update: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
           description?: string | null
           is_public?: boolean
           key?: string
+          max_value?: number | null
+          min_value?: number | null
           updated_at?: string
           updated_by?: string | null
           value?: Json
+          value_type?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "settings_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      setup_tasks: {
+        Row: {
+          confirmed_at: string | null
+          confirmed_by: string | null
+          edit_href: string | null
+          help: string
+          key: string
+          label: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          edit_href?: string | null
+          help: string
+          key: string
+          label: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          edit_href?: string | null
+          help?: string
+          key?: string
+          label?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "setup_tasks_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_content: {
+        Row: {
+          confirmed_at: string | null
+          confirmed_by: string | null
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_content_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_content_updated_by_fkey"
             columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -2486,6 +2722,24 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      admin_archive_modifier_group: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      admin_archive_product: { Args: { p_id: string }; Returns: undefined }
+      admin_attention_items: {
+        Args: never
+        Returns: {
+          amount_cents: number
+          catering_request_id: string
+          detail: string
+          id: string
+          kind: string
+          occurred_at: string
+          order_id: string
+          title: string
+        }[]
+      }
       admin_catering_cancel: {
         Args: { p_reason: string; p_request_id: string }
         Returns: {
@@ -2517,7 +2771,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2534,17 +2791,283 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      admin_clear_catering_flag: {
+        Args: { p_note: string; p_request_id: string }
+        Returns: undefined
+      }
+      admin_delete_category: { Args: { p_id: string }; Returns: undefined }
+      admin_delete_closure: { Args: { p_id: string }; Returns: undefined }
+      admin_delete_modifier_group: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      admin_delete_product: { Args: { p_id: string }; Returns: undefined }
+      admin_dismiss_email: {
+        Args: { p_email_id: string; p_note: string }
+        Returns: undefined
+      }
       admin_duplicate_event: {
         Args: { p_date: string; p_event_id: string }
         Returns: string
       }
+      admin_import_menu: {
+        Args: { p_archive_missing: boolean; p_plan: Json; p_source: string }
+        Returns: Json
+      }
+      admin_list_orders: {
+        Args: {
+          p_from?: string
+          p_limit?: number
+          p_location_id?: string
+          p_offset?: number
+          p_payment?: string
+          p_query?: string
+          p_status?: Database["public"]["Enums"]["order_status"]
+          p_to?: string
+        }
+        Returns: {
+          created_at: string
+          customer_email: string
+          customer_name: string
+          flagged: boolean
+          id: string
+          location_id: string
+          location_name: string
+          order_number: string
+          payment_state: string
+          placed_at: string
+          refunded_cents: number
+          status: Database["public"]["Enums"]["order_status"]
+          total_cents: number
+          total_count: number
+        }[]
+      }
+      admin_list_promos: {
+        Args: never
+        Returns: {
+          amount_cents: number
+          code: string
+          created_at: string
+          description: string
+          discount_given_cents: number
+          ends_at: string
+          id: string
+          is_active: boolean
+          max_discount_cents: number
+          min_spend_cents: number
+          per_user_limit: number
+          percent: number
+          redemptions: number
+          starts_at: string
+          times_used: number
+          type: Database["public"]["Enums"]["promo_type"]
+          usage_limit: number
+        }[]
+      }
+      admin_list_users: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_query?: string
+          p_role?: Database["public"]["Enums"]["user_role"]
+        }
+        Returns: {
+          created_at: string
+          email: string
+          first_name: string
+          full_name: string
+          id: string
+          loyalty_points: number
+          member_code: string
+          role: Database["public"]["Enums"]["user_role"]
+          total_count: number
+        }[]
+      }
+      admin_mark_refund_handled: {
+        Args: { p_note: string; p_refund_id: string }
+        Returns: undefined
+      }
+      admin_menu_usage: {
+        Args: { p_id: string; p_kind: string }
+        Returns: Json
+      }
+      admin_promo_redemptions: {
+        Args: { p_promo_id: string }
+        Returns: {
+          amount_cents: number
+          customer_first_name: string
+          order_id: string
+          order_number: string
+          redeemed_at: string
+        }[]
+      }
+      admin_reorder_categories: {
+        Args: { p_ids: string[] }
+        Returns: undefined
+      }
+      admin_reorder_products: { Args: { p_ids: string[] }; Returns: undefined }
+      admin_reorder_rewards: { Args: { p_ids: string[] }; Returns: undefined }
+      admin_report_catering: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          contact_name: string
+          delivery_fee_cents: number
+          discount_cents: number
+          event_at: string
+          gratuity_cents: number
+          headcount: number
+          items_cents: number
+          net_cents: number
+          paid_date: string
+          refunded_cents: number
+          request_id: string
+          request_number: string
+          status: Database["public"]["Enums"]["catering_status"]
+          tax_cents: number
+          total_cents: number
+        }[]
+      }
+      admin_report_discounts: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          discount_cents: number
+          kind: string
+          name: string
+          points: number
+          uses: number
+        }[]
+      }
+      admin_report_modifiers: {
+        Args: {
+          p_from: string
+          p_limit?: number
+          p_location_id?: string
+          p_to: string
+        }
+        Returns: {
+          group_name: string
+          option_name: string
+          quantity: number
+          revenue_cents: number
+        }[]
+      }
+      admin_report_orders: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          business_date: string
+          customer_first_name: string
+          gross_sales_cents: number
+          item_count: number
+          location_name: string
+          net_before_refunds_cents: number
+          net_sales_cents: number
+          net_tax_cents: number
+          net_tip_cents: number
+          order_id: string
+          order_number: string
+          payment_method: string
+          placed_at: string
+          points_earned: number
+          points_redeemed: number
+          promo_code: string
+          promo_discount_cents: number
+          refunded_cents: number
+          refunded_sales_cents: number
+          refunded_tax_cents: number
+          refunded_tip_cents: number
+          reward_discount_cents: number
+          rewards: string
+          status: Database["public"]["Enums"]["order_status"]
+          tax_cents: number
+          tip_cents: number
+          total_cents: number
+        }[]
+      }
+      admin_report_peak_hours: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          hour: number
+          net_sales_cents: number
+          orders: number
+          weekday: number
+        }[]
+      }
+      admin_report_products: {
+        Args: {
+          p_from: string
+          p_limit?: number
+          p_location_id?: string
+          p_to: string
+        }
+        Returns: {
+          orders: number
+          product_id: string
+          product_name: string
+          quantity: number
+          revenue_cents: number
+        }[]
+      }
+      admin_report_sales: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          business_date: string
+          collected_cents: number
+          gross_sales_cents: number
+          net_before_refunds_cents: number
+          net_sales_cents: number
+          orders: number
+          promo_discount_cents: number
+          refunded_cents: number
+          refunded_sales_cents: number
+          reward_discount_cents: number
+          tax_cents: number
+          tip_cents: number
+        }[]
+      }
+      admin_resend_receipt: { Args: { p_order_id: string }; Returns: string }
+      admin_resolve_flagged_order: {
+        Args: { p_note: string; p_order_id: string; p_resolution: string }
+        Returns: string
+      }
+      admin_restore_modifier_group: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      admin_restore_product: { Args: { p_id: string }; Returns: undefined }
+      admin_retry_email: { Args: { p_email_id: string }; Returns: undefined }
+      admin_rewards_totals: { Args: never; Returns: Json }
+      admin_save_cafe: { Args: { p: Json }; Returns: string }
+      admin_save_category: { Args: { p: Json }; Returns: string }
+      admin_save_closure: { Args: { p: Json }; Returns: string }
       admin_save_collection: {
         Args: { p_collection: Json; p_products: Json }
         Returns: string
       }
+      admin_save_content: {
+        Args: { p_key: string; p_value: string }
+        Returns: undefined
+      }
       admin_save_event: {
         Args: { p_event: Json; p_menu: string[]; p_staff: string[] }
         Returns: string
+      }
+      admin_save_location_hours: {
+        Args: { p_hours: Json; p_location_id: string }
+        Returns: undefined
+      }
+      admin_save_modifier_group: {
+        Args: { p_group: Json; p_options: Json }
+        Returns: string
+      }
+      admin_save_product: {
+        Args: { p_groups: Json; p_product: Json; p_sizes: Json }
+        Returns: string
+      }
+      admin_save_promo: { Args: { p: Json }; Returns: string }
+      admin_save_reward: { Args: { p: Json }; Returns: string }
+      admin_set_confirmed: {
+        Args: { p_confirmed: boolean; p_key: string; p_kind: string }
+        Returns: undefined
       }
       admin_set_event_published: {
         Args: { p_event_id: string; p_published: boolean }
@@ -2588,6 +3111,65 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      admin_set_product_active: {
+        Args: { p_active: boolean; p_id: string }
+        Returns: undefined
+      }
+      admin_set_role: {
+        Args: {
+          p_role: Database["public"]["Enums"]["user_role"]
+          p_user_id: string
+        }
+        Returns: {
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          first_name: string | null
+          full_name: string | null
+          id: string
+          loyalty_points: number
+          marketing_opt_in: boolean
+          member_code: string
+          member_code_updated_at: string
+          notification_prefs: Json
+          phone: string | null
+          role: Database["public"]["Enums"]["user_role"]
+          sms_opt_in: boolean
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      admin_set_staff_locations: {
+        Args: { p_location_ids: string[]; p_user_id: string }
+        Returns: undefined
+      }
+      admin_update_setting: {
+        Args: { p_key: string; p_value: Json }
+        Returns: {
+          confirmed_at: string | null
+          confirmed_by: string | null
+          description: string | null
+          is_public: boolean
+          key: string
+          max_value: number | null
+          min_value: number | null
+          updated_at: string
+          updated_by: string | null
+          value: Json
+          value_type: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "settings"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       advance_order_status: {
         Args: {
           p_new_status: Database["public"]["Enums"]["order_status"]
@@ -2606,6 +3188,8 @@ export type Database = {
           customer_phone: string | null
           discount_cents: number
           estimated_ready_at: string | null
+          expiry_attempted_at: string | null
+          expiry_note: string | null
           flagged_for_review_at: string | null
           fulfillment: Database["public"]["Enums"]["fulfillment_type"]
           id: string
@@ -2622,7 +3206,10 @@ export type Database = {
           promo_code: string | null
           promo_id: string | null
           ready_at: string | null
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           reward_discount_cents: number
           scheduled_for: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -2649,6 +3236,23 @@ export type Database = {
           p_refunded_cents: number
         }
         Returns: string
+      }
+      assert_admin: { Args: never; Returns: undefined }
+      assert_report_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: undefined
+      }
+      audit_actor: { Args: never; Returns: string }
+      audit_log_entry: {
+        Args: {
+          p_action: string
+          p_changes?: Json
+          p_row_id: string
+          p_row_label: string
+          p_summary: string
+          p_table: string
+        }
+        Returns: undefined
       }
       auth_role: {
         Args: never
@@ -2696,7 +3300,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2753,7 +3360,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2797,7 +3407,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2845,7 +3458,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2889,7 +3505,10 @@ export type Database = {
           notes: string | null
           quoted_at: string | null
           request_number: string
+          review_note: string | null
           review_reason: string | null
+          review_resolved_at: string | null
+          review_resolved_by: string | null
           status: Database["public"]["Enums"]["catering_status"]
           updated_at: string
           updated_by: string | null
@@ -2915,6 +3534,9 @@ export type Database = {
           catering_request_id: string | null
           created_at: string
           dedupe_key: string
+          dismissed_at: string | null
+          dismissed_by: string | null
+          dismissed_note: string | null
           id: string
           kind: string
           last_error: string | null
@@ -2924,6 +3546,7 @@ export type Database = {
           order_id: string | null
           provider: string | null
           provider_message_id: string | null
+          requested_by: string | null
           sent_at: string | null
           status: string
           updated_at: string
@@ -2981,6 +3604,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_valid_slug: { Args: { p_slug: string }; Returns: boolean }
       list_my_orders: {
         Args: {
           p_before_created_at?: string
@@ -3045,6 +3669,12 @@ export type Database = {
         }
         Returns: string
       }
+      modifier_group_usage: { Args: { p_group_id: string }; Returns: Json }
+      modifier_option_used: { Args: { p_option_id: string }; Returns: boolean }
+      mul_div_round: {
+        Args: { a: number; b: number; c: number }
+        Returns: number
+      }
       next_catering_number: { Args: { as_of?: string }; Returns: string }
       next_daily_number: {
         Args: { as_of?: string; counter_scope: string }
@@ -3055,7 +3685,10 @@ export type Database = {
         Args: { p_order_id: string }
         Returns: boolean
       }
+      order_payment_state: { Args: { p_order_id: string }; Returns: string }
       place_free_order: { Args: { p_order_id: string }; Returns: string }
+      product_size_used: { Args: { p_size_id: string }; Returns: boolean }
+      product_usage: { Args: { p_product_id: string }; Returns: Json }
       rate_limit_hit: {
         Args: {
           p_cost?: number
@@ -3070,6 +3703,40 @@ export type Database = {
         Returns: boolean
       }
       regenerate_member_code: { Args: never; Returns: string }
+      report_order_facts: {
+        Args: { p_from: string; p_location_id?: string; p_to: string }
+        Returns: {
+          business_date: string
+          customer_first_name: string
+          gross_sales_cents: number
+          item_count: number
+          location_id: string
+          location_name: string
+          location_type: Database["public"]["Enums"]["location_type"]
+          net_before_refunds_cents: number
+          net_sales_cents: number
+          net_tax_cents: number
+          net_tip_cents: number
+          order_id: string
+          order_number: string
+          payment_method: string
+          placed_at: string
+          points_earned: number
+          points_redeemed: number
+          promo_code: string
+          promo_discount_cents: number
+          refunded_cents: number
+          refunded_sales_cents: number
+          refunded_tax_cents: number
+          refunded_tip_cents: number
+          reward_discount_cents: number
+          rewards: string
+          status: Database["public"]["Enums"]["order_status"]
+          tax_cents: number
+          tip_cents: number
+          total_cents: number
+        }[]
+      }
       set_location_accepting_orders: {
         Args: {
           accepting: boolean
@@ -3152,6 +3819,16 @@ export type Database = {
       }
       staff_order_activity: { Args: { p_order_id: string }; Returns: Json }
       sync_order_loyalty: { Args: { p_order_id: string }; Returns: undefined }
+      usage_total: { Args: { p_usage: Json }; Returns: number }
+      write_product: { Args: { p: Json; p_id: string }; Returns: string }
+      write_product_groups: {
+        Args: { p_groups: Json; p_product_id: string }
+        Returns: undefined
+      }
+      write_product_sizes: {
+        Args: { p_product_id: string; p_sizes: Json }
+        Returns: undefined
+      }
     }
     Enums: {
       allergen:
