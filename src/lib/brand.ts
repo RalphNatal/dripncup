@@ -30,6 +30,30 @@ export const BRAND = {
   loyaltyProgramName: "Overflow Rewards",
 } as const;
 
+/**
+ * The raw brand palette (NEEDS_CONFIRMATION: sampled from the current site
+ * until the cafe supplies official values). The same hex values are the
+ * `--brand-*` tokens in globals.css (a unit test keeps them equal); this copy
+ * is for places CSS cannot reach: the web app manifest, the theme colour,
+ * the offline page and the generated icons, splash screens and share image
+ * (`npm run brand:assets`).
+ */
+export const BRAND_COLORS = {
+  /** Hero fill; dark text only. */
+  teal: "#1ab3c0",
+  /** Interactive; white text at 4.95:1. */
+  tealDeep: "#0e7c86",
+  tealSoft: "#e6f7f9",
+  pink: "#f29bb8",
+  pinkSoft: "#fdeef3",
+  magenta: "#e0409b",
+  /** White text at 6.1:1. */
+  magentaDeep: "#b81c74",
+  ink: "#101114",
+  /** Warm off-white page background. */
+  sand: "#fffaf4",
+} as const;
+
 export const CAFE_ADDRESS = {
   line1: "1221 Kapiolani Blvd",
   line2: "Site 112A",
