@@ -7,6 +7,7 @@ import "server-only";
  * (screen in Phase 9). The row id travels to the provider as metadata, which
  * is how the refund webhook finds it again.
  */
+import { logError } from "@/lib/log";
 import { paymentProvider } from "@/lib/payments";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -149,7 +150,7 @@ async function attemptRefund(
     return { ok: true, refundId, status: refund.status, amountCents };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`Refund ${refundId} failed`, error);
+    logError("refund.failed", error, { refundId });
     await db.from("refunds").update({ status: "failed", failure_reason: message.slice(0, 500) }).eq("id", refundId);
     return { ok: false, reason: "failed", refundId, message };
   }

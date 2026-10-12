@@ -9,6 +9,7 @@ import { connection } from "next/server";
 import { cache } from "react";
 
 import { clientEnv } from "@/lib/env";
+import { logError } from "@/lib/log";
 import { publicStorageUrl } from "@/lib/menu/images";
 import { createPublicClient } from "@/lib/supabase/public";
 
@@ -29,7 +30,7 @@ export const getSiteContent = cache(async (): Promise<SiteContent> => {
   await connection();
   const { data, error } = await createPublicClient({ live: true }).from("site_content").select("key, value");
   if (error) {
-    console.error("Could not load site content", error);
+    logError("content.load_failed", error);
     return { ...EMPTY };
   }
   const content = { ...EMPTY };

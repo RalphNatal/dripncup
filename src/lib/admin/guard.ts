@@ -11,6 +11,7 @@ import "server-only";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { logError } from "@/lib/log";
 
 export async function currentAdmin() {
   const profile = await getCurrentProfile();
@@ -33,7 +34,7 @@ export function rpcFailure(error: PostgrestError, fallback: string): { ok: false
   if (error.code === "22023" || error.code?.startsWith("DC") || error.code === "P0002") {
     return { ok: false, message: error.message.endsWith(".") ? error.message : `${error.message}.` };
   }
-  console.error(fallback, error);
+  logError("admin.action_failed", error, { shown: fallback });
   return { ok: false, message: fallback };
 }
 

@@ -32,6 +32,7 @@ import {
 import { getCheckoutSettings, type CheckoutSettings } from "@/lib/checkout/settings";
 import type { CartCheck, CartLocation, CheckoutQuote, CheckoutRewards, CreateCheckoutResult, PromoStatus } from "@/lib/checkout/types";
 import { getStorefront, type LocationView } from "@/lib/locations/storefront";
+import { logError } from "@/lib/log";
 import { formatCents } from "@/lib/money";
 import { cancelUnpaidCheckout } from "@/lib/orders/expiry";
 import { paymentProvider } from "@/lib/payments";
@@ -401,7 +402,7 @@ type OrderForPayment = {
 async function placeFreeOrder(orderId: string): Promise<CreateCheckoutResult> {
   const { data: outcome, error } = await createAdminClient().rpc("place_free_order", { p_order_id: orderId });
   if (error) {
-    console.error(`Order ${orderId}: could not place the free order`, error);
+    logError("checkout.free_order_failed", error, { orderId });
     return { ok: false, code: "invalid", message: "We couldn't place your order. Please try again." };
   }
   if (outcome === "placed" || outcome === "already_placed") return { ok: true, orderId, alreadyPaid: true };
@@ -463,7 +464,7 @@ async function ensurePayment(order: OrderForPayment): Promise<CreateCheckoutResu
       totalCents: order.total_cents,
     };
   } catch (error) {
-    console.error(`Order ${order.id}: could not set up payment`, error);
+    logError("checkout.payment_setup_failed", error, { orderId: order.id });
     return { ok: false, code: "payment_setup_failed", message: "We couldn't start the payment. Please try again." };
   }
 }
@@ -620,7 +621,7 @@ export async function createCheckout(raw: CheckoutInput): Promise<CreateCheckout
 
   const orderId = created?.[0]?.order_id;
   if (error || !orderId) {
-    console.error("createCheckout: could not create the order", error);
+    logError("checkout.create_failed", error);
     return { ok: false, code: "invalid", message: "We couldn't place your order. Please try again." };
   }
 

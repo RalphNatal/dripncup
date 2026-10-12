@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { LAST_ADMIN_SQLSTATE, isLastAdmin, removeAuthUser } from "@/lib/auth/account-deletion";
+import { logError } from "@/lib/log";
 import { settleOrdersBeforeAccountDeletion } from "@/lib/orders/account-deletion";
 import { getCurrentProfile, getCurrentUser } from "@/lib/auth/dal";
 import { GENERIC_ERROR, authErrorMessage, echoValues, type FormState } from "@/lib/auth/form-state";
@@ -116,7 +117,7 @@ export async function deleteAccount(_prev: FormState, formData: FormData): Promi
     if (error.code === LAST_ADMIN_SQLSTATE) {
       return { status: "error", message: lastAdminMessage };
     }
-    console.error(`Account ${user.id}: delete_account_data failed`, error);
+    logError("account.delete_failed", error);
     return { status: "error", message: GENERIC_ERROR, values: echoValues(formData) };
   }
 

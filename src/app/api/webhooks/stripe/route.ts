@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 
 import { kickOutbox } from "@/lib/email/outbox";
+import { logError } from "@/lib/log";
 import { WebhookSignatureError, paymentProvider } from "@/lib/payments";
 import { processPaymentEvent } from "@/lib/payments/webhook";
 
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     if (error instanceof WebhookSignatureError) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
-    console.error("Stripe webhook: could not read event", error);
+    logError("stripe_webhook.read_failed", error);
     return NextResponse.json({ error: "Could not read event" }, { status: 500 });
   }
 
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     if (outcome === "in_progress") return NextResponse.json({ received: false, outcome }, { status: 409 });
     return NextResponse.json({ received: true, outcome });
   } catch (error) {
-    console.error(`Stripe webhook: handling ${event.id} failed`, error);
+    logError("stripe_webhook.handle_failed", error, { eventId: event.id, eventType: event.type });
     return NextResponse.json({ error: "Handling failed" }, { status: 500 });
   }
 }

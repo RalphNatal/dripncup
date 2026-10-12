@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { logError } from "@/lib/log";
 import { cancelUnpaidCheckout } from "@/lib/orders/expiry";
 import { createClient } from "@/lib/supabase/server";
 
@@ -49,7 +50,7 @@ export async function releaseHeldPointsAction(): Promise<{ ok: true; released: n
       if (outcome === "cancelled") released += 1;
       else if (outcome === "money_on_its_way") stillPaying += 1;
     } catch (error) {
-      console.error(`Could not release points held by order ${orderId}`, error);
+      logError("rewards.release_failed", error, { orderId });
       return { ok: false, message: "We couldn't free your points just now. Please try again." };
     }
   }

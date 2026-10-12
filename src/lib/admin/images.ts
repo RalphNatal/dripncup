@@ -19,6 +19,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getCurrentProfile } from "@/lib/auth/dal";
+import { logError } from "@/lib/log";
 import { createClient } from "@/lib/supabase/server";
 
 import { IMAGE_BUCKETS, IMAGE_MAX_BYTES as MAX_BYTES } from "./image-buckets";
@@ -84,7 +85,7 @@ export async function uploadImageAction(formData: FormData): Promise<UploadImage
     .from(bucket)
     .upload(path, output, { contentType: `image/${kind}`, upsert: false, cacheControl: "31536000" });
   if (error) {
-    console.error(`Image upload to ${bucket} failed`, error);
+    logError("admin.image_upload_failed", error, { bucket });
     return { ok: false, message: "The upload failed. Please try again." };
   }
   return { ok: true, path };

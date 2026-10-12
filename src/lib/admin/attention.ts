@@ -7,6 +7,7 @@ import "server-only";
  */
 import { cache } from "react";
 
+import { logError } from "@/lib/log";
 import { createClient } from "@/lib/supabase/server";
 
 export type AttentionKind = "flagged_order" | "flagged_catering" | "failed_refund" | "failed_email" | "catering" | "stuck_unpaid";
@@ -43,7 +44,7 @@ export const listAttentionItems = cache(async (): Promise<AttentionItem[]> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("admin_attention_items");
   if (error) {
-    console.error("Could not load the attention queue", error);
+    logError("admin.attention_load_failed", error);
     return [];
   }
   return (data ?? []).map((row) => ({

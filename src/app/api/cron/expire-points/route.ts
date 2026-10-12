@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 
 import { refuseUnlessCron } from "@/lib/cron";
+import { logError } from "@/lib/log";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: Request) {
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await createAdminClient().rpc("expire_loyalty_points");
   if (error) {
-    console.error("Points expiry failed", error);
+    logError("cron.expire_points_failed", error);
     return NextResponse.json({ error: "Expiry failed" }, { status: 500 });
   }
   return NextResponse.json({ customersExpired: data ?? 0 });

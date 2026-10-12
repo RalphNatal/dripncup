@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 
 import { refuseUnlessCron } from "@/lib/cron";
+import { logError } from "@/lib/log";
 import { expirePendingOrders } from "@/lib/orders/expiry";
 
 export async function GET(request: Request) {
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
       failed: report.failed,
     });
   } catch (error) {
-    console.error("Order expiry failed", error);
+    logError("cron.expire_orders_failed", error);
     return NextResponse.json({ error: "Expiry failed" }, { status: 500 });
   }
 }

@@ -10,6 +10,7 @@ import "server-only";
  * refund that fails does not block the deletion: it stays in `refunds` as
  * `failed` for an admin to retry.
  */
+import { logError } from "@/lib/log";
 import { paymentProvider } from "@/lib/payments";
 import { cancelOpenCateringPayments } from "@/lib/catering/payment";
 import { refundOrder, refundPayment } from "@/lib/payments/refunds";
@@ -44,7 +45,7 @@ export async function settleOrdersBeforeAccountDeletion(userId: string): Promise
           await paymentProvider().cancelPayment(payment.provider_payment_intent_id);
           report.paymentsCancelled.push(order.id);
         } catch (err) {
-          console.error(`Account deletion: could not cancel payment for order ${order.id}`, err);
+          logError("account.cancel_payment_failed", err, { orderId: order.id });
         }
       }
       continue;

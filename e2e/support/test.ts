@@ -8,7 +8,8 @@
  *   - throws an uncaught error (Playwright's `pageerror`; React reports a
  *     hydration mismatch this way, "Minified React error #418" in a
  *     production build, "Hydration failed ..." in dev);
- *   - logs a console error about hydration or a React error; or
+ *   - logs a console error about hydration or a React error, or a Content
+ *     Security Policy violation (anything the policy blocked); or
  *   - ends the test with HTML nesting browsers or React get wrong: links or
  *     buttons inside links or buttons, a block inside a <p>, a label in a
  *     label. (A <div> in a <p> from the server is split by the HTML parser
@@ -30,6 +31,13 @@ const FATAL_CONSOLE = [
   /Uncaught/i,
   /cannot be a (descendant|child) of/i,
   /In HTML, /i,
+  // The Content Security Policy blocked something (a script, Stripe's
+  // frames or API, Supabase, an image, the service worker): every test
+  // that loads a page doubles as a check that the policy lets it work.
+  /Content Security Policy/i,
+  /Refused to (load|execute|connect|frame|apply|create)/i,
+  // A browser feature name the Permissions-Policy header has wrong.
+  /Permissions-Policy/i,
 ];
 
 /** Invalid nesting, checked on every page still open when the test ends. */

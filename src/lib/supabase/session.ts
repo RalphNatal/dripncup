@@ -11,6 +11,10 @@
  * The role check hits the database rather than reading a JWT claim, because a
  * role change must take effect immediately -- not whenever the access token
  * next rotates.
+ *
+ * The page render receives `forwardHeaders` (the CSP nonce and the request
+ * id, from the proxy) plus `x-dc-viewer`: "guest", "signed-in", or the role
+ * when this request needed it. Error logs record that, never who the user is.
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -18,6 +22,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { findRouteRule, isGuestOnlyRoute } from "@/lib/auth/roles";
 import { clientEnv } from "@/lib/env";
+import { VIEWER_HEADER } from "@/lib/request-headers";
 import type { Database } from "@/types/database";
 
 /**
@@ -33,8 +38,18 @@ function redirectWithCookies(url: URL, from: NextResponse) {
   return redirect;
 }
 
-export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+/** The request's headers (including any cookies refreshed above) plus ours. */
+function forwarded(request: NextRequest, extra: Record<string, string>) {
+  const headers = new Headers(request.headers);
+  for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+  return headers;
+}
+
+export async function updateSession(request: NextRequest, forwardHeaders: Record<string, string> = {}) {
+  // Set from the start so a client can never supply its own.
+  let viewer = "guest";
+  const extra = () => ({ ...forwardHeaders, [VIEWER_HEADER]: viewer });
+  let response = NextResponse.next({ request: { headers: forwarded(request, extra()) } });
 
   const supabase = createServerClient<Database>(
     clientEnv.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,7 +63,7 @@ export async function updateSession(request: NextRequest) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
           }
-          response = NextResponse.next({ request });
+          response = NextResponse.next({ request: { headers: forwarded(request, extra()) } });
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options);
           }
@@ -70,6 +85,7 @@ export async function updateSession(request: NextRequest) {
     return redirectWithCookies(onward, response);
   }
 
+  if (user) viewer = "signed-in";
   const rule = findRouteRule(pathname);
 
   if (rule) {
@@ -94,7 +110,11 @@ export async function updateSession(request: NextRequest) {
       home.search = "";
       return redirectWithCookies(home, response);
     }
+    viewer = profile.role;
   }
 
-  return response;
+  // The render gets the final viewer; the cookies refreshed above go with it.
+  const final = NextResponse.next({ request: { headers: forwarded(request, extra()) } });
+  for (const cookie of response.cookies.getAll()) final.cookies.set(cookie);
+  return final;
 }

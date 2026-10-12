@@ -11,6 +11,7 @@ import "server-only";
  * If step 2 ever fails, the tombstone keeps the account locked out, and the
  * next sign-in attempt finishes the job (see `signIn`).
  */
+import { logError } from "@/lib/log";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -40,7 +41,7 @@ export async function isLastAdmin(adminId: string): Promise<boolean> {
 export async function removeAuthUser(userId: string): Promise<boolean> {
   const { error } = await createAdminClient().auth.admin.deleteUser(userId);
   if (error) {
-    console.error(`Account ${userId}: data removed but the auth user could not be deleted`, error);
+    logError("account.auth_user_delete_failed", error);
     return false;
   }
   return true;
