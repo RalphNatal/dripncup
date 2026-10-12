@@ -41,8 +41,10 @@ import type { PickupChoice, PickupOptions } from "@/lib/checkout/pickup";
 import type { CheckoutInput, QuoteInput } from "@/lib/checkout/schemas";
 import type { CheckoutQuote } from "@/lib/checkout/types";
 import { newClientId } from "@/lib/client-id";
+import { useOnline } from "@/lib/hooks/use-online";
 import { formatCents } from "@/lib/money";
 import { chooseDiscount, type DiscountPolicy, type TipChoice } from "@/lib/pricing";
+import { applyUpdate, checkForUpdate, useServiceWorker } from "@/lib/pwa/client";
 import { releaseHeldPointsAction } from "@/lib/rewards/actions";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +92,13 @@ export function CheckoutView(props: CheckoutViewProps) {
   const lines = useCartStore((s) => s.lines);
   const stripePromise = useMemo(() => getStripe(props.publishableKey), [props.publishableKey]);
   const ids = useId();
+  // Never pay offline, or from a version of the app older than the server's:
+  // a new deploy is looked for on arrival, and Pay waits for a refresh.
+  const online = useOnline();
+  const { updateReady } = useServiceWorker();
+  useEffect(() => {
+    void checkForUpdate(true);
+  }, []);
 
   const [pickup, setPickup] = useState<PickupChoice | null>(null);
   const [tipMode, setTipMode] = useState<TipMode>(
@@ -301,7 +310,9 @@ export function CheckoutView(props: CheckoutViewProps) {
   const cupNameError = cupName.trim() === "" ? "Tell us the name for your cup." : null;
 
   let blockedHint: string | null = null;
-  if (!quote) blockedHint = "Working out your total…";
+  if (!online) blockedHint = "You're offline. Your cart is saved; reconnect to place your order.";
+  else if (updateReady) blockedHint = "We've just updated the app. Refresh to continue; your cart is saved.";
+  else if (!quote) blockedHint = "Working out your total…";
   else if (quote.cart.blocked && !quote.cart.location.canCheckout) blockedHint = quote.cart.location.blockedReason;
   else if (quote.cart.blocked) blockedHint = "Some items in your cart need attention.";
   else if (!pickup) blockedHint = "Choose a pickup time.";
@@ -492,6 +503,18 @@ export function CheckoutView(props: CheckoutViewProps) {
       </Section>
 
       <Section title="Payment" icon={<LockKeyhole aria-hidden="true" />}>
+        {updateReady && online ? (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-muted px-4 py-3 text-sm" data-testid="checkout-update">
+            <p className="flex-1">A new version of the app is ready. Refresh before paying; your cart is saved.</p>
+            <button
+              type="button"
+              onClick={applyUpdate}
+              className="focus-ring inline-flex min-h-11 items-center rounded-full bg-brand-teal-deep px-4 font-semibold text-white hover:bg-brand-teal-deep/90"
+            >
+              Refresh
+            </button>
+          </div>
+        ) : null}
         {totalCents === 0 ? (
           <FreeOrderPanel
             canPay={canPay}

@@ -19,6 +19,7 @@ import { StatusDot } from "@/components/locations/status-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCartHydrated } from "@/lib/cart/hooks";
 import { useCartStore, type CartLine } from "@/lib/cart/store";
+import { useOnline } from "@/lib/hooks/use-online";
 import { checkCartAction } from "@/lib/checkout/actions";
 import type { CartCheck, CheckedLine } from "@/lib/checkout/types";
 import type { LocationView } from "@/lib/locations/storefront";
@@ -48,6 +49,8 @@ export function CartView({
   location: Pick<LocationView, "id" | "name"> & { statusLabel: string; statusKind: LocationView["status"]["kind"] };
 }) {
   const hydrated = useCartHydrated();
+  // The cart is saved on the device; checking out needs the connection.
+  const online = useOnline();
   const lines = useCartStore((s) => s.lines);
   const setQuantity = useCartStore((s) => s.setQuantity);
   const removeLine = useCartStore((s) => s.removeLine);
@@ -133,7 +136,7 @@ export function CartView({
     0,
   );
   const blockingCount = (current?.lines ?? []).filter((l) => l.issues.some((i) => i.blocking)).length;
-  const canCheckout = Boolean(current && !current.blocked);
+  const canCheckout = Boolean(current && !current.blocked && online);
 
   return (
     <div className="space-y-4">
@@ -269,7 +272,7 @@ export function CartView({
                 disabled
                 className="flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-full bg-muted px-5 text-base font-bold text-muted-foreground"
               >
-                {current ? "Checkout" : "Checking your cart…"}
+                {!online ? "Reconnect to check out" : current ? "Checkout" : "Checking your cart…"}
               </button>
             )
           ) : (

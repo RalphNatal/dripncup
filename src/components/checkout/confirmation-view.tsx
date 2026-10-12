@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OrderBreakdown, PointsNote, RewardTag } from "@/components/checkout/order-breakdown";
 import { getStripe, stripeAppearance, stripeFonts } from "@/components/checkout/stripe";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { useCartHydrated } from "@/lib/cart/hooks";
 import { useCartStore } from "@/lib/cart/store";
 import { BRAND } from "@/lib/brand";
@@ -264,6 +265,8 @@ export function ConfirmationView({
           Back to the menu
         </Link>
       </div>
+
+      {phase === "placed" ? <InstallPrompt /> : null}
     </div>
   );
 }

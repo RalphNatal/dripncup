@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Logo } from "@/components/brand/logo";
 import { LocationPicker } from "@/components/locations/location-picker";
+import { OfflineBanner } from "@/components/pwa/offline-banner";
 import { CartButton } from "@/components/shell/cart-button";
 import { DesktopNav } from "@/components/shell/nav";
 import { StickyHeader } from "@/components/shell/sticky-header";
@@ -43,6 +44,8 @@ export function AppHeader({
           <LocationPicker locations={storefront.locations} selected={storefront.selected} />
         </div>
       </div>
+      {/* Sticks with the header while the connection is down. */}
+      <OfflineBanner />
     </StickyHeader>
   );
 }
