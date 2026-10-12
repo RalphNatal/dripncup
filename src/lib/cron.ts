@@ -10,7 +10,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/env.server";
 
 /** Null when the request may run the job; otherwise the response to send. */
 export function refuseUnlessCron(request: Request): NextResponse | null {

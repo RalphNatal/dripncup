@@ -23,8 +23,6 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-import { createClient } from "@/lib/supabase/client";
-
 import { ORDER_DETAIL_SELECT, toOrderDetail, type OrderDetail, type OrderDetailRow } from "./detail";
 import { toOrderListItem, type OrderListItem } from "./list";
 
@@ -45,11 +43,22 @@ interface Entry {
 
 const entries = new Map<string, Entry>();
 
+/**
+ * supabase-js (~70 KB of JavaScript) is loaded the first time it is needed,
+ * not with the page: guests never subscribe, so they never download it, and
+ * signed-in customers get it once the page is interactive.
+ */
+let clientModule: Promise<typeof import("@/lib/supabase/client")> | null = null;
+function supabase() {
+  clientModule ??= import("@/lib/supabase/client");
+  return clientModule.then((loaded) => loaded.createClient());
+}
+
 /** Joins with the customer's token, or RLS would treat the socket as a guest and send nothing. */
 async function authoriseRealtime() {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  await supabase.realtime.setAuth(data.session?.access_token ?? null);
+  const client = await supabase();
+  const { data } = await client.auth.getSession();
+  await client.realtime.setAuth(data.session?.access_token ?? null);
 }
 
 function open(filter: string): Entry {
@@ -62,10 +71,10 @@ function open(filter: string): Entry {
 
   void authoriseRealtime()
     .catch(() => undefined)
-    .then(() => {
+    .then(() => supabase())
+    .then((client) => {
       if (entry.closed) return;
-      const supabase = createClient();
-      entry.channel = supabase
+      entry.channel = client
         .channel(`orders:${filter}:${Math.random().toString(36).slice(2, 10)}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter }, notify)
         // Realtime confirms the channel before its database listener is
@@ -105,7 +114,8 @@ function subscribe(filter: string, listener: Listener): () => void {
     if (current.listeners.size > 0) return;
     current.closed = true;
     entries.delete(filter);
-    if (current.channel) void createClient().removeChannel(current.channel);
+    const channel = current.channel;
+    if (channel) void supabase().then((client) => client.removeChannel(channel));
   };
 }
 
@@ -167,7 +177,7 @@ function useInvalidateOn(filter: string | null, queryKey: QueryKey) {
 export const orderQueryKey = (orderId: string) => ["order", orderId] as const;
 
 async function fetchOrderDetail(orderId: string): Promise<OrderDetail | null> {
-  const { data, error } = await createClient().from("orders").select(ORDER_DETAIL_SELECT).eq("id", orderId).maybeSingle();
+  const { data, error } = await (await supabase()).from("orders").select(ORDER_DETAIL_SELECT).eq("id", orderId).maybeSingle();
   if (error) throw new Error(error.message);
   return data ? toOrderDetail(data as unknown as OrderDetailRow) : null;
 }
@@ -192,7 +202,7 @@ export function useLiveOrder(initial: OrderDetail) {
 export const activeOrdersQueryKey = (userId: string) => ["orders", "active", userId] as const;
 
 async function fetchActiveOrders(): Promise<OrderListItem[]> {
-  const { data, error } = await createClient().rpc("list_my_orders", { p_scope: "active", p_limit: 20 });
+  const { data, error } = await (await supabase()).rpc("list_my_orders", { p_scope: "active", p_limit: 20 });
   if (error) throw new Error(error.message);
   return (data ?? []).map(toOrderListItem);
 }

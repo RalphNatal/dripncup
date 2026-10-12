@@ -10,7 +10,7 @@ import "server-only";
  *
  * Swapping in another provider means one more implementation here.
  */
-import { serverEnv } from "@/lib/env";
+import { serverEnv } from "@/lib/env.server";
 
 export interface EmailMessage {
   to: string;
