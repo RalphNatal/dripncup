@@ -9,6 +9,7 @@ export default function ProductNotFound() {
       <EmptyState
         icon={SearchX}
         title="That item isn't on the menu"
+        headingLevel={1}
         action={
           <Link
             href="/menu"

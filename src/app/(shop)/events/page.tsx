@@ -1,5 +1,6 @@
 import { CalendarDays } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { EventCard } from "@/components/events/event-card";
@@ -8,6 +9,7 @@ import { listPublicEvents } from "@/lib/events/queries";
 export const metadata: Metadata = {
   title: "Pop-up events",
   description: "Where to find Drincup Cafe pop-ups around Oʻahu, and pre-order for pickup at the booth.",
+  alternates: { canonical: "/events" },
 };
 
 /** Live and upcoming pop-ups. Never past or unpublished ones (RLS and the query both refuse). */
@@ -24,7 +26,18 @@ export default async function EventsPage() {
       </div>
 
       {events.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="No pop-ups scheduled right now">
+        <EmptyState
+          icon={CalendarDays}
+          title="No pop-ups scheduled right now"
+          action={
+            <Link
+              href="/menu"
+              className="focus-ring inline-flex min-h-11 items-center rounded-full bg-brand-teal-deep px-5 text-sm font-semibold text-white hover:bg-brand-teal-deep/90"
+            >
+              Order from the cafe
+            </Link>
+          }
+        >
           Check back soon, or come see us at the cafe on Kapiolani Blvd.
         </EmptyState>
       ) : null}

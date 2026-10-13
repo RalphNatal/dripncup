@@ -1,0 +1,5 @@
+import { ListSkeleton } from "@/components/skeletons";
+
+export default function Loading() {
+  return <ListSkeleton label="your catering requests" rows={3} />;
+}

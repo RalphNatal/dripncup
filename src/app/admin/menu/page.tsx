@@ -78,7 +78,7 @@ export default async function AdminMenuPage({ searchParams }: { searchParams: Se
       </form>
 
       {sections.length === 0 ? (
-        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">{filtering ? "No products match." : "No products yet."}</p>
+        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">{filtering ? "No products match. Clear the search or filters to see them all." : "No products yet. Add one, or import the menu from a spreadsheet."}</p>
       ) : (
         <div className="space-y-6">
           {sections.map((section) => (

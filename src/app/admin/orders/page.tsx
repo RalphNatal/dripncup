@@ -100,7 +100,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Searc
         rows={rows}
         rowKey={(o) => o.id}
         rowHref={(o) => `/admin/orders/${o.id}`}
-        empty="No orders match."
+        empty="No orders match. Try another date range, or clear the filters."
         pagination={{ page: filters.page, pageSize: 25, total, hrefFor: (p) => `/admin/orders${queryString({ q: filters.q, ...keep, page: p })}` }}
         columns={[
           { header: "Order", primary: true, cell: (o) => <span className="font-mono">{o.orderNumber}</span> },

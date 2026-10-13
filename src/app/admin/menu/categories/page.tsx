@@ -25,7 +25,7 @@ export default async function CategoriesPage() {
       />
       <MenuNav current="/admin/menu/categories" />
       {categories.length === 0 ? (
-        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No categories yet.</p>
+        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No categories yet. Add the first one with the form on this page.</p>
       ) : (
         <SortableList
           label="Categories, in menu order"

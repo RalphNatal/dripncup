@@ -109,7 +109,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Search
       ) : null}
 
       {entries.length === 0 ? (
-        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No changes match.</p>
+        <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No changes match. Try a wider date range, or clear the filters.</p>
       ) : (
         <ol className="space-y-3" aria-label="Changes, newest first" data-testid="audit-entries">
           {entries.map((entry) => (

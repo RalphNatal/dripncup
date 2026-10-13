@@ -33,7 +33,7 @@ export default async function AdminCollectionsPage() {
         rows={collections}
         rowKey={(c) => c.id}
         rowHref={(c) => `/admin/collections/${c.id}`}
-        empty="No collections yet."
+        empty="No collections yet. Create one for the next season or holiday."
         columns={[
           {
             header: "Collection",

@@ -69,7 +69,7 @@ export default async function RewardsAdminPage() {
         </h2>
         <p className="text-sm text-muted-foreground">In the order customers see them. Drag, or use the arrows, to reorder.</p>
         {tiers.length === 0 ? (
-          <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No rewards yet.</p>
+          <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">No rewards yet. Add a tier so members have something to save up for.</p>
         ) : (
           <SortableList
             label="Reward tiers"
