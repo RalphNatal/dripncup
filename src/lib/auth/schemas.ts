@@ -7,9 +7,9 @@
  */
 import { z } from "zod";
 
-/** Supabase hashes with bcrypt, which ignores everything past 72 bytes. */
-export const PASSWORD_MIN_LENGTH = 8;
-export const PASSWORD_MAX_LENGTH = 72;
+import { DELETE_CONFIRMATION, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./constants";
+
+export { DELETE_CONFIRMATION, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "./constants";
 
 /** FormData gives null for a missing field; treat it as an empty string. */
 const text = () => z.preprocess((value) => value ?? "", z.string().trim());
@@ -114,7 +114,6 @@ export const profileSchema = z.object({
 });
 
 /** What the customer must type to confirm account deletion. Case-sensitive. */
-export const DELETE_CONFIRMATION = "DELETE";
 
 export const deleteAccountSchema = z.object({
   // Same handling as sign-in, so whatever signs them in also confirms here.

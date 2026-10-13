@@ -30,6 +30,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { ToasterNow } from "@/components/lazy-toaster";
 import { RouteFocus } from "@/components/route-focus";
 import { SkipLink } from "@/components/skip-link";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -199,6 +200,7 @@ export function AdminShell({
         {children}
       </main>
       <RouteFocus target="admin-main" />
+      <ToasterNow />
     </div>
   );
 }

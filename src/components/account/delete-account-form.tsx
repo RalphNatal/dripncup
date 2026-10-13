@@ -6,7 +6,7 @@ import { FormAlert, PasswordField, SubmitButton, TextField, formKey } from "@/co
 import { FieldGroup } from "@/components/ui/field";
 import { deleteAccount } from "@/app/(shop)/account/actions";
 import { IDLE } from "@/lib/auth/form-state";
-import { DELETE_CONFIRMATION } from "@/lib/auth/schemas";
+import { DELETE_CONFIRMATION } from "@/lib/auth/constants";
 
 /** Password re-entry plus typing DELETE. On success the action redirects home. */
 export function DeleteAccountForm() {

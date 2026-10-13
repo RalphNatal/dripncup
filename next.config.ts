@@ -18,6 +18,12 @@ const nextConfig: NextConfig = {
   // IPv4 ranges.
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
   poweredByHeader: false,
+  // Titles and descriptions always in <head>, for every visitor. Next streams
+  // generateMetadata into <body> for browsers it doesn't recognise as bots;
+  // search engines are on its list, but other tools (link previews, Lighthouse
+  // 13, whose user agent no longer says so) then find no description. Our
+  // metadata reads the same data the page does, so the cost is a few ms.
+  htmlLimitedBots: /.*/,
   // Admin image uploads go through a Server Action (src/lib/admin/images.ts):
   // 5 MB images plus the multipart overhead.
   experimental: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { checkFavoriteName } from "./names";
 import {
   DUPLICATE_MESSAGE,
   FAVORITE_NAME_MAX,
@@ -59,5 +60,17 @@ describe("favoriteErrorMessage", () => {
     expect(LIMIT_MESSAGE).toMatch(/50 favorites/);
     expect(favoriteErrorMessage("23505")).toBe(DUPLICATE_MESSAGE);
     expect(favoriteErrorMessage(undefined)).toMatch(/try again/);
+  });
+});
+
+describe("checkFavoriteName (the browser's copy of the rule)", () => {
+  it("agrees with favoriteNameSchema on every case", () => {
+    for (const raw of ["My usual", "  padded  ", "", "   ", "x".repeat(40), "x".repeat(41), "Kakaʻako cold brew", 42, null]) {
+      const zod = favoriteNameSchema.safeParse(raw);
+      const plain = checkFavoriteName(raw);
+      expect(plain.ok, String(raw)).toBe(zod.success);
+      if (zod.success && plain.ok) expect(plain.name).toBe(zod.data);
+      if (!zod.success && !plain.ok) expect(plain.message).toBe(zod.error.issues[0].message);
+    }
   });
 });

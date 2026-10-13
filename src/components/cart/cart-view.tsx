@@ -8,14 +8,13 @@
  * changes are applied automatically, with a notice; anything blocking must be
  * fixed or removed before Checkout unlocks.
  */
-import { CircleAlert, MapPin, ShoppingBag, TriangleAlert } from "lucide-react";
+import { CircleAlert, Pencil, ShoppingBag, TriangleAlert } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { EditLineSheet } from "@/components/cart/edit-line-sheet";
 import { QuantityStepper } from "@/components/cart/quantity-stepper";
 import { EmptyState } from "@/components/empty-state";
-import { StatusDot } from "@/components/locations/status-dot";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCartHydrated } from "@/lib/cart/hooks";
 import { useCartStore, type CartLine } from "@/lib/cart/store";
@@ -25,6 +24,25 @@ import type { CartCheck, CheckedLine } from "@/lib/checkout/types";
 import type { LocationView } from "@/lib/locations/storefront";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+
+/**
+ * Editing a line opens the product sheet, which carries the whole product
+ * customizer: it loads once the cart is on screen, not before (the button
+ * looks the same, disabled, for that moment).
+ */
+const EditLineSheet = dynamic(() => import("@/components/cart/edit-line-sheet").then((m) => m.EditLineSheet), {
+  ssr: false,
+  loading: () => (
+    <button
+      type="button"
+      disabled
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-brand-teal-deep opacity-60"
+    >
+      <Pencil className="size-4" aria-hidden="true" />
+      Edit
+    </button>
+  ),
+});
 
 const RECHECK_DELAY_MS = 250;
 
@@ -140,17 +158,6 @@ export function CartView({
 
   return (
     <div className="space-y-4">
-      <section aria-label="Pickup location" className="flex items-center gap-2 rounded-2xl border bg-card px-4 py-3 text-sm">
-        <MapPin className="size-4 shrink-0 text-brand-teal-deep" aria-hidden="true" />
-        <span className="min-w-0 flex-1">
-          <span className="font-semibold">Pickup at {location.name}</span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <StatusDot kind={location.statusKind} />
-            {location.statusLabel}
-          </span>
-        </span>
-      </section>
-
       {current?.location.blockedReason ? (
         <Notice tone="warning" title="Checkout isn't available right now">
           {current.location.blockedReason}

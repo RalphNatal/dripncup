@@ -15,7 +15,6 @@
 import { CircleAlert, Minus, Plus } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { toast } from "sonner";
 
 import { SaveFavoriteFromSheet } from "@/components/favorites/save-favorite";
 import { DietaryChips, allergenSentence } from "@/components/menu/dietary";
@@ -38,6 +37,7 @@ import {
   visibleGroupIds,
   type ModifierSelection,
 } from "@/lib/pricing";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 export interface ProductCustomizerProps {

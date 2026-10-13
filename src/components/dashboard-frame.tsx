@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ToasterNow } from "@/components/lazy-toaster";
 import { SkipLink } from "@/components/skip-link";
 
 /**
@@ -11,6 +12,7 @@ export function DashboardFrame({ children }: { children: ReactNode }) {
   return (
     <>
       <SkipLink />
+      <ToasterNow />
       <main id="main" tabIndex={-1} className="flex flex-1 flex-col px-4 pt-safe pb-12 outline-none">
         <div className="pt-4">{children}</div>
       </main>

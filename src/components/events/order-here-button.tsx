@@ -8,9 +8,9 @@
 import { LoaderCircle, ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { selectLocation } from "@/lib/locations/actions";
+import { toast } from "@/lib/toast";
 
 export function OrderHereButton({ locationId, name }: { locationId: string; name: string }) {
   const router = useRouter();

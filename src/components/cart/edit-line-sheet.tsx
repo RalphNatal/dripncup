@@ -7,7 +7,6 @@
  */
 import { Pencil } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { ProductCustomizer } from "@/components/menu/product-customizer";
 import { ProductSkeleton } from "@/components/menu/skeletons";
@@ -20,6 +19,7 @@ import {
 import { useCartStore, type CartLine } from "@/lib/cart/store";
 import { loadProductForEditAction } from "@/lib/checkout/actions";
 import type { ProductPageData } from "@/lib/menu/queries";
+import { toast } from "@/lib/toast";
 
 type Loaded = { state: "loading" } | { state: "missing" } | { state: "ready"; data: ProductPageData };
 

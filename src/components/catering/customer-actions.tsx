@@ -10,7 +10,6 @@ import { CreditCard, MessageSquarePlus, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { textareaClass } from "@/components/admin/form-layout";
@@ -20,6 +19,7 @@ import {
   requestCateringChangesAction,
 } from "@/lib/catering/actions";
 import type { CateringStatus } from "@/lib/catering/status";
+import { toast } from "@/lib/toast";
 
 const secondary =
   "focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-full border px-5 text-base font-semibold hover:bg-muted";

@@ -19,7 +19,7 @@ import {
   updatePassword,
 } from "@/lib/auth/actions";
 import { IDLE } from "@/lib/auth/form-state";
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/auth/schemas";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/auth/constants";
 
 export function SignInForm({ next }: { next: string }) {
   const [state, action] = useActionState(signIn, IDLE);

@@ -9,7 +9,8 @@
  *     hydration mismatch this way, "Minified React error #418" in a
  *     production build, "Hydration failed ..." in dev);
  *   - logs a console error about hydration or a React error, or a Content
- *     Security Policy violation (anything the policy blocked); or
+ *     Security Policy violation (anything the policy blocked, including a
+ *     library quietly probing for eval); or
  *   - ends the test with HTML nesting browsers or React get wrong: links or
  *     buttons inside links or buttons, a block inside a <p>, a label in a
  *     label. (A <div> in a <p> from the server is split by the HTML parser
@@ -95,7 +96,18 @@ export const test = base.extend<{ allowedPageErrors: RegExp[]; pageGuard: void }
           }
         });
       };
-      const watchContext = (watched: BrowserContext) => {
+      const watchContext = async (watched: BrowserContext) => {
+        // Some violations never reach the console (a library probing for eval
+        // inside a try/catch); report every one the page sees.
+        await watched.addInitScript(() => {
+          // Our document only: init scripts also run in Stripe's frames, whose policies are Stripe's.
+          if (window.top !== window) return;
+          document.addEventListener("securitypolicyviolation", (event) => {
+            console.error(
+              `Content Security Policy violation: ${event.violatedDirective} ${event.blockedURI || ""} at ${event.sourceFile}:${event.lineNumber}`,
+            );
+          });
+        });
         watched.pages().forEach(watchPage);
         watched.on("page", watchPage);
       };
@@ -104,11 +116,11 @@ export const test = base.extend<{ allowedPageErrors: RegExp[]; pageGuard: void }
       const original = browser.newContext.bind(browser);
       const patched: Browser["newContext"] = async (...args) => {
         const made = await original(...args);
-        watchContext(made);
+        await watchContext(made);
         return made;
       };
       browser.newContext = patched;
-      watchContext(context);
+      await watchContext(context);
 
       try {
         await run();

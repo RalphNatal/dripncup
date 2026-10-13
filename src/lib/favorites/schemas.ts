@@ -7,14 +7,15 @@ import { z } from "zod";
 
 import { SPECIAL_INSTRUCTIONS_MAX } from "@/lib/pricing";
 
-export const FAVORITE_NAME_MAX = 40;
-export const FAVORITES_LIMIT = 50;
+import { FAVORITE_NAME_MAX, FAVORITE_NAME_REQUIRED, FAVORITE_NAME_TOO_LONG, FAVORITES_LIMIT } from "./names";
+
+export { FAVORITE_NAME_MAX, FAVORITES_LIMIT, defaultFavoriteName } from "./names";
 
 export const favoriteNameSchema = z
-  .string({ error: "Give your favorite a name." })
+  .string({ error: FAVORITE_NAME_REQUIRED })
   .trim()
-  .min(1, { error: "Give your favorite a name." })
-  .max(FAVORITE_NAME_MAX, { error: `Keep the name to ${FAVORITE_NAME_MAX} characters or fewer.` });
+  .min(1, { error: FAVORITE_NAME_REQUIRED })
+  .max(FAVORITE_NAME_MAX, { error: FAVORITE_NAME_TOO_LONG });
 
 const id = () => z.guid();
 
@@ -28,11 +29,6 @@ export const saveFavoriteSchema = z.object({
 });
 
 export type SaveFavoriteInput = z.input<typeof saveFavoriteSchema>;
-
-/** A favourite's name, prefilled from the product and cut to fit. */
-export function defaultFavoriteName(productName: string): string {
-  return productName.trim().slice(0, FAVORITE_NAME_MAX).trim();
-}
 
 export const LIMIT_MESSAGE = `You've saved ${FAVORITES_LIMIT} favorites, the most we can keep. Remove one to save another.`;
 export const DUPLICATE_MESSAGE = "You already have a favorite with that name. Try another.";

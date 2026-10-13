@@ -12,13 +12,13 @@ import { CircleAlert, Heart, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-r
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { toast } from "sonner";
 
 import { FavoriteNameForm } from "@/components/favorites/save-favorite";
 import { useCartStore } from "@/lib/cart/store";
 import { deleteFavoriteAction, renameFavoriteAction, reviewFavoriteAction } from "@/lib/favorites/actions";
 import type { FavoriteView, FavoritesList } from "@/lib/favorites/queries";
 import { formatCents } from "@/lib/money";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /** Checks one favourite live and, if it can be made, adds it to the cart. */

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
+import { Swirl } from "@/components/brand/logo";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,13 +50,15 @@ function Card({ className }: { className?: string }) {
 // Customer app
 // ---------------------------------------------------------------------------
 
+/** The hero's taglines are brand copy, not data: they show at once, in place. */
 export function HomeSkeleton() {
   return (
     <Loading label="your home page" className="mx-auto max-w-2xl space-y-5">
-      <div className="rounded-[2rem] bg-brand-wash px-6 pt-7 pb-8">
-        <Skeleton className="h-5 w-24 rounded-md bg-white/70" />
-        <Skeleton className="mt-3 h-10 w-64 max-w-full rounded-xl bg-white/70" />
-        <Skeleton className="mt-4 h-4 w-56 max-w-full rounded-md bg-white/70" />
+      <div className="relative overflow-hidden rounded-[2rem] bg-brand-wash px-6 pt-7 pb-8">
+        <Skeleton className="h-6 w-24 rounded-md bg-white/70" />
+        <p className="mt-1 font-heading text-4xl font-extrabold tracking-tight text-balance">{BRAND.taglines.primary}</p>
+        <Swirl className="mt-2 h-6 text-brand-magenta" />
+        <p className="mt-3 text-base text-foreground/80">{BRAND.taglines.secondary}</p>
         <Skeleton className="mt-6 h-12 w-44 rounded-full bg-white/70" />
       </div>
       <Card />

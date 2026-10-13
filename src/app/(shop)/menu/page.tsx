@@ -2,7 +2,7 @@ import { CalendarDays, CupSoda } from "lucide-react";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
-import { FavoritesRow } from "@/components/favorites/favorites-list";
+import { FavoritesRow } from "@/components/lazy-member";
 import { CollectionBanner, OrderAheadBanner, OrderingUnavailableBanner } from "@/components/menu/banners";
 import { MenuBrowser } from "@/components/menu/menu-browser";
 import { getCurrentProfile } from "@/lib/auth/dal";

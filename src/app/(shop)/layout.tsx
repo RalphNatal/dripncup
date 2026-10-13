@@ -29,7 +29,8 @@ export default async function ShopLayout({ children }: { children: ReactNode }) 
     <div className="flex min-h-dvh flex-col">
       <SkipLink />
       <AppHeader storefront={storefront} userId={userId} activeOrders={activeOrders} logoUrl={logoUrl} />
-      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 outline-none md:pt-8">
+      {/* At least a screen tall, so the footer starts below the fold and never jumps when a page streams in after its skeleton. */}
+      <main id="main" tabIndex={-1} className="mx-auto min-h-dvh w-full max-w-5xl flex-1 px-4 pt-4 outline-none md:pt-8">
         {children}
       </main>
       <SiteFooter />

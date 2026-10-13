@@ -4,14 +4,14 @@
  * Client-side providers mounted once at the root.
  *
  * TanStack Query owns all server data. The cart is Zustand and persists itself,
- * so it needs no provider.
+ * so it needs no provider. The toast area loads when the browser is idle:
+ * nothing in a first paint needs it (src/lib/toast.ts).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
+import { LazyToaster } from "@/components/lazy-toaster";
 import { PwaManager } from "@/components/pwa/pwa-manager";
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -37,11 +37,9 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={200}>
-        {children}
-        <Toaster position="top-center" richColors closeButton />
-        <PwaManager />
-      </TooltipProvider>
+      {children}
+      <LazyToaster />
+      <PwaManager />
     </QueryClientProvider>
   );
 }

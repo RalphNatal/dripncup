@@ -8,10 +8,11 @@
 import { Heart, LoaderCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
-import { toast } from "sonner";
 
 import { saveFavoriteAction, saveFavoriteFromOrderItemAction, type FavoriteResult } from "@/lib/favorites/actions";
-import { FAVORITE_NAME_MAX, defaultFavoriteName, favoriteNameSchema, type SaveFavoriteInput } from "@/lib/favorites/schemas";
+import { FAVORITE_NAME_MAX, checkFavoriteName, defaultFavoriteName } from "@/lib/favorites/names";
+import type { SaveFavoriteInput } from "@/lib/favorites/schemas";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 export function FavoriteNameForm({
@@ -34,13 +35,13 @@ export function FavoriteNameForm({
   const [pending, startTransition] = useTransition();
 
   function submit() {
-    const parsed = favoriteNameSchema.safeParse(name);
-    if (!parsed.success) {
-      setError(parsed.error.issues[0].message);
+    const checked = checkFavoriteName(name);
+    if (!checked.ok) {
+      setError(checked.message);
       return;
     }
     startTransition(async () => {
-      setError(await onSubmit(parsed.data));
+      setError(await onSubmit(checked.name));
     });
   }
 

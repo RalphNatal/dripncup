@@ -13,7 +13,6 @@
 import { ArrowRight, CircleAlert, LoaderCircle, MapPin, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { toast } from "sonner";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useCartHydrated } from "@/lib/cart/hooks";
@@ -22,6 +21,7 @@ import { selectLocation } from "@/lib/locations/actions";
 import { formatCents } from "@/lib/money";
 import { reviewReorderAction } from "@/lib/orders/actions";
 import { addableLines, type LineReview, type ReorderReview } from "@/lib/orders/reorder";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 export function ReorderButton({ orderId, className, compact = false }: { orderId: string; className?: string; compact?: boolean }) {

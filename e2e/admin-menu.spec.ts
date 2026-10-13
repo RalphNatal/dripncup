@@ -2,9 +2,7 @@
  * Phase 9: the menu editor and the spreadsheet import, end to end -- what
  * the admin builds is what the customer sees, orders and pays for.
  */
-import { devices } from "@playwright/test";
-
-import { expect, test, type Page } from "./support/test";
+import { devices, expect, test, type Page } from "./support/test";
 
 import { expectToast, retireProduct, signInAdmin } from "./support/admin";
 import { CARDS, fillCard, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
