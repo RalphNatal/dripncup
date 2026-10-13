@@ -340,7 +340,7 @@ export function CheckoutView(props: CheckoutViewProps) {
         </div>
       </Section>
 
-      <Section title="Your order" action={<Link href="/cart" className="focus-ring rounded-full px-3 py-2 text-sm font-semibold text-brand-teal-deep hover:bg-brand-teal-soft">Edit cart</Link>}>
+      <Section title="Your order" action={<Link href="/cart" className="focus-ring -my-1 inline-flex min-h-11 items-center rounded-full px-3 text-sm font-semibold text-brand-teal-deep hover:bg-brand-teal-soft">Edit cart</Link>}>
         {quote?.cart.blocked && quote.cart.location.canCheckout ? (
           <Notice title="Some items need attention">
             <Link href="/cart" className="font-semibold underline underline-offset-2">

@@ -1,8 +1,8 @@
 import "server-only";
 
 /**
- * Site content for the customer pages (About, privacy, terms, contact, the
- * logo) and the catering refund policy. Public rows, read fresh so an edit
+ * Site content for the customer pages (About, privacy, terms, the
+ * accessibility statement, contact, the logo) and the catering refund policy. Public rows, read fresh so an edit
  * shows at once; deduped within a request.
  */
 import { connection } from "next/server";
@@ -21,7 +21,7 @@ export type SiteContent = Record<ContentKey, string>;
 
 const EMPTY: SiteContent = {
   about: "", contact_phone: "", contact_email: "", instagram_url: "", facebook_url: "", logo_path: "",
-  privacy_policy: "", terms: "", refund_policy: "",
+  privacy_policy: "", terms: "", refund_policy: "", accessibility: "",
 };
 
 export const getSiteContent = cache(async (): Promise<SiteContent> => {

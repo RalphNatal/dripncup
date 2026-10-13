@@ -1,8 +1,9 @@
-import { ChefHat, ChevronRight, FileText, Gift, Heart, Info, KeyRound, LayoutDashboard, ShieldCheck, Store, UserX } from "lucide-react";
+import { Accessibility, ChefHat, ChevronRight, FileText, Gift, Heart, Info, KeyRound, LayoutDashboard, ShieldCheck, Store, UserX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { NotificationSettings } from "@/components/account/notification-settings";
 import { ProfileForm } from "@/components/account/profile-form";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { PageShell } from "@/components/page-shell";
@@ -12,9 +13,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/dal";
 import { ROLE_LABELS } from "@/lib/auth/roles";
 import { BRAND } from "@/lib/brand";
+import { listMyPushDevices } from "@/lib/push/subscriptions";
 import { formatPoints } from "@/lib/rewards/model";
 
-export const metadata: Metadata = { title: "Account" };
+export const metadata: Metadata = { title: "Account", robots: { index: false, follow: false } };
 
 function LinkRow({ href, icon, children }: { href: string; icon: ReactNode; children: ReactNode }) {
   return (
@@ -31,6 +33,7 @@ function LinkRow({ href, icon, children }: { href: string; icon: ReactNode; chil
 
 export default async function AccountPage() {
   const profile = await requireProfile("/account");
+  const devices = await listMyPushDevices();
   const prefs = (profile.notification_prefs ?? {}) as { order_ready_email?: boolean };
   const isStaff = profile.role === "staff" || profile.role === "admin";
 
@@ -81,6 +84,9 @@ export default async function AccountPage() {
         <LinkRow href="/about" icon={<Info aria-hidden="true" />}>
           About {BRAND.name}
         </LinkRow>
+        <LinkRow href="/accessibility" icon={<Accessibility aria-hidden="true" />}>
+          Accessibility
+        </LinkRow>
         <LinkRow href="/privacy" icon={<ShieldCheck aria-hidden="true" />}>
           Privacy policy
         </LinkRow>
@@ -92,6 +98,13 @@ export default async function AccountPage() {
       <div className="mt-6">
         <MemberCard code={profile.member_code} programName={BRAND.loyaltyProgramName} />
       </div>
+
+      <section aria-labelledby="notifications-heading" id="notifications" className="mt-8 scroll-mt-32">
+        <h2 id="notifications-heading" className="mb-3 text-xl font-bold">
+          Notifications
+        </h2>
+        <NotificationSettings devices={devices} />
+      </section>
 
       <section aria-labelledby="profile-heading" className="mt-8">
         <h2 id="profile-heading" className="sr-only">

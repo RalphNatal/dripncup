@@ -97,7 +97,7 @@ export function FavoritesRow({ list, className }: { list: FavoritesList; classNa
           <Heart className="size-5 text-brand-magenta-deep" aria-hidden="true" />
           Your favorites
         </h2>
-        <Link href="/account/favorites" className="focus-ring rounded text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
+        <Link href="/account/favorites" className="focus-ring -my-3 inline-flex min-h-11 items-center rounded px-1 text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
           See all
         </Link>
       </div>

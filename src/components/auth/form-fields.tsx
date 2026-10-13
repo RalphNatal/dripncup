@@ -111,7 +111,8 @@ export function CheckboxField({
         aria-describedby={error ? `${id}-error` : description ? `${id}-description` : undefined}
       />
       <FieldContent>
-        <FieldLabel htmlFor={id} className="font-normal">
+        {/* 44px tall (the margin gives the height back): the whole row is the target. */}
+        <FieldLabel htmlFor={id} className="-my-3 min-h-11 items-center font-normal">
           {label}
         </FieldLabel>
         {description ? (

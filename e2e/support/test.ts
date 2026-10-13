@@ -75,7 +75,10 @@ export const test = base.extend<{ allowedPageErrors: RegExp[]; pageGuard: void }
     async ({ context, browser, allowedPageErrors }, run) => {
       const problems: PageProblem[] = [];
       const pages = new Set<Page>();
-      const allowed = (text: string) => allowedPageErrors.some((pattern) => pattern.test(text));
+      // test.use({ allowedPageErrors: [/x/] }) arrives as the RegExp itself
+      // (Playwright reads a one-element array as [value]); accept both.
+      const patterns: RegExp[] = Array.isArray(allowedPageErrors) ? allowedPageErrors : [allowedPageErrors as unknown as RegExp];
+      const allowed = (text: string) => patterns.some((pattern) => pattern.test(text));
 
       const watchPage = (page: Page) => {
         if (pages.has(page)) return;

@@ -340,7 +340,8 @@ export function ProductCustomizer({ detail, location, ordering, layout, onAdded,
                 const unit = group.quantityUnit;
                 if (isStepperOnly(group)) {
                   return (
-                    <div key={option.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
+                    // Wraps the stepper under the name on the narrowest phones (320 px).
+                    <div key={option.id} className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
                       {label}
                       {price ? <span className="tabular text-sm text-muted-foreground">{price}</span> : null}
                       <Stepper
@@ -534,7 +535,8 @@ function Fieldset({
   const describedBy = [description ? `${id}-description` : null, error ? `${id}-error` : null].filter(Boolean).join(" ");
 
   return (
-    <fieldset id={id} aria-describedby={describedBy || undefined} aria-invalid={error ? true : undefined}>
+    // min-w-0: a fieldset is min-content wide by default and would push the sheet sideways.
+    <fieldset id={id} aria-describedby={describedBy || undefined} aria-invalid={error ? true : undefined} className="min-w-0">
       <legend className="flex w-full items-baseline justify-between gap-3">
         <span className="text-lg font-bold">{legend}</span>
         <span
@@ -607,7 +609,7 @@ function Stepper({
     "focus-ring inline-flex size-11 items-center justify-center rounded-full border bg-card text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
-    <div role="group" aria-label={name} className="flex shrink-0 items-center gap-1">
+    <div role="group" aria-label={name} className="ml-auto flex shrink-0 items-center gap-1">
       <button
         type="button"
         onClick={() => onChange(Math.max(min, value - 1))}

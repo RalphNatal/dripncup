@@ -30,6 +30,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { RouteFocus } from "@/components/route-focus";
+import { SkipLink } from "@/components/skip-link";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
@@ -151,12 +153,7 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-dvh flex-col lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <a
-        href="#admin-main"
-        className="focus-ring sr-only z-50 rounded-full bg-brand-teal-deep px-4 py-2 font-semibold text-white focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
-      >
-        Skip to content
-      </a>
+      <SkipLink target="admin-main" />
 
       {/* Phones and tablets: a top bar and a menu sheet. */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/95 px-4 pt-safe backdrop-blur lg:hidden">
@@ -201,6 +198,7 @@ export function AdminShell({
       <main id="admin-main" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 outline-none md:px-8">
         {children}
       </main>
+      <RouteFocus target="admin-main" />
     </div>
   );
 }

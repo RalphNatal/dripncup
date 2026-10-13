@@ -43,7 +43,7 @@ export const BRAND_COLORS = {
   teal: "#1ab3c0",
   /** Interactive; white text at 4.95:1. */
   tealDeep: "#0e7c86",
-  tealSoft: "#e6f7f9",
+  tealSoft: "#f0fafb",
   pink: "#f29bb8",
   pinkSoft: "#fdeef3",
   magenta: "#e0409b",

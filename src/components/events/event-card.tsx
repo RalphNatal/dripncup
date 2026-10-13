@@ -51,7 +51,7 @@ export function EventCard({ event, compact = false }: { event: PublicEvent; comp
       <div className="space-y-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h3 id={`event-${event.id}`} className="text-lg font-bold">
-            <Link href={`/events/${event.slug}`} className="focus-ring rounded hover:underline">
+            <Link href={`/events/${event.slug}`} className="focus-ring -my-2 inline-flex min-h-11 items-center rounded hover:underline">
               {event.name}
             </Link>
           </h3>

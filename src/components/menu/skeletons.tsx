@@ -4,7 +4,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function MenuSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading the menu" className="space-y-4">
+    <div role="status" aria-live="polite" className="space-y-4">
+      <span className="sr-only">Loading the menu…</span>
       <Skeleton className="h-9 w-32 rounded-xl" />
       <Skeleton className="h-12 w-full rounded-full" />
       <div className="flex gap-2 overflow-hidden">
@@ -42,7 +43,8 @@ function ProductCardSkeleton() {
 /** The product form, for the full page and inside the sheet. */
 export function ProductSkeleton({ inset = false }: { inset?: boolean }) {
   return (
-    <div aria-busy="true" aria-label="Loading" className="space-y-6">
+    <div role="status" aria-live="polite" className="space-y-6">
+      <span className="sr-only">Loading…</span>
       <Skeleton className={inset ? "aspect-[16/9] w-full rounded-none" : "aspect-[16/9] w-full rounded-3xl"} />
       <div className={inset ? "space-y-6 px-5 pb-6" : "space-y-6"}>
         <div className="space-y-2">

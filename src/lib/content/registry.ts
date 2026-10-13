@@ -11,7 +11,8 @@ export type ContentKey =
   | "logo_path"
   | "privacy_policy"
   | "terms"
-  | "refund_policy";
+  | "refund_policy"
+  | "accessibility";
 
 export interface ContentItem {
   key: ContentKey;
@@ -42,6 +43,8 @@ export const CONTENT_ITEMS: readonly ContentItem[] = [
     help: "Placeholder text until the cafe's reviewed terms are pasted in." },
   { key: "refund_policy", label: "Refund & cancellation policy", kind: "long", maxLength: 2000, shownOn: "catering pages and /terms",
     help: "Shown to catering customers before they pay and when they ask to cancel." },
+  { key: "accessibility", label: "Accessibility statement", kind: "long", maxLength: 20000, shownOn: "/accessibility",
+    help: "What the app does for accessibility and how to reach the cafe if something gets in the way. Review the starting text, and keep the contact route current." },
 ];
 
 export const CONTENT_KEYS = CONTENT_ITEMS.map((c) => c.key);

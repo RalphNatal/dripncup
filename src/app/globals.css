@@ -84,11 +84,37 @@
   --radius-4xl: calc(var(--radius) * 3);
 }
 
+/* Small moments of delight. Every one is decoration: used with motion-safe:,
+   and cut to nothing by the prefers-reduced-motion rule below anyway. */
+@theme {
+  --animate-cart-bump: cart-bump 450ms ease-out;
+  --animate-progress-fill: progress-fill 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-confetti: confetti 1100ms ease-out both;
+
+  /* The cart badge, when something is added. */
+  @keyframes cart-bump {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.4); }
+    100% { transform: scale(1); }
+  }
+
+  /* The rewards bar fills to where it is, from empty. */
+  @keyframes progress-fill {
+    from { width: 0; }
+  }
+
+  /* "Your order is ready": pieces fly out from the banner. */
+  @keyframes confetti {
+    0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(0.6); }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(1); }
+  }
+}
+
 :root {
   /* ---- Raw brand palette ---- */
   --brand-teal: #1ab3c0; /* hero fill; needs dark text (8.2:1 with ink) */
   --brand-teal-deep: #0e7c86; /* interactive; white text at 4.95:1 */
-  --brand-teal-soft: #e6f7f9; /* tinted surfaces */
+  --brand-teal-soft: #f0fafb; /* tinted surfaces; teal-deep text on it at 4.66:1 */
   --brand-pink: #f29bb8; /* light accent; dark text only */
   --brand-pink-soft: #fdeef3;
   --brand-magenta: #e0409b; /* large fills and decoration */
