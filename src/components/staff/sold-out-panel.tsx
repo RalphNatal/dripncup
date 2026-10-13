@@ -137,7 +137,7 @@ function SoldOutPanelContent({
                   key={value}
                   className={cn(
                     "flex min-h-14 cursor-pointer flex-col justify-center rounded-xl border-2 px-3 py-2",
-                    duration === value ? "border-brand-teal-deep bg-brand-teal-soft" : "bg-card",
+                    duration === value ? "border-staff-accent bg-brand-teal-soft" : "bg-card",
                   )}
                 >
                   <span className="flex items-center gap-2 text-base font-bold">

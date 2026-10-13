@@ -13,7 +13,7 @@ export function StaffNotice({
   actionLabel: string;
 }) {
   return (
-    <div className="mx-auto flex max-w-xl flex-col items-start gap-4 rounded-3xl border bg-card p-8" role="alert">
+    <div className="mx-4 mt-8 flex max-w-xl flex-col items-start gap-4 rounded-3xl border bg-card p-8 sm:mx-auto" role="alert">
       <h1 className="font-heading text-3xl font-extrabold">{title}</h1>
       <p className="text-lg">{body}</p>
       <Link

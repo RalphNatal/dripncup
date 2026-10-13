@@ -261,20 +261,33 @@ export function AuthFormSkeleton() {
 // Staff and admin
 // ---------------------------------------------------------------------------
 
+/** The staff screen: toolbar, then the queue (tabs on a phone, columns from 1024 px, Upcoming collapsed). */
 export function StaffSkeleton() {
+  const ticket = (key: number) => (
+    <div key={key} className="space-y-2 rounded-xl border bg-card p-3">
+      <Skeleton className="h-7 w-2/3 rounded-md" />
+      <Skeleton className="h-6 w-1/2 rounded-md" />
+      <Skeleton className="h-16 w-full rounded-md" />
+      <Skeleton className="h-14 w-full rounded-lg" />
+    </div>
+  );
   return (
-    <Loading label="the order queue" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <Skeleton className="h-14 w-40 rounded-2xl" />
+    <Loading label="the order queue" className="flex h-dvh flex-col gap-2 overflow-hidden p-2 sm:p-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border bg-card px-4 py-2">
+        <Skeleton className="h-9 w-56 rounded-xl" />
+        <Skeleton className="hidden h-12 w-72 rounded-xl md:block" />
+        <Skeleton className="ml-auto h-14 w-28 rounded-xl md:w-96" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, column) => (
-          <div key={column} className="space-y-3 rounded-3xl bg-muted/50 p-3">
-            <Skeleton className="h-7 w-28 rounded-lg" />
-            {Array.from({ length: column === 1 ? 2 : 1 }, (_, i) => (
-              <Skeleton key={i} className="h-40 w-full rounded-2xl" />
-            ))}
+      <Skeleton className="h-16 w-full rounded-2xl md:hidden" />
+      <div className="grid min-h-0 flex-1 gap-2.5 md:grid-cols-2 lg:grid-cols-[3.5rem_repeat(3,minmax(0,1fr))]">
+        <div className="hidden rounded-2xl bg-muted/60 lg:block" />
+        {Array.from({ length: 3 }, (_, column) => (
+          <div
+            key={column}
+            className={cn("space-y-2.5 rounded-2xl bg-muted/60 p-2", column === 1 && "hidden md:block", column === 2 && "hidden lg:block")}
+          >
+            <Skeleton className="h-8 w-32 rounded-lg" />
+            {Array.from({ length: column === 0 ? 2 : 1 }, (_, i) => ticket(i))}
           </div>
         ))}
       </div>

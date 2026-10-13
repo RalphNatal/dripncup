@@ -6,5 +6,5 @@ import { DashboardFrame } from "@/components/dashboard-frame";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default function Layout({ children }: { children: ReactNode }) {
-  return <DashboardFrame>{children}</DashboardFrame>;
+  return <DashboardFrame bleed>{children}</DashboardFrame>;
 }

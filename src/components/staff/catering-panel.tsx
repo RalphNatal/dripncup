@@ -72,7 +72,7 @@ export function CateringPanel({
                   <p className="tabular text-base text-muted-foreground">
                     {request.requestNumber}
                     {request.status === "fulfilled" ? (
-                      <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-brand-teal-soft px-2 py-0.5 font-bold text-brand-teal-deep">
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-lg bg-brand-teal-soft px-2 py-0.5 font-bold text-staff-accent">
                         <CircleCheck className="size-4" aria-hidden="true" />
                         Fulfilled
                       </span>
@@ -81,7 +81,7 @@ export function CateringPanel({
                 </div>
                 <p className="flex flex-wrap items-center gap-2 text-lg font-bold">
                   <span className="rounded-lg bg-muted px-2.5 py-1">{request.headcount} people</span>
-                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand-teal-soft px-2.5 py-1 text-brand-teal-deep">
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand-teal-soft px-2.5 py-1 text-staff-accent">
                     {request.fulfillment === "delivery" ? (
                       <Truck className="size-5" aria-hidden="true" />
                     ) : (
@@ -115,7 +115,7 @@ export function CateringPanel({
                 <p className="flex flex-wrap items-center gap-x-3 text-lg">
                   <span className="font-bold">{request.contactName ?? "No contact name"}</span>
                   {request.contactPhone ? (
-                    <a href={`tel:${request.contactPhone}`} className="inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-teal-deep underline">
+                    <a href={`tel:${request.contactPhone}`} className="inline-flex min-h-14 items-center gap-1.5 font-semibold text-staff-accent underline">
                       <Phone className="size-5" aria-hidden="true" />
                       {request.contactPhone}
                     </a>
@@ -126,7 +126,7 @@ export function CateringPanel({
                     type="button"
                     onClick={() => void fulfil(request)}
                     disabled={busyId === request.id}
-                    className="focus-ring inline-flex min-h-12 items-center gap-2 rounded-xl border-2 border-brand-teal-deep px-4 text-lg font-bold text-brand-teal-deep hover:bg-brand-teal-soft disabled:opacity-60"
+                    className="focus-ring inline-flex min-h-14 items-center gap-2 rounded-xl border-2 border-staff-accent px-4 text-lg font-bold text-staff-accent hover:bg-brand-teal-soft disabled:opacity-60"
                   >
                     <CircleCheck className="size-5" aria-hidden="true" />
                     {busyId === request.id ? "Saving…" : "Mark fulfilled"}
