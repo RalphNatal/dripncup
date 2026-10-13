@@ -94,6 +94,16 @@ export function formatErrorLog({ event, error, requestId, viewer, route, context
   });
 }
 
+/**
+ * The browser went away mid-response: a prefetch cancelled by a navigation,
+ * a closed tab. Next reports these as render errors, but nothing failed on
+ * our side, so they are not logged as errors.
+ */
+export function isClientDisconnect(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.message === "The destination stream closed early.";
+}
+
 /** Writes one error line now. For callers that already know the request. */
 export function writeErrorLog(line: LogLine) {
   console.error(formatErrorLog(line));

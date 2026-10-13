@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatErrorLog, redact } from "./log";
+import { formatErrorLog, isClientDisconnect, redact } from "./log";
 
 describe("redact", () => {
   it("masks emails, phone numbers and card-like numbers", () => {
@@ -56,5 +56,14 @@ describe("formatErrorLog", () => {
       code: "42501",
     });
     expect(JSON.parse(formatErrorLog({ event: "x", error: "plain" })).error.message).toBe("plain");
+  });
+});
+
+describe("isClientDisconnect", () => {
+  it("recognises a browser that went away, and nothing else", () => {
+    expect(isClientDisconnect(new Error("The destination stream closed early."))).toBe(true);
+    expect(isClientDisconnect(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }))).toBe(true);
+    expect(isClientDisconnect(new Error("connect ECONNREFUSED 127.0.0.1:54321"))).toBe(false);
+    expect(isClientDisconnect({ message: "The destination stream closed early." })).toBe(false);
   });
 });

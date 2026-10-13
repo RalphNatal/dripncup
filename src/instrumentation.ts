@@ -30,7 +30,8 @@ function header(headers: Record<string, string | string[] | undefined>, name: st
  * message and a digest, which this line carries too.
  */
 export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
-  const { writeErrorLog } = await import("./lib/log");
+  const { isClientDisconnect, writeErrorLog } = await import("./lib/log");
+  if (isClientDisconnect(error)) return;
   const { REQUEST_ID_HEADER, VIEWER_HEADER } = await import("./lib/request-headers");
   writeErrorLog({
     event: `unhandled.${context.routeType}`,
