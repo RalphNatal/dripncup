@@ -23,6 +23,7 @@ import { ACTIVE_ORDER_STATUSES, ORDER_STATUS_DESCRIPTIONS } from "@/lib/order-st
 import { paymentMethodLabel, type OrderDetail } from "@/lib/orders/detail";
 import { useLiveOrder } from "@/lib/orders/live";
 import { buildTimeline } from "@/lib/orders/timeline";
+import { QueryProvider } from "@/lib/query-client";
 import { pointsNoteState } from "@/lib/rewards/model";
 import { formatCafeDate, formatCafeDateTime, formatCafeTimeOfDay } from "@/lib/time";
 
@@ -38,7 +39,15 @@ function pickupLine(order: OrderDetail): string | null {
   return order.estimatedReadyAt ? `Ready around ${formatCafeTimeOfDay(new Date(order.estimatedReadyAt))}` : "We'll have it ready soon";
 }
 
-export function OrderTracker({ initial }: { initial: OrderDetail }) {
+export function OrderTracker(props: Parameters<typeof OrderTrackerContent>[0]) {
+  return (
+    <QueryProvider>
+      <OrderTrackerContent {...props} />
+    </QueryProvider>
+  );
+}
+
+function OrderTrackerContent({ initial }: { initial: OrderDetail }) {
   const { order, live } = useLiveOrder(initial);
   const timeline = useMemo(() => buildTimeline(order), [order]);
   const active = (ACTIVE_ORDER_STATUSES as readonly string[]).includes(order.status);

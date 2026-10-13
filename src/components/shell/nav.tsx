@@ -3,19 +3,22 @@
 /**
  * The five customer tabs: a bottom tab bar on phones, links in the header
  * from `md` up. One list, two presentations. Orders carries a live dot
- * while one of the customer's orders is on its way (useActiveOrders: the
- * same subscription the Home cards use). The shop layout reads the active
- * orders on the server and passes them in, so the first render in the
- * browser matches the HTML; Realtime takes over after that.
+ * while one of the customer's orders is on its way (LiveOrderDot, loaded for
+ * signed-in customers only). The shop layout reads the active orders on the
+ * server and passes them in, so the first render in the browser matches the
+ * HTML; Realtime takes over after that.
  */
 import { CircleUserRound, CupSoda, Gift, House, Receipt, type LucideIcon } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { CUSTOMER_TABS } from "@/lib/brand";
 import type { OrderListItem } from "@/lib/orders/list";
-import { useActiveOrders } from "@/lib/orders/live";
 import { cn } from "@/lib/utils";
+
+// Its own chunk: a guest never needs the live-order code or TanStack Query.
+const LiveOrderDot = dynamic(() => import("@/components/shell/live-order-dot").then((m) => m.LiveOrderDot));
 
 const ICONS: Record<(typeof CUSTOMER_TABS)[number]["href"], LucideIcon> = {
   "/": House,
@@ -29,28 +32,8 @@ function isActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** True while an order is between Placed and Ready. */
-function useOrderInProgress(userId: string | null, initial: OrderListItem[]): { inProgress: boolean; ready: boolean } {
-  const orders = useActiveOrders(userId, initial);
-  return { inProgress: orders.length > 0, ready: orders.some((o) => o.status === "ready") };
-}
-
-function OrderDot({ ready, className }: { ready: boolean; className?: string }) {
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        data-testid="orders-dot"
-        className={cn("size-2.5 rounded-full ring-2 ring-background", ready ? "bg-brand-magenta-deep" : "bg-brand-teal", className)}
-      />
-      <span className="sr-only">{ready ? " (order ready)" : " (order in progress)"}</span>
-    </>
-  );
-}
-
 export function BottomTabs({ userId, activeOrders }: { userId: string | null; activeOrders: OrderListItem[] }) {
   const pathname = usePathname();
-  const orders = useOrderInProgress(userId, activeOrders);
 
   return (
     <nav
@@ -78,8 +61,8 @@ export function BottomTabs({ userId, activeOrders }: { userId: string | null; ac
                   )}
                 >
                   <Icon className="size-5" aria-hidden="true" />
-                  {href === "/orders" && orders.inProgress ? (
-                    <OrderDot ready={orders.ready} className="absolute top-0 right-2.5" />
+                  {href === "/orders" && userId ? (
+                    <LiveOrderDot userId={userId} initial={activeOrders} className="absolute top-0 right-2.5" />
                   ) : null}
                 </span>
                 {label}
@@ -102,7 +85,6 @@ export function DesktopNav({
   className?: string;
 }) {
   const pathname = usePathname();
-  const orders = useOrderInProgress(userId, activeOrders);
 
   return (
     <nav aria-label="Main" className={className}>
@@ -120,7 +102,7 @@ export function DesktopNav({
                 )}
               >
                 {label}
-                {href === "/orders" && orders.inProgress ? <OrderDot ready={orders.ready} /> : null}
+                {href === "/orders" && userId ? <LiveOrderDot userId={userId} initial={activeOrders} /> : null}
               </Link>
             </li>
           );

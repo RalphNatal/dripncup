@@ -39,6 +39,7 @@ import { getLocationStatus, isAcceptingOrders, statusLabel, todaysHoursText } fr
 import { useOrderChanges } from "@/lib/orders/live";
 import { formatCents } from "@/lib/money";
 import type { OrderStatus } from "@/lib/order-status";
+import { QueryProvider } from "@/lib/query-client";
 import { cafeDateKey, startOfCafeDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +95,15 @@ const EMPTY_COLUMN_TEXT: Record<QueueColumn, string> = {
   ready: "Nothing waiting for pickup.",
 };
 
-export function StaffDashboard({
+export function StaffDashboard(props: Parameters<typeof StaffDashboardContent>[0]) {
+  return (
+    <QueryProvider>
+      <StaffDashboardContent {...props} />
+    </QueryProvider>
+  );
+}
+
+function StaffDashboardContent({
   location,
   options,
   viewer,

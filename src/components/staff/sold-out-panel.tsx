@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { Closure, WeeklyHours } from "@/lib/locations/status";
+import { QueryProvider } from "@/lib/query-client";
 import { formatCafeDateTime, formatCafeTimeOfDay, cafeDateKey, addDays } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,15 @@ function flagFor(item: SellableItem, flags: readonly AvailabilityFlag[], now: Da
   );
 }
 
-export function SoldOutPanel({
+export function SoldOutPanel(props: Parameters<typeof SoldOutPanelContent>[0]) {
+  return (
+    <QueryProvider>
+      <SoldOutPanelContent {...props} />
+    </QueryProvider>
+  );
+}
+
+function SoldOutPanelContent({
   open,
   onOpenChange,
   location,

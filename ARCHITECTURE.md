@@ -2133,7 +2133,9 @@ Contrast: deep teal on the teal tint was 4.48:1. The tint is now `#f0fafb`
 `npm run lighthouse` (`scripts/lighthouse.mjs`) builds, serves on port 3200
 and runs Lighthouse's mobile preset on Home, Menu, a product page, Cart,
 Rewards, Events and Catering, three runs each, median per category, failing
-below 90. Cart is disallowed in robots.txt on purpose, which "Page is blocked
+below 90. The report kept, and the LCP / TBT / CLS printed, are the run
+with the median performance score; a run Lighthouse itself fails to record
+(`NO_NAVSTART` and the like) is tried again. Cart is disallowed in robots.txt on purpose, which "Page is blocked
 from indexing" always fails, so that one audit is left out of Cart's SEO
 score (printed every run).
 
@@ -2174,6 +2176,13 @@ What moved it (all first-load JavaScript, which moves LCP and TBT together):
   `next/dynamic` from client modules when they are wanted.
 - **Toasts on idle.** Sonner loads when the browser is idle or a toast is
   shown; no Radix Tooltip provider (nothing used it).
+- **TanStack Query only where data is live.** It was a root provider, so
+  every page loaded it, though only the tracker, the active-order cards,
+  the Orders-tab dot and the staff screen use it. Each of those now wraps
+  itself in `QueryProvider` over one shared browser client
+  (`src/lib/query-client.tsx`; the cache is still shared), and the tab dot
+  loads only for signed-in customers: about 14 KB (compressed) less on
+  every page a guest opens.
 - **The largest paint, sooner.** Home's skeleton shows the real taglines; the
   cart shows the pickup location and instructions from the server before the
   saved cart is read.

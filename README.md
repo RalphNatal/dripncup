@@ -1375,7 +1375,8 @@ src/
     skip-link.tsx route-focus.tsx  Skip to content; focus moves to the page on navigation
     lazy-member.tsx    Signed-in-only parts of Home and Menu, loaded after first paint
     structured-data.tsx  JSON-LD (the cafe, with hours from the database)
-    providers.tsx      TanStack Query + the lazily loaded Toaster + PWA manager
+    providers.tsx      The lazily loaded Toaster + PWA manager (TanStack Query is
+                       per live island: src/lib/query-client.tsx)
   lib/
     pricing/           Shared pricing + validation engine (pure; client and server)
     menu/              Catalogue (cached), sold-out (live), page models, search

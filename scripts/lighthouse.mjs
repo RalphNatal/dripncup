@@ -172,28 +172,37 @@ async function main() {
     const results = [];
     for (const page of pages) {
       const scores = Object.fromEntries(CATEGORIES.map((c) => [c, []]));
-      let lastAudits = null;
+      const done = [];
       for (let run = 1; run <= runs; run += 1) {
         log(`${page.name} (${page.path}) run ${run}/${runs}`);
-        const result = await lighthouse(`${base}${page.path}`, {
-          port: chrome.port,
-          output: ["html", "json"],
-          onlyCategories: CATEGORIES,
-          ...(page.skipAudits ? { skipAudits: page.skipAudits } : {}),
-          logLevel: "error",
-        });
-        if (!result) throw new Error(`Lighthouse returned nothing for ${page.path}`);
-        const { lhr, report } = result;
-        if (lhr.runtimeError) throw new Error(`${page.path}: ${lhr.runtimeError.message}`);
-        for (const category of CATEGORIES) scores[category].push(Math.round((lhr.categories[category]?.score ?? 0) * 100));
-        lastAudits = lhr;
-        if (run === runs) {
-          writeFileSync(join(OUT_DIR, `${page.name}.html`), report[0]);
-          writeFileSync(join(OUT_DIR, `${page.name}.json`), report[1]);
+        // Lighthouse now and then fails to record a trace (NO_NAVSTART and
+        // the like); that says nothing about the page, so try that run again.
+        let result = null;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          result = await lighthouse(`${base}${page.path}`, {
+            port: chrome.port,
+            output: ["html", "json"],
+            onlyCategories: CATEGORIES,
+            ...(page.skipAudits ? { skipAudits: page.skipAudits } : {}),
+            logLevel: "error",
+          });
+          if (!result) throw new Error(`Lighthouse returned nothing for ${page.path}`);
+          if (!result.lhr.runtimeError) break;
+          if (attempt === 3) throw new Error(`${page.path}: ${result.lhr.runtimeError.message}`);
+          log(`${page.path}: ${result.lhr.runtimeError.code}, trying that run again`);
         }
+        const { lhr, report } = result;
+        for (const category of CATEGORIES) scores[category].push(Math.round((lhr.categories[category]?.score ?? 0) * 100));
+        done.push({ lhr, report });
       }
       const summary = Object.fromEntries(CATEGORIES.map((c) => [c, median(scores[c])]));
-      const metrics = lastAudits?.audits ?? {};
+      // The report and the LCP / TBT / CLS shown are the run whose
+      // performance score is the median, so they match the table.
+      const performance = (r) => Math.round((r.lhr.categories.performance?.score ?? 0) * 100);
+      const typical = [...done].sort((a, b) => Math.abs(performance(a) - summary.performance) - Math.abs(performance(b) - summary.performance))[0];
+      writeFileSync(join(OUT_DIR, `${page.name}.html`), typical.report[0]);
+      writeFileSync(join(OUT_DIR, `${page.name}.json`), typical.report[1]);
+      const metrics = typical.lhr.audits;
       results.push({
         ...page,
         scores: summary,

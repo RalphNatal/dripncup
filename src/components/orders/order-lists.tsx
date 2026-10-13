@@ -16,6 +16,7 @@ import { loadMorePastOrdersAction } from "@/lib/orders/actions";
 import type { OrderListItem } from "@/lib/orders/list";
 import { useActiveOrders } from "@/lib/orders/live";
 import type { PastOrdersPage } from "@/lib/orders/queries";
+import { QueryProvider } from "@/lib/query-client";
 import { formatCafeDate, formatCafeDateWithYear, formatCafeTimeOfDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +33,15 @@ function etaLine(order: OrderListItem): string {
  * One card per order in Placed through Ready, stacked, each linking to its
  * tracker. Live: a status change anywhere shows up here without a reload.
  */
-export function ActiveOrderCards({
+export function ActiveOrderCards(props: Parameters<typeof ActiveOrderCardsContent>[0]) {
+  return (
+    <QueryProvider>
+      <ActiveOrderCardsContent {...props} />
+    </QueryProvider>
+  );
+}
+
+function ActiveOrderCardsContent({
   userId,
   initial,
   heading,
