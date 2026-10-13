@@ -6,7 +6,7 @@ import { expect, test } from "./support/test";
 
 import { expectToast, honoluluWeekday, signInAdmin } from "./support/admin";
 import { honoluluAt, honoluluDate, resetClock, setClock } from "./support/catering";
-import { CARDS, addFromMenu, fillCard, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
+import { CARDS, addFromMenu, clickPay, fillCard, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
 import { createCustomer, db, must } from "./support/db";
 import { makeCafeAlwaysOpen } from "./support/storefront";
 import { arrangePendingOrder, deliver, fixtureEvent, relayRealEvent, stripe } from "./support/stripe";
@@ -90,7 +90,7 @@ test.describe("promotions", () => {
     await shopper.getByRole("button", { name: "Apply" }).click();
     await expect(shopper.getByText(`Promo (${code})`)).toBeVisible();
     await fillCard(shopper, CARDS.visa);
-    await payButton(shopper).click();
+    await clickPay(shopper);
     const intent = await paymentIntentFromUrl(shopper);
     await relayRealEvent(request, "payment_intent.succeeded", intent, { since });
     await expect(shopper.getByRole("heading", { name: "Mahalo!" })).toBeVisible({ timeout: 20_000 });

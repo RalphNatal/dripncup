@@ -9,7 +9,7 @@
  */
 import { expect, test, type Browser, type Page } from "./support/test";
 
-import { CARDS, addFromMenu, fillCard, orderIdFromUrl, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
+import { CARDS, addFromMenu, clickPay, fillCard, orderIdFromUrl, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
 import { createCustomer, db, must } from "./support/db";
 import { BARISTA, advance, arrangePlacedOrder, closeClients, signedInClient } from "./support/orders";
 import { openStaffQueue, ticket } from "./support/staff";
@@ -106,7 +106,7 @@ test.describe("Overflow Rewards", () => {
     await expect(payButton(page)).toHaveText("Pay $4.61");
 
     await fillCard(page, CARDS.visa);
-    await payButton(page).click();
+    await clickPay(page);
     const intent = await paymentIntentFromUrl(page);
     await relayRealEvent(request, "payment_intent.succeeded", intent, { since });
     await expect(page.getByRole("heading", { name: "Mahalo!" })).toBeVisible({ timeout: 20_000 });
@@ -148,7 +148,7 @@ test.describe("Overflow Rewards", () => {
     await applyReward(page, "Free drink");
 
     await fillCard(page, CARDS.declined);
-    await payButton(page).click();
+    await clickPay(page);
     await expect(page.getByRole("alert").filter({ hasText: /declined/i })).toBeVisible({ timeout: 30_000 });
     // The reward stays on the order for a retry: this checkout holds the points.
     await expect(rewardOption(page, "Free drink")).toHaveAttribute("data-state", "applied");

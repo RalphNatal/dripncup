@@ -5,7 +5,7 @@
 import { devices, expect, test, type Page } from "./support/test";
 
 import { expectToast, retireProduct, signInAdmin } from "./support/admin";
-import { CARDS, fillCard, payButton, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
+import { CARDS, clickPay, fillCard, paymentIntentFromUrl, signIn, waitForCheckout } from "./support/checkout";
 import { createCustomer, db, must } from "./support/db";
 import { arrangePlacedOrder, signedInClient } from "./support/orders";
 import { relayRealEvent } from "./support/stripe";
@@ -82,7 +82,7 @@ test.describe("product editor", () => {
       await shopper.goto("/checkout");
       await waitForCheckout(shopper);
       await fillCard(shopper, CARDS.visa);
-      await payButton(shopper).click();
+      await clickPay(shopper);
       const intent = await paymentIntentFromUrl(shopper);
       await relayRealEvent(request, "payment_intent.succeeded", intent, { since });
       await expect(shopper.getByRole("heading", { name: "Mahalo!" })).toBeVisible({ timeout: 20_000 });

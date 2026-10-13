@@ -10,6 +10,7 @@ import {
   CARDS,
   addFromMenu,
   answer3ds,
+  clickPay,
   fillCard,
   orderIdFromUrl,
   payButton,
@@ -45,7 +46,7 @@ test.describe("checkout", () => {
     await expect(payButton(page)).toHaveText(`Pay ${total}`);
 
     await fillCard(page, CARDS.visa);
-    await payButton(page).click();
+    await clickPay(page);
 
     const intent = await paymentIntentFromUrl(page);
     await relayRealEvent(request, "payment_intent.succeeded", intent, { since });
@@ -80,7 +81,7 @@ test.describe("checkout", () => {
     await waitForCheckout(page);
 
     await fillCard(page, CARDS.threeDSecure);
-    await payButton(page).click();
+    await clickPay(page);
     await answer3ds(page, "Complete");
 
     const intent = await paymentIntentFromUrl(page);
@@ -98,14 +99,14 @@ test.describe("checkout", () => {
     await waitForCheckout(page);
 
     await fillCard(page, CARDS.declined);
-    await payButton(page).click();
+    await clickPay(page);
     await expect(page.getByRole("alert").filter({ hasText: /declined/i })).toBeVisible({ timeout: 30_000 });
     await expect(payButton(page)).toBeEnabled();
     const pending = await ordersFor(user.id);
     expect(pending.map((o) => o.status)).toEqual(["pending_payment"]);
 
     await fillCard(page, CARDS.visa);
-    await payButton(page).click();
+    await clickPay(page);
     const intent = await paymentIntentFromUrl(page);
     await relayRealEvent(request, "payment_intent.succeeded", intent, { since });
     await expect(page.getByRole("heading", { name: "Mahalo!" })).toBeVisible({ timeout: 20_000 });

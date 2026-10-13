@@ -34,6 +34,37 @@ export function payButton(page: Page) {
 }
 
 /**
+ * Clicks Pay until the page hears it. For a second or so after a card is
+ * typed, Stripe.js swallows a click aimed at Pay: nothing reaches our page
+ * (and Playwright, watching only our document, reports it done). A
+ * swallowed click changes nothing, so clicking again is what a person would
+ * do; the page ignores a second submit while one is in flight. Heard means:
+ * Processing, a new or changed error, or a new address (3-D Secure, the
+ * confirmation page).
+ */
+export async function clickPay(page: Page) {
+  const pay = payButton(page);
+  const alerts = page.locator("p[role=alert]");
+  const before = { url: page.url(), alerts: (await alerts.allTextContents()).join("|") };
+  const heard = async () =>
+    page.url() !== before.url ||
+    (await alerts.allTextContents().catch(() => [])).join("|") !== before.alerts ||
+    /^Processing/.test((await pay.textContent({ timeout: 500 }).catch(() => "")) ?? "");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (attempt === 0 || (await pay.isEnabled().catch(() => false))) await pay.click();
+    const took = await expect
+      .poll(heard, { timeout: 2_500, intervals: [50] })
+      .toBe(true)
+      .then(
+        () => true,
+        () => false,
+      );
+    if (took) return;
+  }
+  throw new Error("Pay never took the click");
+}
+
+/**
  * The Stripe iframe holding the card form. Found by what it contains: Stripe
  * renders several iframes and their titles change between loads.
  */

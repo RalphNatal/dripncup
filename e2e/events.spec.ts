@@ -67,7 +67,7 @@ test.describe("pop-up events", () => {
     await expect(live).toContainText("Open now");
     await live.getByRole("button", { name: "Order for pickup here" }).click();
     await page.waitForURL("**/menu");
-    await expect(page.getByText(`Pickup at ${name}`)).toBeVisible();
+    await expect(page.getByText(`Pickup at ${name}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Cold Brew", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "POG Refresher", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Latte", exact: true })).toHaveCount(0);
@@ -77,7 +77,7 @@ test.describe("pop-up events", () => {
     await page.goto("/events");
     await expect(page.getByText(name)).toHaveCount(0);
     await page.goto("/menu");
-    await expect(page.getByText(`Pickup at ${name}`)).toHaveCount(0);
+    await expect(page.getByText(`Pickup at ${name}`, { exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Latte", exact: true })).toBeVisible();
 
     // Unpublished, even inside its window: gone.
