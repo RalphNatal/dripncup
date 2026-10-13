@@ -20,6 +20,7 @@ import {
   column,
   createStaff,
   makeEventLiveToday,
+  openStaffPanel,
   openStaffQueue,
   prints,
   setStaffSetting,
@@ -106,6 +107,11 @@ test.describe("the live queue @tablet", () => {
     await expect(card.getByTestId("allergens")).toContainText("Gluten");
     await expect(page.getByTestId("new-order-alert")).toBeVisible();
     await expect(page).toHaveTitle(/^\(\d+\) New order/);
+    // A slim strip in the bottom dock, not a banner across the screen; the new ticket is outlined.
+    const strip = (await page.getByTestId("new-order-alert").boundingBox())!;
+    expect(strip.height).toBeLessThanOrEqual(72);
+    expect(strip.width).toBeLessThanOrEqual(600);
+    await expect(card).toHaveClass(/staff-flash/);
 
     // It rang on arrival and keeps ringing.
     await expect.poll(() => alertCount(page), { timeout: 5_000 }).toBeGreaterThan(before);
@@ -294,6 +300,143 @@ test.describe("the live queue @tablet", () => {
     await dialog.getByRole("button", { name: "Print ticket" }).click();
     await expect.poll(async () => (await prints(page)).length).toBe(2);
     expect((await prints(page))[1].kind).toBe("ticket");
+  });
+});
+
+test.describe("layout, settings and keys @tablet", () => {
+  test("ticket density and the dark counter theme are remembered on this device", async ({ page }) => {
+    const dashboard = await openStaffQueue(page, BARISTA);
+    await expect(dashboard).toHaveAttribute("data-density", "comfortable");
+    await expect(dashboard).toHaveAttribute("data-theme", "light");
+    await expect(page.locator("html")).not.toHaveClass(/staff-dark/);
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByText("Compact", { exact: true }).click();
+    await page.getByText("Dark", { exact: true }).click();
+    await expect(page.getByRole("radio", { name: "Compact" })).toBeChecked();
+    await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked();
+    await expect(dashboard).toHaveAttribute("data-density", "compact");
+    await expect(dashboard).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("html")).toHaveClass(/staff-dark/);
+    await page.keyboard.press("Escape");
+
+    // A new visit on this device starts the same way, Start shift screen included.
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(/staff-dark/);
+    await page.getByRole("button", { name: "Start shift" }).click();
+    await expect(dashboard).toHaveAttribute("data-density", "compact");
+    await expect(dashboard).toHaveAttribute("data-theme", "dark");
+
+    // The customer app never gets the staff theme.
+    await page.goto("/menu");
+    await expect(page.locator("html")).not.toHaveClass(/staff-dark/);
+  });
+
+  test("the detail opens beside the queue on a wide screen, over it on a tablet, and full screen on a phone", async ({ page }) => {
+    const user = await createCustomer("staff-detail");
+    const { orderNumber } = await arrangePlacedOrder({ userId: user.id, cupName: "Haunani", lines: [LATTE] });
+    await openStaffQueue(page, BARISTA);
+
+    // 1280 px: docked beside the queue, which stays usable.
+    await ticket(page, orderNumber).getByRole("button", { name: /^Open order/ }).click();
+    const detail = page.getByTestId("ticket-detail");
+    await expect(detail).toHaveAttribute("data-variant", "panel");
+    await expect(detail.getByRole("heading", { name: "Haunani" })).toBeVisible();
+    await expect(ticket(page, orderNumber)).toHaveClass(/ring-3/);
+    const panel = (await detail.boundingBox())!;
+    const board = (await page.getByTestId("queue-board").boundingBox())!;
+    expect(panel.x).toBeGreaterThanOrEqual(board.x + board.width);
+    await expect(ticket(page, orderNumber).getByRole("button", { name: "Accept", exact: true })).toBeVisible();
+    await expect(page.locator("[data-slot=dialog-overlay], [data-state=open][role=dialog]")).toHaveCount(0);
+    // Escape closes it and puts focus back on the ticket.
+    await page.keyboard.press("Escape");
+    await expect(detail).toBeHidden();
+    await expect(ticket(page, orderNumber)).toBeFocused();
+
+    // A tablet (1024 px): a sheet over the right of the queue.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await ticket(page, orderNumber).getByRole("button", { name: /^Open order/ }).click();
+    await expect(detail).toHaveAttribute("data-variant", "sheet");
+    await page.keyboard.press("Escape");
+    await expect(detail).toBeHidden();
+
+    // A phone: the whole screen.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("queue-board")).toHaveAttribute("data-layout", "phone");
+    await ticket(page, orderNumber).getByRole("button", { name: /^Open order/ }).click();
+    await expect(detail).toHaveAttribute("data-variant", "fullscreen");
+    const full = (await detail.boundingBox())!;
+    expect(Math.round(full.width)).toBe(390);
+    expect(Math.round(full.height)).toBe(844);
+    await detail.getByRole("button", { name: "Close" }).click();
+    await expect(detail).toBeHidden();
+  });
+
+  test("an empty Upcoming column shrinks to a strip, and opens up when a scheduled order arrives", async ({ page }) => {
+    // Start from no scheduled orders waiting at the cafe.
+    const cafeId = await locationIdBySlug(SEEDED.cafeSlug);
+    const waiting = must(
+      await db().from("orders").select("id").eq("location_id", cafeId).eq("status", "placed").eq("pickup_type", "scheduled"),
+      "scheduled",
+    );
+    for (const { id } of waiting) await forceStatus(id, ["accepted", "preparing", "ready", "picked_up"]);
+
+    await openStaffQueue(page, BARISTA);
+    const strip = page.getByTestId("upcoming-collapsed");
+    await expect(strip).toBeVisible();
+    expect((await strip.boundingBox())!.width).toBeLessThan(80);
+    await expect(page.getByTestId("column-upcoming")).toHaveCount(0);
+    // The other three columns share the room.
+    expect((await column(page, "new").boundingBox())!.width).toBeGreaterThan(300);
+
+    const user = await createCustomer("staff-upcoming");
+    const { orderId, orderNumber } = await arrangePlacedOrder({
+      userId: user.id,
+      cupName: "Makoa",
+      scheduledFor: new Date(Date.now() + 3 * 60 * 60_000),
+      lines: [LATTE],
+    });
+    try {
+      await expect(column(page, "upcoming").locator(`[data-order-number="${orderNumber}"]`)).toBeVisible({ timeout: 15_000 });
+      await expect(strip).toBeHidden();
+    } finally {
+      await forceStatus(orderId, ["accepted", "preparing", "ready", "picked_up"]);
+    }
+  });
+
+  test("keyboard: arrows move between tickets, Enter accepts, A acknowledges, ? lists the keys, typing is left alone", async ({ page }) => {
+    const user = await createCustomer("staff-keys");
+    await openStaffQueue(page, BARISTA);
+    const alert = page.getByTestId("new-order-alert");
+    if (await alert.isVisible()) await page.keyboard.press("a");
+    await expect(alert).toBeHidden();
+
+    const { orderId, orderNumber } = await arrangePlacedOrder({ userId: user.id, cupName: "Kanoa", lines: [LATTE] });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+
+    // Typing an "a" into a search box does not acknowledge anything.
+    await openStaffPanel(page, "Completed");
+    await page.getByPlaceholder("Order number or cup name").fill("a");
+    await page.keyboard.press("Escape");
+    await expect(page.getByPlaceholder("Order number or cup name")).toBeHidden();
+    await expect(alert).toBeVisible();
+
+    await page.keyboard.press("?");
+    await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.keyboard.press("a");
+    await expect(alert).toBeHidden();
+
+    // The arrows walk the New column until they reach the new ticket.
+    const target = ticket(page, orderNumber);
+    await page.keyboard.press("ArrowRight");
+    for (let i = 0; i < 60 && !(await target.evaluate((el) => el === document.activeElement)); i++) {
+      await page.keyboard.press("ArrowDown");
+    }
+    await expect(target).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => must(await db().from("orders").select("status").eq("id", orderId).single(), "status").status).toBe("accepted");
   });
 });
 

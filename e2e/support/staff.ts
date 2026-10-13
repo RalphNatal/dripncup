@@ -48,6 +48,16 @@ export async function openStaffQueue(page: Page, email: string, { location }: { 
   return dashboard;
 }
 
+/**
+ * Opens one of the toolbar's panels (Sold out, Catering, Completed). On a
+ * tablet the button is on the toolbar; on a phone it is in the Menu sheet.
+ */
+export async function openStaffPanel(page: Page, name: string | RegExp) {
+  const onToolbar = page.getByTestId("staff-dashboard").getByRole("button", { name, exact: typeof name === "string" });
+  if (!(await onToolbar.isVisible())) await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name, exact: typeof name === "string" }).filter({ visible: true }).first().click();
+}
+
 export function ticket(page: Page, orderNumber: string) {
   return page.locator(`[data-testid=ticket][data-order-number="${orderNumber}"]`).filter({ visible: true });
 }

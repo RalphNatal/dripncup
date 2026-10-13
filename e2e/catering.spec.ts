@@ -27,7 +27,7 @@ import {
 import { CARDS, cardFrame, fillCard, signIn } from "./support/checkout";
 import { SEEDED, TEST_PASSWORD, createCustomer, db, must } from "./support/db";
 import { BARISTA, mailBody, mailTo } from "./support/orders";
-import { openStaffQueue } from "./support/staff";
+import { openStaffPanel, openStaffQueue } from "./support/staff";
 import { relayRealEvent } from "./support/stripe";
 
 async function waitForMailWithSubject(address: string, subject: string, timeoutMs = 25_000) {
@@ -149,13 +149,13 @@ test.describe("catering", () => {
     const staffContext = await browser.newContext();
     const staff = await staffContext.newPage();
     await openStaffQueue(staff, BARISTA);
-    await staff.getByRole("button", { name: /^Catering/ }).click();
+    await openStaffPanel(staff, /^Catering/);
     await expect(staff.getByTestId("catering-list")).not.toContainText(arranged.number);
 
     await setClock(staffContext, new Date(arranged.eventAt.getTime() - 3 * 60 * 60_000));
     await staff.reload();
     await staff.getByRole("button", { name: "Start shift" }).click();
-    await staff.getByRole("button", { name: /^Catering/ }).click();
+    await openStaffPanel(staff, /^Catering/);
     const prep = staff.getByTestId("catering-request").filter({ hasText: arranged.number });
     await expect(prep).toBeVisible();
     await expect(prep).toContainText("Signature drink: Lilikoʻi Sunrise");

@@ -165,6 +165,52 @@ test.describe("axe: no serious or critical WCAG 2.1 AA violations", () => {
     expectNone(problems);
   });
 
+  test("the staff dashboard in the dark counter theme, compact, with late tickets @tablet", async ({ page }) => {
+    const user = await createCustomer("a11y-staff-dark");
+    // One on time, one running behind (amber), one late (red), one being made late.
+    const onTime = await arrangePlacedOrder({ userId: user.id, lines: [LATTE], notes: "Leave at the counter" });
+    const behind = await arrangePlacedOrder({ userId: user.id, lines: [LATTE] });
+    const late = await arrangePlacedOrder({ userId: user.id, lines: [LATTE] });
+    const making = await arrangePlacedOrder({ userId: user.id, lines: [LATTE] });
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    for (const [order, over] of [[behind, 6], [late, 14], [making, 20]] as const) {
+      must(await db().from("orders").update({ estimated_ready_at: minutesAgo(over) }).eq("id", order.orderId).select("id").single(), "late");
+    }
+    await forceStatus(making.orderId, ["accepted", "preparing"]);
+    await page.addInitScript(() => {
+      localStorage.setItem("drincup:staff:theme", "dark");
+      localStorage.setItem("drincup:staff:density", "compact");
+    });
+
+    await signIn(page, BARISTA, TEST_PASSWORD, "/staff");
+    await settle(page);
+    const problems = await violations(page, "staff dark: start shift");
+
+    await page.getByRole("button", { name: "Start shift" }).click();
+    await expect(page.getByTestId("staff-dashboard")).toHaveAttribute("data-theme", "dark");
+    await expect(ticket(page, late.orderNumber)).toHaveAttribute("data-urgency", "late");
+    await expect(ticket(page, behind.orderNumber)).toHaveAttribute("data-urgency", "warning");
+    await expect(ticket(page, onTime.orderNumber)).toBeVisible();
+    await settle(page);
+    problems.push(...(await violations(page, "staff dark: queue")));
+
+    await ticket(page, making.orderNumber).getByRole("button", { name: /^Open order/ }).click();
+    await settle(page);
+    problems.push(...(await violations(page, "staff dark: ticket open")));
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    await settle(page);
+    problems.push(...(await violations(page, "staff dark: settings")));
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: /Pause online orders/ }).first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    problems.push(...(await violations(page, "staff dark: pause dialog")));
+    await page.keyboard.press("Escape");
+    expectNone(problems);
+  });
+
   test("the admin @desktop", async ({ page }) => {
     const user = await createCustomer("a11y-admin");
     const { orderId } = await arrangePlacedOrder({ userId: user.id, lines: [LATTE] });
