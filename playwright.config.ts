@@ -77,7 +77,7 @@ export default defineConfig({
   },
   projects: [
     // Phone first, matching the design: 390px-class viewport, touch, mobile UA.
-    { name: "mobile", use: { ...devices["Pixel 7"], channel }, grepInvert: /@desktop|@tablet/ },
+    { name: "mobile", use: { ...devices["Pixel 7"], channel }, grepInvert: /@desktop|@tablet|@screens/ },
     // The centred product dialog and top navigation only exist at desktop widths.
     { name: "desktop", use: { ...devices["Desktop Chrome"], channel }, grep: /@desktop/ },
     // The staff dashboard is designed for a landscape counter tablet: four queue columns side by side.
@@ -86,6 +86,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, hasTouch: true, channel },
       grep: /@tablet/,
     },
+    // Design-review screenshots of the staff dashboard at every size (e2e/staff-screens.spec.ts).
+    // Only on request: `npm run test:e2e -- --project=screens`.
+    { name: "screens", use: { ...devices["Desktop Chrome"], channel }, grep: /@screens/ },
   ],
   webServer: {
     // The menu catalogue is cached in .next/cache and outlives a rebuild;
