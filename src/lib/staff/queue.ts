@@ -158,6 +158,61 @@ export function ticketUrgency(
   return "ok";
 }
 
+/** "<1m", "4m", "1h 05m": a duration read at a glance, rounded down to the minute. */
+export function formatMinutes(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / MINUTE));
+  if (total < 1) return "<1m";
+  if (total < 60) return `${total}m`;
+  return `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, "0")}m`;
+}
+
+/** The same duration for a screen reader: "less than a minute", "4 minutes", "1 hour 5 minutes". */
+export function spokenMinutes(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / MINUTE));
+  if (total < 1) return "less than a minute";
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  const parts = [];
+  if (hours) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+  if (minutes) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
+export interface TicketTimer {
+  /** waiting: still on time, counting since it joined the queue; late: past the time the customer was given; ready: waiting for pickup. */
+  kind: "waiting" | "late" | "ready";
+  /** "4m", "12m late", "1h 05m late". */
+  text: string;
+  /** "Waiting 4 minutes", "12 minutes late", "Ready for 3 minutes". */
+  label: string;
+}
+
+/**
+ * What the ticket's timer chip says. An order being made counts up from when
+ * it joined the queue (placed, or due for a scheduled pickup, so last night's
+ * order for 9 AM doesn't read 14 hours), and once it passes the time the
+ * customer was given it says how late it is instead. A Ready order counts
+ * how long it has waited for pickup. Colour comes separately, from
+ * ticketUrgency, so the thresholds stay in one place.
+ */
+export function ticketTimer(
+  order: Pick<StaffOrder, "status" | "pickupType" | "scheduledFor" | "estimatedReadyAt" | "placedAt" | "createdAt" | "readyAt">,
+  now: Date,
+  prepMinutes: number,
+): TicketTimer {
+  if (order.status === "ready") {
+    const since = now.getTime() - (time(order.readyAt) ?? now.getTime());
+    return { kind: "ready", text: formatMinutes(since), label: `Ready for ${spokenMinutes(since)}` };
+  }
+  const over = now.getTime() - targetReadyAt(order, prepMinutes).getTime();
+  if (over >= MINUTE) {
+    return { kind: "late", text: `${formatMinutes(over)} late`, label: `${spokenMinutes(over)} late` };
+  }
+  const start = Math.max(time(order.placedAt) ?? time(order.createdAt) ?? 0, dueAt(order, prepMinutes).getTime());
+  const waited = now.getTime() - start;
+  return { kind: "waiting", text: formatMinutes(waited), label: `Waiting ${spokenMinutes(waited)}` };
+}
+
 /** "0:42", "12:05", "1:04:10" -- time since `from`, never negative. */
 export function formatElapsed(from: Date, now: Date): string {
   const total = Math.max(0, Math.floor((now.getTime() - from.getTime()) / 1000));

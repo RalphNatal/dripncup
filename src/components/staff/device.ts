@@ -5,7 +5,7 @@
  * that ticks. Everything here is per-device and remembered in localStorage
  * (volume, mute, fullscreen preference), never in the database.
  */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 // ---------------------------------------------------------------------------
 // A clock for elapsed timers and scheduled orders falling due.
@@ -244,6 +244,99 @@ const noSubscription = () => () => undefined;
 /** The remembered "go fullscreen" choice; false on the server render. */
 export function useRememberedFullscreen(): boolean {
   return useSyncExternalStore(noSubscription, rememberedFullscreen, () => false);
+}
+
+// ---------------------------------------------------------------------------
+// Display: ticket density and the counter theme, remembered on this device.
+// ---------------------------------------------------------------------------
+
+export type Density = "comfortable" | "compact";
+export type StaffTheme = "light" | "dark";
+
+const DENSITY_KEY = "drincup:staff:density";
+const THEME_KEY = "drincup:staff:theme";
+const displayListeners = new Set<() => void>();
+let displayFallback: { density: Density; theme: StaffTheme } = { density: "comfortable", theme: "light" };
+
+function displaySnapshot() {
+  const density = readStored<Density>(DENSITY_KEY, (raw) => (raw === "compact" || raw === "comfortable" ? raw : null), displayFallback.density);
+  const theme = readStored<StaffTheme>(THEME_KEY, (raw) => (raw === "dark" || raw === "light" ? raw : null), displayFallback.theme);
+  return `${density}|${theme}`;
+}
+
+function writeDisplay(next: Partial<typeof displayFallback>) {
+  try {
+    if (next.density) localStorage.setItem(DENSITY_KEY, next.density);
+    if (next.theme) localStorage.setItem(THEME_KEY, next.theme);
+  } catch {
+    // Private mode: still works for this visit.
+  }
+  displayFallback = { ...displayFallback, ...next };
+  displayListeners.forEach((l) => l());
+}
+
+/** Density and theme for this device. Light and comfortable on the server render. */
+export function useDisplaySettings() {
+  const snapshot = useSyncExternalStore(
+    (onChange) => {
+      displayListeners.add(onChange);
+      return () => displayListeners.delete(onChange);
+    },
+    displaySnapshot,
+    () => "comfortable|light",
+  );
+  const [density, theme] = snapshot.split("|") as [Density, StaffTheme];
+  return {
+    density,
+    theme,
+    setDensity: (value: Density) => writeDisplay({ density: value }),
+    setTheme: (value: StaffTheme) => writeDisplay({ theme: value }),
+  };
+}
+
+/**
+ * Marks <html> as the staff screen while it is mounted (`staff-active`: the
+ * large-display type scale) and applies the dark counter theme when chosen
+ * (`staff-dark`), so dialogs and sheets portalled to <body> follow it. Both
+ * come off again when the dashboard unmounts.
+ */
+export function useStaffScreenClasses(theme: StaffTheme) {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("staff-active");
+    return () => root.classList.remove("staff-active");
+  }, []);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("staff-dark", theme === "dark");
+    return () => root.classList.remove("staff-dark");
+  }, [theme]);
+}
+
+/**
+ * While the queue is up, the page is exactly one screen tall (`staff-board`,
+ * globals.css) and the dashboard fills what is left of it, under anything
+ * the root layout puts above every page (the local test-mode strip).
+ */
+export function useStaffBoardClass() {
+  // Before paint: the dashboard mounts after the Start shift tap, never on the server.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("staff-board");
+    return () => root.classList.remove("staff-board");
+  }, []);
+}
+
+/** Whether the page is fullscreen right now, kept current. */
+export function useIsFullscreen(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      document.addEventListener("fullscreenchange", onChange);
+      return () => document.removeEventListener("fullscreenchange", onChange);
+    },
+    () => Boolean(document.fullscreenElement),
+    () => false,
+  );
 }
 
 /** Whether a CSS media query matches, kept current. False on the server render. */

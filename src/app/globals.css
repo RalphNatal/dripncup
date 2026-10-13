@@ -67,6 +67,28 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* Staff counter screen (light and dark "counter" themes; see below) ----- */
+  --color-staff-column: var(--staff-column);
+  --color-staff-card: var(--staff-card);
+  --color-staff-line: var(--staff-line);
+  --color-staff-chip: var(--staff-chip);
+  --color-staff-accent: var(--staff-accent);
+  --color-staff-warn: var(--staff-warn);
+  --color-staff-warn-soft: var(--staff-warn-soft);
+  --color-staff-late: var(--staff-late);
+  --color-staff-late-soft: var(--staff-late-soft);
+  --color-staff-ok: var(--staff-ok);
+  --color-staff-note: var(--staff-note);
+  --color-staff-note-soft: var(--staff-note-soft);
+  --color-staff-note-line: var(--staff-note-line);
+  --color-staff-fill-new: var(--staff-fill-new);
+  --color-staff-fill-start: var(--staff-fill-start);
+  --color-staff-fill-ready: var(--staff-fill-ready);
+  --color-staff-fill-done: var(--staff-fill-done);
+  --color-staff-fill-done-fg: var(--staff-fill-done-fg);
+  --color-staff-fill-warn: var(--staff-fill-warn);
+  --color-staff-fill-late: var(--staff-fill-late);
+
   /* Type ------------------------------------------------------------------
      Baloo 2 for headings (rounded, warm); Inter for body. Both cover the
      Hawaiian okina and kahako. */
@@ -173,6 +195,98 @@
      --header-h at runtime; this is the first-paint guess for phones. */
   --header-h: 6.25rem;
   --tabbar-h: 4rem;
+
+  /* ---- Staff counter screen, light (the default) ----
+     Calm, neutral surfaces; colour only carries meaning. Contrast is
+     measured against the surface each colour sits on: text tokens on
+     --staff-card (white) and on their own -soft tint, fills under white
+     text. */
+  --staff-column: #f1ece6;
+  --staff-card: #ffffff;
+  --staff-line: #e3ddd5;
+  --staff-chip: #f1ede8;
+  --staff-accent: var(--brand-teal-deep); /* 4.95:1 on white */
+  --staff-warn: #87550a; /* 6.3:1 on white, 5.6:1 on warn-soft */
+  --staff-warn-soft: #fdf1dc;
+  --staff-late: #b3261e; /* 6.5:1 on white, 5.7:1 on late-soft */
+  --staff-late-soft: #fdeceb;
+  --staff-ok: #17795a; /* 5.4:1 on white */
+  --staff-note: #8a1457;
+  --staff-note-soft: var(--brand-pink-soft);
+  --staff-note-line: var(--brand-magenta-deep);
+  /* One colour per forward action, each under white text. */
+  --staff-fill-new: var(--brand-magenta-deep); /* Accept, the new-order alert: 6.1:1 */
+  --staff-fill-start: var(--brand-teal-deep); /* Start: 4.95:1 */
+  --staff-fill-ready: #17795a; /* Ready: 5.4:1 */
+  --staff-fill-done: var(--brand-ink); /* Picked up: 18:1 */
+  --staff-fill-done-fg: #ffffff;
+  --staff-fill-warn: #87550a; /* Paused: 6.3:1 */
+  --staff-fill-late: #b3261e; /* Offline, cancel: 6.5:1 */
+}
+
+/* The staff screen's dark "counter" theme: less glare on a counter tablet.
+   Applied to <html> only while the staff dashboard is mounted (and chosen in
+   its settings), so the customer app never sees it. The shadcn tokens are
+   redefined too, so the sheets and dialogs the dashboard opens follow. Fills
+   keep their light values, so white text on them stays above 4.5:1 (Picked
+   up inverts). Text tokens are lighter tints with their contrast noted. */
+html.staff-dark {
+  color-scheme: dark;
+
+  --background: #0e1113;
+  --foreground: #f2efea;
+  --card: #1c2226;
+  --card-foreground: #f2efea;
+  --popover: #1c2226;
+  --popover-foreground: #f2efea;
+  --secondary: #12343a;
+  --secondary-foreground: #bdeef3;
+  --muted: #232a2e;
+  --muted-foreground: #aaa59e; /* 6.6:1 on the card */
+  --accent: #3a1f2d;
+  --accent-foreground: #f8b6cf;
+  --destructive: #ff8a80;
+  --success: #4cc79b;
+  --warning: #f0b85a;
+  --border: #2d3439;
+  --input: #3d454a;
+  --brand-teal-soft: #0f2d31;
+  --brand-pink-soft: #3a1f2d;
+
+  --staff-column: #13181b;
+  --staff-card: #1c2226;
+  --staff-line: #2d3439;
+  --staff-chip: #2a3236;
+  --staff-accent: #4cc9d3; /* 8:1 on the card */
+  --staff-warn: #f0b85a; /* 8.4:1 on the card, 7.5:1 on warn-soft */
+  --staff-warn-soft: #3a2c12;
+  --staff-late: #ff8a80; /* 6.7:1 on the card, 6.9:1 on late-soft */
+  --staff-late-soft: #3d1b1a;
+  --staff-ok: #4cc79b;
+  --staff-note: #f8b6cf;
+  --staff-note-soft: #3a1f2d;
+  --staff-note-line: var(--brand-magenta);
+  --staff-fill-done: #ebe7e1; /* inverted: ink text on it, 16:1 */
+  --staff-fill-done-fg: var(--brand-ink);
+}
+
+/* The live queue is one screen tall and never scrolls as a page; its columns
+   scroll on their own (useStaffBoardClass). */
+html.staff-board body {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+html.staff-board #main {
+  min-height: 0;
+}
+
+/* A wall-mounted display is read from across the room: everything on the
+   staff screen (sized in rem) grows by an eighth. */
+@media (min-width: 1800px) {
+  html.staff-active {
+    font-size: 112.5%;
+  }
 }
 
 /* Dark mode is a nice-to-have, not the shipping default; light mode is the
@@ -428,19 +542,34 @@
   }
 }
 
-/* Staff dashboard: a new, unacknowledged ticket flashes its outline (not its
-   content, which must stay readable). Reduced motion leaves a steady ring. */
+/* Staff dashboard: a new, unacknowledged ticket pulses a soft outline (not
+   its content, which must stay readable). Reduced motion leaves a steady ring. */
 @keyframes staff-flash {
   0%,
   100% {
-    box-shadow: 0 0 0 4px var(--brand-magenta);
+    box-shadow: 0 0 0 3px var(--staff-note-line);
   }
   50% {
-    box-shadow: 0 0 0 9px color-mix(in oklab, var(--brand-magenta) 30%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--staff-note-line) 25%, transparent);
   }
 }
 
 .staff-flash {
-  box-shadow: 0 0 0 4px var(--brand-magenta);
-  animation: staff-flash 1.1s ease-in-out infinite;
+  box-shadow: 0 0 0 3px var(--staff-note-line);
+  animation: staff-flash 1.6s ease-in-out infinite;
+}
+
+/* A ticket arriving in a column (new, or moved from the one before): a quick
+   fade and nudge, nothing bouncy. Off under reduced motion. */
+@keyframes staff-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .staff-enter {
+    animation: staff-enter 160ms ease-out both;
+  }
 }

@@ -5,9 +5,12 @@ import {
   buildQueue,
   dueAt,
   formatElapsed,
+  formatMinutes,
   nextAction,
   summarise,
+  spokenMinutes,
   targetReadyAt,
+  ticketTimer,
   ticketUrgency,
   type StaffOrder,
 } from "./queue";
@@ -171,6 +174,69 @@ describe("formatElapsed", () => {
 
   it("never goes negative when a device clock runs behind", () => {
     expect(formatElapsed(hst("2026-10-03T09:00:10"), hst("2026-10-03T09:00:00"))).toBe("0:00");
+  });
+});
+
+describe("formatMinutes and spokenMinutes", () => {
+  const MIN = 60_000;
+  it("reads at a glance, rounded down to the minute", () => {
+    expect(formatMinutes(42_000)).toBe("<1m");
+    expect(formatMinutes(4 * MIN + 59_000)).toBe("4m");
+    expect(formatMinutes(59 * MIN)).toBe("59m");
+    expect(formatMinutes(60 * MIN)).toBe("1h 00m");
+    expect(formatMinutes(65 * MIN)).toBe("1h 05m");
+    expect(formatMinutes(140 * MIN)).toBe("2h 20m");
+    expect(formatMinutes(-5 * MIN)).toBe("<1m");
+  });
+
+  it("says the same in words", () => {
+    expect(spokenMinutes(30_000)).toBe("less than a minute");
+    expect(spokenMinutes(MIN)).toBe("1 minute");
+    expect(spokenMinutes(12 * MIN)).toBe("12 minutes");
+    expect(spokenMinutes(60 * MIN)).toBe("1 hour");
+    expect(spokenMinutes(125 * MIN)).toBe("2 hours 5 minutes");
+  });
+});
+
+describe("ticketTimer", () => {
+  it("counts up from placed while on time", () => {
+    expect(ticketTimer(order(), hst("2026-10-03T09:04:30"), PREP)).toEqual({
+      kind: "waiting",
+      text: "4m",
+      label: "Waiting 4 minutes",
+    });
+  });
+
+  it("says how late once past the time the customer was given (the ASAP estimate)", () => {
+    // Estimated ready 9:10.
+    expect(ticketTimer(order(), hst("2026-10-03T09:10:30"), PREP).kind).toBe("waiting");
+    expect(ticketTimer(order(), hst("2026-10-03T09:22:00"), PREP)).toEqual({
+      kind: "late",
+      text: "12m late",
+      label: "12 minutes late",
+    });
+    expect(ticketTimer(order({ status: "preparing" }), hst("2026-10-03T10:15:00"), PREP).text).toBe("1h 05m late");
+  });
+
+  it("counts a scheduled order from when it fell due, not from when it was placed", () => {
+    const scheduled = order({
+      pickupType: "scheduled",
+      scheduledFor: iso("2026-10-03T14:00:00"),
+      estimatedReadyAt: iso("2026-10-03T14:00:00"),
+      placedAt: iso("2026-10-03T07:00:00"),
+    });
+    // Due at 13:52 (pickup minus 8 minutes' prep).
+    expect(ticketTimer(scheduled, hst("2026-10-03T13:55:00"), PREP).text).toBe("3m");
+    expect(ticketTimer(scheduled, hst("2026-10-03T14:07:00"), PREP).text).toBe("7m late");
+  });
+
+  it("counts a Ready order's wait for pickup", () => {
+    const ready = order({ status: "ready", readyAt: iso("2026-10-03T09:20:00") });
+    expect(ticketTimer(ready, hst("2026-10-03T09:28:10"), PREP)).toEqual({
+      kind: "ready",
+      text: "8m",
+      label: "Ready for 8 minutes",
+    });
   });
 });
 
