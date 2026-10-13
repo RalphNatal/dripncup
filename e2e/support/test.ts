@@ -32,14 +32,17 @@ const FATAL_CONSOLE = [
   /Uncaught/i,
   /cannot be a (descendant|child) of/i,
   /In HTML, /i,
-  // The Content Security Policy blocked something (a script, Stripe's
-  // frames or API, Supabase, an image, the service worker): every test
-  // that loads a page doubles as a check that the policy lets it work.
-  /Content Security Policy/i,
-  /Refused to (load|execute|connect|frame|apply|create)/i,
-  // A browser feature name the Permissions-Policy header has wrong.
-  /Permissions-Policy/i,
 ];
+
+/**
+ * Our own policies getting in the way: the Content Security Policy blocked
+ * something (a script, Stripe's frames or API, Supabase, an image, the
+ * service worker), or the Permissions-Policy names a feature wrong. Every
+ * test that loads a page doubles as a check that the policies let it work.
+ * Counted only from our own origin: Stripe's frames run under Stripe's
+ * policies (its 3-D Secure test page breaks its own `img-src`).
+ */
+const POLICY_CONSOLE = [/Content Security Policy/i, /Refused to (load|execute|connect|frame|apply|create)/i, /Permissions-Policy/i];
 
 /** Invalid nesting, checked on every page still open when the test ends. */
 const NESTING_SELECTORS = [
@@ -73,13 +76,22 @@ export const test = base.extend<{ allowedPageErrors: RegExp[]; pageGuard: void }
   allowedPageErrors: [[], { option: true }],
 
   pageGuard: [
-    async ({ context, browser, allowedPageErrors }, run) => {
+    async ({ context, browser, allowedPageErrors, baseURL }, run) => {
       const problems: PageProblem[] = [];
       const pages = new Set<Page>();
       // test.use({ allowedPageErrors: [/x/] }) arrives as the RegExp itself
       // (Playwright reads a one-element array as [value]); accept both.
       const patterns: RegExp[] = Array.isArray(allowedPageErrors) ? allowedPageErrors : [allowedPageErrors as unknown as RegExp];
       const allowed = (text: string) => patterns.some((pattern) => pattern.test(text));
+      const appOrigin = baseURL ? new URL(baseURL).origin : null;
+      const fromOtherSite = (url: string) => {
+        if (!url || !appOrigin) return false;
+        try {
+          return new URL(url).origin !== appOrigin;
+        } catch {
+          return false;
+        }
+      };
 
       const watchPage = (page: Page) => {
         if (pages.has(page)) return;
@@ -91,7 +103,8 @@ export const test = base.extend<{ allowedPageErrors: RegExp[]; pageGuard: void }
         page.on("console", (message: ConsoleMessage) => {
           if (message.type() !== "error") return;
           const text = message.text();
-          if (FATAL_CONSOLE.some((pattern) => pattern.test(text)) && !allowed(text)) {
+          const policy = POLICY_CONSOLE.some((pattern) => pattern.test(text)) && !fromOtherSite(message.location().url);
+          if ((policy || FATAL_CONSOLE.some((pattern) => pattern.test(text))) && !allowed(text)) {
             problems.push({ url: page.url(), kind: "console error", text: text.slice(0, 2000) });
           }
         });

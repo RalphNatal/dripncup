@@ -65,6 +65,30 @@ export async function fillCard(page: Page, number: string) {
   // Only shown when the country is one with postal codes (depends on where the browser is).
   const postal = frame.locator('input[name="postalCode"]');
   if (await postal.isVisible()) await postal.fill("96814");
+  await waitForFrameToSettle(frame);
+}
+
+/**
+ * Once the card is complete, Stripe slides in its Link offer ("Save my
+ * information"), and the growing frame pushes Pay down the page. A click
+ * aimed at Pay during that can land on Stripe's checkbox instead, so wait
+ * until the frame has kept the same height for a moment.
+ */
+async function waitForFrameToSettle(frame: Frame, quietMs = 750, timeoutMs = 10_000) {
+  const element = await frame.frameElement();
+  const deadline = Date.now() + timeoutMs;
+  let height = -1;
+  let since = Date.now();
+  while (Date.now() < deadline) {
+    const now = (await element.boundingBox())?.height ?? 0;
+    if (now !== height) {
+      height = now;
+      since = Date.now();
+    } else if (Date.now() - since >= quietMs) {
+      return;
+    }
+    await frame.page().waitForTimeout(100);
+  }
 }
 
 /** Clicks Complete (or Fail) on Stripe's 3-D Secure test page, wherever it is nested. */
