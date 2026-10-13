@@ -121,6 +121,27 @@ test.describe("service worker", () => {
     await expect(page.getByTestId("order-total")).toBeVisible({ timeout: 20_000 });
   });
 
+  test("signing in never looks like a new version", async ({ page, request }) => {
+    // Sign-in, sign-out and admin saves call revalidatePath("/", "layout"),
+    // which reaches the worker's prerendered route too, and the server then
+    // renders it again. That copy must be the build's, byte for byte, or
+    // every browser would be told to refresh (and checkout would wait).
+    const before = await (await request.get("/serwist/sw.js")).text();
+    const user = await createCustomer("sw-same");
+    await signIn(page, user.email, user.password, "/menu");
+    await controlled(page);
+    // The first request after a revalidation can still get the old copy while
+    // the new one renders; the second gets the new one.
+    expect(await (await request.get("/serwist/sw.js")).text()).toBe(before);
+    await page.waitForTimeout(2000);
+    expect(await (await request.get("/serwist/sw.js")).text()).toBe(before);
+
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((registration) => registration?.update()));
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(false);
+    await expect(page.getByTestId("update-prompt")).toHaveCount(0);
+  });
+
   test("the manifest makes the app installable", async ({ request }) => {
     const manifest = await (await request.get("/manifest.webmanifest")).json();
     expect(manifest).toMatchObject({

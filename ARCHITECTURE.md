@@ -1822,8 +1822,19 @@ plugin: a route handler (`src/app/serwist/[path]/route.ts`) bundles
 `Service-Worker-Allowed: /`. Hand-rolling a worker was the alternative;
 Serwist's strategies, expiration and precache revisioning are well tested and
 small. It is built as a classic script (module workers are not supported
-everywhere yet), and `__DRINCUP_VERSION__` (the deployment id, or the build
-time) changes on every build, so every deploy is a new worker.
+everywhere yet), and `__DRINCUP_VERSION__` (the deployment id, or Next's
+build id) changes on every build, so every deploy is a new worker. It must
+not change *within* a build: `revalidatePath("/", "layout")` (sign-in,
+sign-out, admin saves) reaches the worker's prerendered route too, and the
+server then renders it again. With a timestamp for a version, that copy
+differed from the build's, so after anyone signed in every browser was told
+a new version existed and checkout held Pay until a refresh (the e2e
+checkout tests caught it). The version is now read (deployment id, else
+`.next/BUILD_ID`, which Next writes before prerendering), and
+`e2e/pwa.spec.ts` checks the script is byte-for-byte the same after a
+sign-in. The runtime re-render bundles `src/sw/sw.ts` with esbuild on the
+server; on Vercel that needs the source and esbuild in the function
+(Phase 11 checks it).
 
 **Caching rules** (`src/lib/pwa/cache-rules.ts`, pure and unit-tested; the
 worker routes on `cacheRuleFor()`):
