@@ -4,6 +4,8 @@ import "server-only";
  * Pop-up events, for customers (published only: RLS hides the rest from
  * guests and customers) and for the admin (everything).
  */
+import { cache } from "react";
+
 import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 import { storageImageUrl } from "@/lib/menu/images";
@@ -98,7 +100,7 @@ export async function listPublicEvents({ limit = 50 }: { limit?: number } = {}):
 }
 
 /** One published event by slug (past ones too, so an old link explains itself). */
-export async function getPublicEvent(slug: string): Promise<PublicEvent | null> {
+export const getPublicEvent = cache(async (slug: string): Promise<PublicEvent | null> => {
   const now = await appNow();
   const { data, error } = await createPublicClient({ live: true })
     .from("locations")
@@ -110,7 +112,7 @@ export async function getPublicEvent(slug: string): Promise<PublicEvent | null> 
     .maybeSingle();
   if (error) throw new Error(`Events: could not load (${error.message})`);
   return data ? toPublic(data as unknown as EventRow, now) : null;
-}
+});
 
 // ---------------------------------------------------------------------------
 // Admin.

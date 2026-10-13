@@ -5,6 +5,8 @@ import "server-only";
  * the fresh storefront (selected location, status) and that location's
  * sold-out list.
  */
+import { cache } from "react";
+
 import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 import { getStorefront, type LocationView } from "@/lib/locations/storefront";
@@ -47,7 +49,7 @@ export interface ProductPageData {
   ordering: OrderingState;
 }
 
-export async function getProductPageData(slug: string): Promise<ProductPageData | null> {
+export const getProductPageData = cache(async (slug: string): Promise<ProductPageData | null> => {
   const { selected } = await getStorefront();
   if (!selected) return null;
 
@@ -62,4 +64,4 @@ export async function getProductPageData(slug: string): Promise<ProductPageData 
   if (!detail) return null;
 
   return { detail, location: { id: selected.id, name: selected.name }, ordering: orderingFor(selected) };
-}
+});

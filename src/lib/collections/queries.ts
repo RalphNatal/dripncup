@@ -5,6 +5,8 @@ import "server-only";
  * admin list and form. The menu and Home banners use the cached catalogue
  * (src/lib/menu/model.ts, activeCollection); this reads live.
  */
+import { cache } from "react";
+
 import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 import { getStorefront } from "@/lib/locations/storefront";
@@ -45,7 +47,7 @@ export function collectionPhase(c: { starts_at: string; ends_at: string }, now: 
  * collection (nothing to show, and nothing to give away early); an ended one
  * comes back with phase "ended" so the page can say so.
  */
-export async function getCollectionPage(slug: string): Promise<CollectionPage | null> {
+export const getCollectionPage = cache(async (slug: string): Promise<CollectionPage | null> => {
   const now = await appNow();
   const { data } = await createPublicClient({ live: true })
     .from("collections")
@@ -86,7 +88,7 @@ export async function getCollectionPage(slug: string): Promise<CollectionPage | 
     phase,
     products,
   };
-}
+});
 
 // ---------------------------------------------------------------------------
 // Admin.

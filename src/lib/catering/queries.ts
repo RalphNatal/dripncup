@@ -6,6 +6,8 @@ import "server-only";
  * theirs (RLS: everything). Nothing here uses the service role, so the
  * database decides who sees what.
  */
+import { cache } from "react";
+
 import { paymentMethodLabel } from "@/lib/orders/detail";
 import { createPublicClient } from "@/lib/supabase/public";
 import { createClient } from "@/lib/supabase/server";
@@ -430,10 +432,10 @@ export const CAFE_NAME_FOR_CUSTOMERS = "Drincup Cafe";
  * theirs) or it does not exist. `viewer` decides how actors are named:
  * customers see "You" and "Drincup Cafe", admins see names.
  */
-export async function getCateringRequest(
+export const getCateringRequest = cache(async (
   requestId: string,
   viewer: { id: string; role: "customer" | "staff" | "admin" },
-): Promise<CateringRequestDetail | null> {
+): Promise<CateringRequestDetail | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.from("catering_requests").select(DETAIL_SELECT).eq("id", requestId).maybeSingle();
   if (error) throw new Error(`Catering: could not load the request (${error.message})`);
@@ -554,4 +556,4 @@ export async function getCateringRequest(
     createdByName: isAdmin ? actorName(row.created_by) : null,
     updatedByName: isAdmin && row.updated_by ? actorName(row.updated_by) : null,
   };
-}
+});

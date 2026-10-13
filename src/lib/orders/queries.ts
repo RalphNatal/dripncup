@@ -15,7 +15,7 @@ import { ORDER_DETAIL_SELECT, toOrderDetail, type OrderDetail, type OrderDetailR
 import { PAST_ORDERS_PAGE_SIZE, decodeOrdersCursor, encodeOrdersCursor, toOrderListItem, type OrderListItem } from "./list";
 
 /** Null for anyone but the order's owner, so a page can answer 404. */
-export async function getOwnOrderDetail(orderId: string): Promise<OrderDetail | null> {
+export const getOwnOrderDetail = cache(async (orderId: string): Promise<OrderDetail | null> => {
   if (!z.guid().safeParse(orderId).success) return null;
   const profile = await getCurrentProfile();
   if (!profile) return null;
@@ -25,7 +25,7 @@ export async function getOwnOrderDetail(orderId: string): Promise<OrderDetail | 
   const row = data as unknown as OrderDetailRow | null;
   if (!row || row.user_id !== profile.id) return null;
   return toOrderDetail(row);
-}
+});
 
 /**
  * The signed-in customer's orders in Placed through Ready (never an unpaid
