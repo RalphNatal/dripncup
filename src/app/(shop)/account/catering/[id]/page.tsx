@@ -18,7 +18,7 @@ import { formatCents } from "@/lib/money";
 import { formatCafeDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Catering request" };
+export const metadata: Metadata = { title: "Catering request", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
 

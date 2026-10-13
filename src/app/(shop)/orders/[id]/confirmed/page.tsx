@@ -6,7 +6,7 @@ import { requireProfile } from "@/lib/auth/dal";
 import { clientEnv } from "@/lib/env";
 import { getOrderConfirmation } from "@/lib/orders/confirmation";
 
-export const metadata: Metadata = { title: "Order confirmation" };
+export const metadata: Metadata = { title: "Order confirmation", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

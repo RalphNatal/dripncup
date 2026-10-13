@@ -15,6 +15,7 @@ import { cafeDateKey, cafeTimeKey, formatCafeDate, formatCafeTimeOfDay } from "@
 export const metadata: Metadata = {
   title: "Catering",
   description: "Drincup Cafe catering for offices, parties and celebrations across Oʻahu: espresso, tropical refreshers, shave ice and custom signature drinks.",
+  alternates: { canonical: "/catering" },
 };
 
 /**

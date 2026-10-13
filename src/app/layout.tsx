@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Baloo_2, Inter } from "next/font/google";
+import { connection } from "next/server";
 
 import { Providers } from "@/components/providers";
 import { TestModeBanner } from "@/components/test-mode-banner";
@@ -74,7 +75,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+/**
+ * Rendered per request, never prerendered: the Content Security Policy's
+ * nonce (src/proxy.ts) only reaches scripts in HTML made for that request.
+ * Every page already was dynamic (they read the session); this also covers
+ * the built-in 404 page, which would otherwise be static HTML whose scripts
+ * the policy blocks.
+ */
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  await connection();
   return (
     <html lang="en" className={`${inter.variable} ${baloo.variable} h-full`} suppressHydrationWarning>
       <body className="flex min-h-full flex-col bg-background text-foreground">

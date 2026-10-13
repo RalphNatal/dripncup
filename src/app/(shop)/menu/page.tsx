@@ -9,7 +9,11 @@ import { getCurrentProfile } from "@/lib/auth/dal";
 import { listFavorites } from "@/lib/favorites/queries";
 import { getMenuPageData } from "@/lib/menu/queries";
 
-export const metadata: Metadata = { title: "Menu" };
+export const metadata: Metadata = {
+  title: "Menu",
+  description: "Espresso, tropical refreshers, tea, shave ice and snacks. Customize your drink and order ahead for pickup in Honolulu.",
+  alternates: { canonical: "/menu" },
+};
 
 /**
  * Server-rendered menu for the selected location. The catalogue comes from

@@ -12,7 +12,7 @@ import { quotePayability } from "@/lib/catering/rules";
 import { appNow } from "@/lib/clock";
 import { clientEnv } from "@/lib/env";
 
-export const metadata: Metadata = { title: "Pay for catering" };
+export const metadata: Metadata = { title: "Pay for catering", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

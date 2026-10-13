@@ -1,4 +1,5 @@
 import { ArrowRight, CalendarDays, ChefHat, Gift, MapPin } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AccountDeletedNotice } from "@/components/account/account-deleted-notice";
@@ -9,6 +10,7 @@ import { StatusDot } from "@/components/locations/status-dot";
 import { CollectionBanner } from "@/components/menu/banners";
 import { ActiveOrderCards, PastOrderRow } from "@/components/orders/order-lists";
 import { RewardsSummary } from "@/components/rewards/rewards-summary";
+import { CafeStructuredData } from "@/components/structured-data";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { BRAND } from "@/lib/brand";
 import { listPublicEvents } from "@/lib/events/queries";
@@ -18,6 +20,8 @@ import { getMenuPageData } from "@/lib/menu/queries";
 import { listActiveOrders, listPastOrders } from "@/lib/orders/queries";
 import { getMyRewards } from "@/lib/rewards/queries";
 import { firstParam, type SearchParams } from "@/lib/search-params";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 /**
  * Home tab: greeting with the Overflow Rewards balance, live cards for
@@ -41,6 +45,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
+      <CafeStructuredData />
       {accountDeleted ? <AccountDeletedNotice /> : null}
 
       <section className="relative overflow-hidden rounded-[2rem] bg-brand-wash px-6 pt-7 pb-8">
@@ -93,7 +98,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
             <h2 id="home-order-again" className="text-lg font-bold">
               Order again
             </h2>
-            <Link href="/orders" className="focus-ring rounded text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
+            <Link href="/orders" className="focus-ring -my-3 inline-flex min-h-11 items-center rounded px-1 text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
               All orders
             </Link>
           </div>
@@ -130,7 +135,7 @@ export default async function HomePage({ searchParams }: { searchParams: SearchP
             <CalendarDays className="size-5 text-brand-teal-deep" aria-hidden="true" />
             Upcoming pop-ups
           </h2>
-          <Link href="/events" className="focus-ring rounded text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
+          <Link href="/events" className="focus-ring -my-3 inline-flex min-h-11 items-center rounded px-1 text-sm font-semibold text-brand-teal-deep underline-offset-2 hover:underline">
             All events
           </Link>
         </div>

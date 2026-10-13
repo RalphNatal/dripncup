@@ -9,7 +9,7 @@ import { isLastAdmin } from "@/lib/auth/account-deletion";
 import { requireProfile } from "@/lib/auth/dal";
 import { BRAND } from "@/lib/brand";
 
-export const metadata: Metadata = { title: "Delete account" };
+export const metadata: Metadata = { title: "Delete account", robots: { index: false, follow: false } };
 
 /** The confirmation screen behind "Delete my account" on /account. */
 export default async function DeleteAccountPage() {

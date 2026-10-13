@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { AdminShell } from "@/components/admin/admin-shell";
 import { listAttentionItems } from "@/lib/admin/attention";
 import { requireRole } from "@/lib/auth/dal";
 import { countNewCateringRequests } from "@/lib/catering/queries";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /**
  * The admin frame. Admins only: the proxy gates /admin, this checks again,

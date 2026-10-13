@@ -6,7 +6,7 @@ import { getCheckoutSettings } from "@/lib/checkout/settings";
 import { clientEnv } from "@/lib/env";
 import { getStorefront } from "@/lib/locations/storefront";
 
-export const metadata: Metadata = { title: "Checkout" };
+export const metadata: Metadata = { title: "Checkout", robots: { index: false, follow: false } };
 
 /** Signed-in customers only; guests are sent to sign in and come back here. */
 export default async function CheckoutPage() {

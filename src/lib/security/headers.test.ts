@@ -38,6 +38,9 @@ describe("Content Security Policy", () => {
     const csp = directives(buildCsp(base));
     expect(csp.get("frame-src")).toEqual(["https://js.stripe.com", "https://*.js.stripe.com", "https://hooks.stripe.com"]);
     expect(csp.get("connect-src")).toContain("https://api.stripe.com");
+    // Stripe.js fetches the card form's font CSS; nothing else from Google.
+    expect(csp.get("connect-src")).toContain("https://fonts.googleapis.com");
+    expect(csp.get("font-src")).toEqual(["'self'", "data:"]);
     expect(csp.get("script-src")).toContain("https://js.stripe.com");
   });
 

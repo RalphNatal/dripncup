@@ -10,7 +10,7 @@ import { eventWhen } from "@/lib/catering/format";
 import { listMyCateringRequests } from "@/lib/catering/queries";
 import { formatCents } from "@/lib/money";
 
-export const metadata: Metadata = { title: "My catering" };
+export const metadata: Metadata = { title: "My catering", robots: { index: false, follow: false } };
 
 export default async function MyCateringPage() {
   const profile = await requireProfile("/account/catering");

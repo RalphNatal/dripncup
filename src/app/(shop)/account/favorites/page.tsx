@@ -9,7 +9,7 @@ import { requireProfile } from "@/lib/auth/dal";
 import { listFavorites } from "@/lib/favorites/queries";
 import { FAVORITES_LIMIT } from "@/lib/favorites/schemas";
 
-export const metadata: Metadata = { title: "Favorites" };
+export const metadata: Metadata = { title: "Favorites", robots: { index: false, follow: false } };
 
 /** Account → Favorites: every saved drink, checked against today's menu at the selected location. */
 export default async function FavoritesPage() {

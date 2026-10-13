@@ -4,7 +4,7 @@ import { cacheRuleFor, isNeverCached, type RequestLike } from "./cache-rules";
 
 const ORIGIN = "https://order.drincup.example";
 
-function request(path: string, init: Partial<RequestLike> & { headers?: Record<string, string> } = {}): RequestLike {
+function request(path: string, init: { method?: string; mode?: string; headers?: Record<string, string> } = {}): RequestLike {
   const headers = new Map(Object.entries(init.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     url: path.startsWith("http") ? path : `${ORIGIN}${path}`,

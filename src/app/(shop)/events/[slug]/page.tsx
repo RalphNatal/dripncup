@@ -15,7 +15,12 @@ type Params = Promise<{ slug: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
   const event = /^[a-z0-9-]{1,80}$/.test(slug) ? await getPublicEvent(slug) : null;
-  return { title: event?.name ?? "Pop-up event" };
+  if (!event) return { title: "Pop-up event" };
+  return {
+    title: event.name,
+    description: event.description || `${event.name}: a Drincup Cafe pop-up. Pre-order for pickup at the booth.`,
+    alternates: { canonical: `/events/${event.slug}` },
+  };
 }
 
 /** One published pop-up. A past one says so; an unpublished one is a 404. */

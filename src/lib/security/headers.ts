@@ -12,6 +12,7 @@
  *             (React style props) that a nonce cannot cover, and styles
  *             cannot run code
  *   connect   our origin, Supabase (REST, Auth, Realtime websocket), Stripe's API
+ *             and the card form's font CSS (Google Fonts, fetched by Stripe.js)
  *   frames    Stripe only (the card form, wallets and 3-D Secure challenges)
  *   images    our origin, Supabase Storage, data:/blob: (generated previews)
  *   nobody may frame us (frame-ancestors 'none'); no plugins, no <base>,
@@ -23,6 +24,12 @@ export const STRIPE_SCRIPT_SOURCES = ["https://js.stripe.com", "https://*.js.str
 export const STRIPE_FRAME_SOURCES = ["https://js.stripe.com", "https://*.js.stripe.com", "https://hooks.stripe.com"] as const;
 export const STRIPE_CONNECT_SOURCES = ["https://api.stripe.com", "https://merchant-ui-api.stripe.com", "https://r.stripe.com"] as const;
 export const STRIPE_IMAGE_SOURCES = ["https://*.stripe.com"] as const;
+/**
+ * Stripe.js fetches the card form's font CSS (stripeFonts, src/components/
+ * checkout/stripe.ts) from our page and hands it to its frames, which load
+ * the font files under their own policy.
+ */
+export const STRIPE_FONT_CSS_SOURCES = ["https://fonts.googleapis.com"] as const;
 
 export interface CspOptions {
   nonce: string;
@@ -50,7 +57,7 @@ export function buildCsp({ nonce, dev, supabaseUrl, siteUrl }: CspOptions): stri
     ["style-src", ["'self'", "'unsafe-inline'"]],
     ["img-src", ["'self'", "data:", "blob:", supabase.http, ...STRIPE_IMAGE_SOURCES]],
     ["font-src", ["'self'", "data:"]],
-    ["connect-src", ["'self'", supabase.http, supabase.ws, ...STRIPE_CONNECT_SOURCES]],
+    ["connect-src", ["'self'", supabase.http, supabase.ws, ...STRIPE_CONNECT_SOURCES, ...STRIPE_FONT_CSS_SOURCES]],
     ["frame-src", [...STRIPE_FRAME_SOURCES]],
     ["worker-src", ["'self'"]],
     ["manifest-src", ["'self'"]],

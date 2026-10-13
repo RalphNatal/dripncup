@@ -4,11 +4,16 @@ import Link from "next/link";
 
 import { Swirl } from "@/components/brand/logo";
 import { PageShell } from "@/components/page-shell";
+import { CafeStructuredData } from "@/components/structured-data";
 import { BRAND, CAFE_ADDRESS } from "@/lib/brand";
 import { getSiteContent } from "@/lib/content/queries";
 import { paragraphs } from "@/lib/content/registry";
 
-export const metadata: Metadata = { title: "About" };
+export const metadata: Metadata = {
+  title: "About",
+  description: `The story behind ${BRAND.name}, a cafe on Kapiolani Blvd in Honolulu named for a cup that overflows, and how to reach us.`,
+  alternates: { canonical: "/about" },
+};
 
 /** The cafe's story and how to reach it, as the owner wrote them on /admin/content. */
 export default async function AboutPage() {
@@ -22,6 +27,7 @@ export default async function AboutPage() {
 
   return (
     <PageShell title={`About ${BRAND.name}`}>
+      <CafeStructuredData />
       <p className="font-heading text-xl font-bold text-brand-teal-deep">{BRAND.taglines.primary}</p>
       <Swirl className="mt-1 h-5 text-brand-magenta" />
       <div className="mt-4 space-y-4 text-base leading-relaxed" data-testid="about-copy">

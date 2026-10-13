@@ -10,7 +10,14 @@ type Params = Promise<{ slug: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const data = await getProductPageData((await params).slug);
-  return data ? { title: data.detail.product.name, description: data.detail.product.description ?? undefined } : {};
+  if (!data) return {};
+  const { product } = data.detail;
+  return {
+    title: product.name,
+    description: product.description || `${product.name} from Drincup Cafe: customize it and order ahead for pickup in Honolulu.`,
+    alternates: { canonical: `/menu/${product.slug}` },
+    ...(product.imageUrl ? { openGraph: { images: [{ url: product.imageUrl, alt: product.name }] } } : {}),
+  };
 }
 
 /**

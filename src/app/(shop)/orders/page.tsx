@@ -8,7 +8,7 @@ import { PageShell } from "@/components/page-shell";
 import { requireProfile } from "@/lib/auth/dal";
 import { listActiveOrders, listPastOrders } from "@/lib/orders/queries";
 
-export const metadata: Metadata = { title: "Orders" };
+export const metadata: Metadata = { title: "Orders", robots: { index: false, follow: false } };
 
 /**
  * Order history: what is on its way now (live), then past orders, newest

@@ -4,7 +4,7 @@ import { NewPasswordForm } from "@/components/auth/auth-forms";
 import { PageShell } from "@/components/page-shell";
 import { requireProfile } from "@/lib/auth/dal";
 
-export const metadata: Metadata = { title: "Change password" };
+export const metadata: Metadata = { title: "Change password", robots: { index: false, follow: false } };
 
 /**
  * Also where a password-reset email lands: the callback route signs the

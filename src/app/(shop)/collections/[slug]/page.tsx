@@ -15,7 +15,12 @@ type Params = Promise<{ slug: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
   const page = /^[a-z0-9-]{1,80}$/.test(slug) ? await getCollectionPage(slug) : null;
-  return { title: page?.name ?? "Collection" };
+  if (!page) return { title: "Collection" };
+  return {
+    title: page.name,
+    description: page.description || `${page.name}: a limited-time collection at Drincup Cafe, for a short while only.`,
+    alternates: { canonical: `/collections/${page.slug}` },
+  };
 }
 
 /**

@@ -4,7 +4,11 @@ import { PageShell } from "@/components/page-shell";
 import { getSiteContent } from "@/lib/content/queries";
 import { paragraphs } from "@/lib/content/registry";
 
-export const metadata: Metadata = { title: "Terms" };
+export const metadata: Metadata = {
+  title: "Terms",
+  description: "Terms for ordering ahead and catering with Drincup Cafe, including the refund and cancellation policy.",
+  alternates: { canonical: "/terms" },
+};
 
 export default async function TermsPage() {
   const { terms, refund_policy } = await getSiteContent();

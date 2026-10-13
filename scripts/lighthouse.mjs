@@ -9,6 +9,11 @@
  *      each page --runs times (default 3), keeping the median per category
  *   4. Prints the scores and exits 1 if any is below --min (default 90)
  *
+ * Cart is kept out of search on purpose (robots.txt disallows /cart, as do
+ * /checkout, /account and the rest), which Lighthouse's "Page is blocked from
+ * indexing" audit always fails. That one audit is left out of Cart's SEO
+ * score, and the report says so; every other SEO audit still counts.
+ *
  * Pages are opened signed out, so nothing is written to the database. The
  * server uses .env.local like `npm run start` does, so it reads your local
  * dev stack. Reports (HTML and JSON) land in .lighthouse/ (gitignored).
@@ -148,7 +153,8 @@ async function main() {
       { name: "home", path: "/" },
       { name: "menu", path: "/menu" },
       { name: "product", path: await findProductPath() },
-      { name: "cart", path: "/cart" },
+      // Disallowed in robots.txt by design: see the comment at the top.
+      { name: "cart", path: "/cart", skipAudits: ["is-crawlable"] },
       { name: "rewards", path: "/rewards" },
       { name: "events", path: "/events" },
       { name: "catering", path: "/catering" },
@@ -173,6 +179,7 @@ async function main() {
           port: chrome.port,
           output: ["html", "json"],
           onlyCategories: CATEGORIES,
+          ...(page.skipAudits ? { skipAudits: page.skipAudits } : {}),
           logLevel: "error",
         });
         if (!result) throw new Error(`Lighthouse returned nothing for ${page.path}`);
@@ -212,6 +219,9 @@ async function main() {
       console.log([result.name.padEnd(10), ...cells, `  ${(result.lcp ?? "").padEnd(7)}`, (result.tbt ?? "").padEnd(9), result.cls ?? ""].join(" "));
     }
     writeFileSync(join(OUT_DIR, "summary.json"), JSON.stringify({ runs, minScore, results }, null, 2));
+    for (const page of pages.filter((p) => p.skipAudits)) {
+      console.log(`Note: ${page.name} (${page.path}) is disallowed in robots.txt on purpose; its SEO score leaves out: ${page.skipAudits.join(", ")}.`);
+    }
     console.log("");
     console.log(`Reports: ${OUT_DIR}/<page>.html`);
 

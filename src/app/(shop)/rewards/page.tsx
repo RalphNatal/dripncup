@@ -12,7 +12,11 @@ import { BRAND } from "@/lib/brand";
 import { howItWorks, type RewardsSettings } from "@/lib/rewards/model";
 import { getMyRewards, getRewardsSettings, getRewardTiers, listPointsActivity } from "@/lib/rewards/queries";
 
-export const metadata: Metadata = { title: BRAND.loyaltyProgramName };
+export const metadata: Metadata = {
+  title: BRAND.loyaltyProgramName,
+  description: `Earn points on every order at ${BRAND.name} and redeem them for free add-ons and drinks. Join ${BRAND.loyaltyProgramName} free.`,
+  alternates: { canonical: "/rewards" },
+};
 
 /**
  * Overflow Rewards. Signed in: balance and progress, every tier, the member

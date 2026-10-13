@@ -5,7 +5,7 @@ import { OrderTracker } from "@/components/orders/order-tracker";
 import { requireProfile } from "@/lib/auth/dal";
 import { getOwnOrderDetail } from "@/lib/orders/queries";
 
-export const metadata: Metadata = { title: "Your order" };
+export const metadata: Metadata = { title: "Your order", robots: { index: false, follow: false } };
 
 type Params = Promise<{ id: string }>;
 

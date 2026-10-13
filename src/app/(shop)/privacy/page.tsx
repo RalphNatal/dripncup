@@ -4,7 +4,11 @@ import { PageShell } from "@/components/page-shell";
 import { getSiteContent } from "@/lib/content/queries";
 import { paragraphs } from "@/lib/content/registry";
 
-export const metadata: Metadata = { title: "Privacy policy" };
+export const metadata: Metadata = {
+  title: "Privacy policy",
+  description: "What Drincup Cafe collects when you order ahead, why, and how to delete your account.",
+  alternates: { canonical: "/privacy" },
+};
 
 export default async function PrivacyPage() {
   const { privacy_policy } = await getSiteContent();

@@ -4,7 +4,7 @@ import { CartView } from "@/components/cart/cart-view";
 import { getCurrentProfile } from "@/lib/auth/dal";
 import { getStorefront } from "@/lib/locations/storefront";
 
-export const metadata: Metadata = { title: "Cart" };
+export const metadata: Metadata = { title: "Cart", robots: { index: false, follow: false } };
 
 /** The cart. Guests can see it; checkout asks them to sign in first. */
 export default async function CartPage() {
