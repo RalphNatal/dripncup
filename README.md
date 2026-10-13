@@ -20,6 +20,7 @@ Browse the menu → customise your drink → pay → pick it up → earn Overflo
 | Payments   | Stripe Payment Element, test mode (Phase 4) |
 | Email      | Resend (Phase 5) |
 | Hosting    | Vercel |
+| App        | Installable PWA: Serwist service worker, offline page, standard Web Push (VAPID) |
 
 ---
 
@@ -107,6 +108,10 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `RESEND_API_KEY` | **secret** | production | Set → emails go through Resend. Leave empty locally: emails go to Mailpit |
 | `EMAIL_FROM` | config | production | Sender, e.g. `Drincup Cafe <orders@your-domain>`; the domain must be verified in Resend |
 | `MAILPIT_URL` | config | no | Local Mailpit address; defaults to `http://127.0.0.1:54324` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | public | for push | Web Push public key. `npm run push:keys` writes it. Empty = push is not offered |
+| `VAPID_PRIVATE_KEY` | **secret** | for push | Signs every push. Written by `npm run push:keys` |
+| `VAPID_SUBJECT` | config | for push | Contact for the push services, `mailto:` or `https:`. Set the cafe's real one before launch |
+| `NEXT_PUBLIC_SW_IN_DEV` | local only | no | `true` registers the service worker under `npm run dev` (push only; no caching in dev) |
 | `TEST_STORE_ALWAYS_OPEN` | local only | no | `true` = ignore store hours on a local dev server (see "Testing from outside Hawaii"). Ignored on production builds and hosted databases |
 
 `.env*` is gitignored. Never commit real keys — `.env.example` is the template.
@@ -139,6 +144,9 @@ Open <http://localhost:3000>. Supabase Studio is at <http://127.0.0.1:54323>.
 | `npm run db:e2e:stop` | Stop the e2e suite's Supabase stack (frees about 1 GB of Docker memory) |
 | `npm run stripe:listen` | Forward the sandbox's webhook events to `npm run dev` (`-- --port 3001` for another port) |
 | `npm run stripe:doctor` | Check the Stripe setup end to end and say what to fix (prints no secrets) |
+| `npm run brand:assets` | Draw every icon, launch screen, favicon and share image from `brand/logo.svg` (see "Brand assets") |
+| `npm run push:keys` | Write a VAPID key pair for push notifications to `.env.local` (keeps existing keys; `-- --force` replaces, `-- --print` just prints) |
+| `npm run lighthouse` | Production build, then Lighthouse (mobile) on seven pages; fails below 90 (see "Performance") |
 
 ---
 
@@ -246,6 +254,24 @@ npm run test:e2e    # Playwright: the app in a real browser
 
 `test:db` needs the local stack running (`npm run db:start`). `test:e2e` sets up
 its own (below); Docker must be running.
+
+What the e2e suite covers beyond the flows themselves: every page any test
+opens fails the test on a hydration error, an uncaught error, bad HTML
+nesting or **any Content Security Policy violation** (`e2e/support/test.ts`),
+so checkout with Stripe, 3-D Secure, Realtime and push are all checked
+against the policy. `accessibility.spec.ts` runs axe-core (WCAG 2.1 AA) on
+every main page as each kind of visitor, plus reflow at 320 px, touch
+target sizes, skip links, reduced motion, the okina and kahakō in every
+font weight and three keyboard-only flows. `pwa.spec.ts` covers the service
+worker (what it never stores, offline, the update prompt) and push
+notifications against a stand-in push service; `security-headers.spec.ts`
+the headers, robots.txt, the sitemap and structured data;
+`realtime-cleanup.spec.ts` that Realtime channels close on navigation.
+
+**Browsers.** The suite drives the Microsoft Edge that ships with Windows
+(Chromium). Playwright's WebKit and Firefox builds can't be downloaded on
+this machine (the download times out), so Safari, iPhone and Firefox are
+checked by hand: see "Cross-browser checklist".
 
 **The e2e clock.** Tests that need "the day of the event" or "after the
 collection ends" set a `dc_test_clock` cookie (an offset in milliseconds) on
@@ -1026,6 +1052,177 @@ the admin and a normal one for the customer so the sign-ins don't mix.
 
 ---
 
+## The installable app, offline and notifications
+
+Drincup installs like an app (a PWA): its own icon, full screen, a launch
+screen, shortcuts to Menu, Orders and Rewards, an offline page, and "Your
+order is ready" notifications even with the app closed. How it works is in
+ARCHITECTURE.md ("The installable app", "Push notifications").
+
+The service worker runs in **production builds** (`npm run build`, then
+`npm run start`), never in `npm run dev` unless you ask (below): dev chunks
+change constantly and must not be cached. Installing and notifications need
+**HTTPS** (localhost counts); a phone on `http://192.168.x.x` gets neither, see
+"Testing on a phone over HTTPS".
+
+### Installing the app
+
+- **iPhone and iPad (Safari):** tap **Share**, then **Add to Home Screen**, then
+  **Add**. Open Drincup from the new icon. Notifications need iOS 16.4 or
+  later and only work in the Home Screen app, not in Safari.
+- **Android (Chrome, Edge, Samsung Internet):** after an order goes through,
+  the confirmation page offers **Add Drincup to your home screen**; or use the
+  browser menu → **Install app** / **Add to Home screen**. Long-press the icon
+  for the Menu, Orders and Rewards shortcuts.
+- **Desktop Chrome and Edge:** the install icon in the address bar.
+
+The app never asks on a first visit. After the first successful order, the
+confirmation page offers it once (the browser's own dialog on Android and
+desktop, the two Share steps on iPhone); "Not now" is remembered.
+
+### Offline and updates (trying it by hand)
+
+```powershell
+npm run build
+npm run start
+```
+
+Open <http://localhost:3000>, browse a few pages (Home, Menu, a drink), then in
+DevTools → **Network** pick **Offline**:
+
+- reload **Menu**: the last copy, with the **Offline** banner under the header
+- open **Checkout** or **Account**: the offline page ("You're offline. Your
+  cart is saved on this device. Reconnect to place your order.")
+- the cart keeps its items; **Reconnect to check out** until you're back online
+
+DevTools → **Application** → **Cache storage** shows what is kept: hashed
+scripts, styles and fonts, menu images, and the public pages. Never checkout,
+cart, orders, account, sign-in, staff, admin, the API, Supabase or Stripe.
+
+**Updates:** rebuild and restart the server while a tab is open. Within 30
+minutes, or as soon as you switch back to the tab or open another page, "A new
+version is available. Refresh" appears; nothing changes until you tap
+Refresh. On checkout, Pay waits for that refresh (your cart is kept).
+
+### Push notifications ("Your order is ready")
+
+Standard Web Push with our own keys; no account with anyone.
+
+```powershell
+npm run push:keys      # writes NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT to .env.local
+```
+
+Restart the server afterwards. The script keeps keys that are already there:
+every device that turned notifications on is tied to the public key, so new
+keys silently cut them all off (`-- --force` replaces them anyway). For
+production, run `npm run push:keys -- --print` once and put the three values
+in the Vercel project's environment variables; set `VAPID_SUBJECT` to the
+cafe's real contact (`mailto:` or an `https:` page; `NEEDS_CONFIRMATION`).
+
+For a customer: on the order page, **Notify me when it's ready** (or Account →
+**Notifications** → **Turn on notifications**), then **Allow**. Account →
+Notifications shows every device it is on, each removable; signing out turns
+it off on that device.
+
+**Trying it on this computer** (Chrome or Edge, production build as above,
+or `npm run dev` with `NEXT_PUBLIC_SW_IN_DEV=true` in `.env.local`):
+
+1. Windows Settings → System → Notifications: on for Chrome/Edge.
+2. Sign in as `customer@drincup.test`, place an order, and on its page tap
+   **Notify me when it's ready** → **Allow**.
+3. In a private window, sign in as `barista@drincup.test`, open `/staff`,
+   Start shift and move the order to **Ready**.
+4. The notification arrives within seconds, with the tab closed too (the
+   browser must still be running). Tapping it opens the order.
+
+In Studio, `push_outbox` shows each push and what happened to it. A device
+the push service reports gone (404 or 410) is dropped from `push_subscriptions`.
+
+### Brand assets: swapping in the real logo
+
+Every icon, the favicon, the Apple touch icon, the iOS launch screens and the
+share image (Open Graph and Twitter) are drawn from **one file** by **one
+script**:
+
+1. Replace `brand/logo.svg` with the cafe's logo mark: square-ish, transparent
+   background. (A PNG works too: save it as `brand/logo.png`, at least
+   1024 × 1024, and delete `brand/logo.svg`.)
+2. If the brand colours are confirmed, update `BRAND_COLORS` in
+   `src/lib/brand.ts` and the matching `--brand-*` values in
+   `src/app/globals.css` (`npm test` fails if they differ).
+3. Run `npm run brand:assets` and commit what it lists (`public/icons`,
+   `public/splash`, `src/app/favicon.ico`, `apple-icon.png`,
+   `opengraph-image.png`, `twitter-image.png`).
+
+The share card and launch screens set the name ("drincup cafe") in Baloo 2
+next to the mark. The logo in the app header is separate: upload it in Admin →
+Pages & contact.
+
+### Performance (`npm run lighthouse`)
+
+Builds for production, serves it on port 3200 with your `.env.local` (the
+local dev database; pages are opened signed out, nothing is written), and runs
+Lighthouse's mobile preset on Home, Menu, a product page, Cart, Rewards,
+Events and Catering: three runs each, the median counts, and it fails if any
+category is under 90. Reports land in `.lighthouse/<page>.html`.
+
+```powershell
+npm run lighthouse                         # build + all pages
+npm run lighthouse -- --skip-build         # reuse the last build
+npm run lighthouse -- --only home,menu --runs 1
+npm run lighthouse -- --url https://<preview>.vercel.app   # a deployed site
+```
+
+It uses Chrome if installed, else Microsoft Edge (`CHROME_PATH` overrides).
+Cart is kept out of search on purpose (robots.txt), which Lighthouse's "Page
+is blocked from indexing" always fails; that one audit is left out of Cart's
+SEO score and the run says so. Results before and after Phase 10 are in
+ARCHITECTURE.md ("Performance"); Menu and Product sit right at 90, so a single
+run can dip a point.
+
+### Cross-browser checklist
+
+Automated tests run in Edge (Chromium). Before launch, and after big changes,
+go through this on real devices (over HTTPS: a Vercel preview, or "Testing on a
+phone over HTTPS" below). Test card `4242 4242 4242 4242`; 3-D Secure card
+`4000 0025 0000 3155`.
+
+| Check | iPhone Safari | iPhone, installed | Android Chrome | Android, installed | Desktop Chrome / Edge | Firefox | Mac Safari |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Menu, customize, add to cart (cart badge bumps) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Pay by card; confirmation shows "Mahalo!" | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 3-D Secure card: challenge appears, returns to the confirmation page **inside the app** | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Apple Pay (needs the domain verified in Stripe, Phase 11) | ☐ | ☐ | – | – | – | – | ☐ |
+| Google Pay | – | – | ☐ | ☐ | ☐ | – | – |
+| Tracker updates live; Ready banner, confetti, chime (after a tap) | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Ready notification with the app closed | n/a (install first) | ☐ (iOS 16.4+) | ☐ | ☐ | ☐ | ☐ | ☐ (macOS 13+) |
+| Install offer after an order (dialog, or Share steps) | ☐ steps | – | ☐ dialog | – | ☐ dialog | – (no install) | – |
+| Launch screen and icon look right | – | ☐ | – | ☐ | – | – | – |
+| Offline: saved page + banner; checkout shows the offline page | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| New version prompt after a deploy | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 200% zoom / large text: nothing cut off or sideways | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| VoiceOver / TalkBack: add a drink and reach Pay | ☐ | ☐ | ☐ | ☐ | – | – | ☐ |
+| Staff screen on the counter tablet: Start shift keeps the screen on | ☐ | – | ☐ | – | ☐ | – | – |
+
+Known differences:
+
+- **iPhone, in Safari:** no install prompt (Share → Add to Home Screen); no
+  notifications at all, so the order page explains how to get them; the Ready
+  chime needs a tap first and the silent switch mutes it; Apple Pay shows.
+- **iPhone, installed:** notifications on iOS 16.4+ once allowed; Safari may
+  clear the app's saved pages if it isn't opened for a few weeks (storage
+  limits), so the offline copy can be gone, never wrong; there is no browser
+  bar, so the app's own back links are the way back.
+- **Android Chrome:** the install dialog is offered after an order;
+  notifications are always shown by the service worker (Android Chrome refuses
+  them from the page) and arrive with the app closed. Google Pay shows on HTTPS.
+- **Desktop Chrome/Edge:** installable from the address bar; notifications
+  depend on the operating system's settings (Windows: System →
+  Notifications).
+- **Firefox (desktop and Android):** no install on desktop; service worker,
+  offline and push all work.
+- **Mac Safari:** Add to Dock (macOS 14+); push works (macOS 13+).
+
 ## Testing on a phone
 
 To try checkout on a real phone on the same Wi-Fi as your PC:
@@ -1052,9 +1249,36 @@ To try checkout on a real phone on the same Wi-Fi as your PC:
 
 Private-network addresses are already allowed in `next.config.ts`
 (`allowedDevOrigins`). Over plain HTTP, Stripe's card form works in test mode,
-but Apple Pay and Google Pay stay hidden: wallets need HTTPS. To test those,
-use a tunnel with HTTPS (for example `ngrok http 3000`) and add its hostname to
-`allowedDevOrigins`.
+but installing the app, notifications, Apple Pay and Google Pay all need
+HTTPS; see below.
+
+### Testing on a phone over HTTPS
+
+For installing the app, "order ready" notifications and wallets, the phone
+needs real HTTPS. Cloudflare's quick tunnels give the PC two temporary
+`https://….trycloudflare.com` addresses with no account:
+
+1. Once: `winget install --id Cloudflare.cloudflared`.
+2. In two terminals (leave both running; each prints its address):
+
+   ```powershell
+   cloudflared tunnel --url http://127.0.0.1:54321   # Supabase
+   cloudflared tunnel --url http://localhost:3000    # the app
+   ```
+
+3. In `.env.local`, set `NEXT_PUBLIC_SUPABASE_URL` to the Supabase tunnel's
+   address and `NEXT_PUBLIC_SITE_URL` to the app tunnel's.
+4. `npm run build`, then `npm run start` (and `npm run stripe:listen`). The
+   build bakes those addresses in, and quick-tunnel addresses change every
+   time, so rebuild after restarting a tunnel.
+5. Open the app tunnel's address on the phone: install it ("Installing the
+   app"), sign in, place an order, turn on notifications. Move the order to
+   Ready from `/staff` on the PC (same address) and the notification arrives.
+
+Afterwards put the two values back to `http://127.0.0.1:54321` and
+`http://localhost:3000` (the e2e tests refuse to run otherwise) and rebuild.
+Apple Pay needs the site's domain registered with Stripe, so it waits for the
+real domain (Phase 11).
 
 ## Testing from outside Hawaii
 
@@ -1095,7 +1319,9 @@ src/
   app/                 App Router pages, layouts, route handlers
     (auth)/            Sign-in, sign-up, forgot-password (shared layout)
     (shop)/            Customer app: header, bottom tab bar, pickup location
-      page.tsx         Home: points balance, active-order cards, favourites, order again
+      (home)/          Home: points balance, active-order cards, favourites, order again
+                       (route groups like this keep a list page's skeleton off the
+                       detail pages below it; see ARCHITECTURE.md, "Real 404s")
       menu/            Menu, /menu/[slug] full page, @modal/(.)[slug] sheet
       account/         Profile, preferences, favourites, password, delete account
       cart/ checkout/  Cart (re-validated on the server) and checkout
@@ -1107,12 +1333,19 @@ src/
     api/cron/expire-points/  Expires old points (off until the setting is turned on)
     api/cron/send-emails/    Delivers due emails from the outbox
     api/staff/orders/[id]/cancel/  Cancel-with-refund for staff (the dashboard calls it)
+    api/push/subscriptions/  Saves / removes this device's push subscription
+    serwist/[path]/    Builds and serves the service worker (src/sw/sw.ts)
+    offline/           The offline page the service worker keeps
+    manifest.ts robots.ts sitemap.ts  Web app manifest, robots.txt, sitemap.xml
+    favicon.ico apple-icon.png opengraph-image.png twitter-image.png  From npm run brand:assets
+    global-error.tsx   Last-resort error page; every route group also has
+                       error.tsx, loading.tsx (skeletons) and not-found.tsx
     auth/callback/     Landing route for emailed confirmation / reset links
       catering/        Catering info and request form; [id]/pay pays a quote
       account/catering/  The customer's catering requests and one request's page
       events/          Live and upcoming pop-ups; [slug] for one
       collections/     A seasonal collection's page
-      about/ privacy/ terms/  The admin's site content
+      about/ privacy/ terms/ accessibility/  The admin's site content
     staff/             Barista dashboard (own plain frame, no customer tab bar)
     admin/             Admin: home (needs attention), menu (+ import), locations, settings,
                        setup, content, promos, rewards, orders, users, reports (+ CSV
@@ -1135,8 +1368,14 @@ src/
                        report charts
     catering/          Request form, quote summary, quote builder, timeline, pay page
     events/            Event card, Order for pickup here
+    pwa/               Update prompt, offline banner, install offer
     ui/                shadcn/ui primitives
-    providers.tsx      TanStack Query + Tooltip + Toaster
+    skeletons.tsx      Loading skeletons for every route
+    error-panel.tsx    The friendly error with Try again
+    skip-link.tsx route-focus.tsx  Skip to content; focus moves to the page on navigation
+    lazy-member.tsx    Signed-in-only parts of Home and Menu, loaded after first paint
+    structured-data.tsx  JSON-LD (the cafe, with hours from the database)
+    providers.tsx      TanStack Query + the lazily loaded Toaster + PWA manager
   lib/
     pricing/           Shared pricing + validation engine (pure; client and server)
     menu/              Catalogue (cached), sold-out (live), page models, search
@@ -1162,6 +1401,13 @@ src/
     csv.ts             Formula-safe CSV writer
     clock.ts           The request's "now" (the e2e test clock; test-clock.ts guards it)
     email/             EmailProvider (Resend / Mailpit), outbox sender, dev sweep
+    push/              Web Push: VAPID config, delivery, outbox sender, subscriptions
+    pwa/               Service worker caching rules, registration/update/install
+                       helpers, offline page, iOS launch-screen list
+    security/headers.ts  Content Security Policy and the other security headers
+    seo/               Structured data, robots rules, sitemap reads
+    log.ts             Server error logs: route, role, request id, personal data redacted
+    toast.ts           Toasts that load the toaster only when first used
     rate-limit.ts      Postgres fixed-window limiter (checkout, promo codes)
     client-id.ts       Browser ids / idempotency keys (works over plain HTTP)
     auth/
@@ -1173,7 +1419,8 @@ src/
       reauthenticate.ts  Password re-check for sensitive actions
       account-deletion.ts  Last-admin check, auth-user removal
     brand.ts           Brand copy, address, contact, setting fallbacks
-    env.ts             Zod-validated environment variables
+    env.ts             Public environment variables (browser-safe, no Zod)
+    env.server.ts      Server-only, Zod-validated secrets
     money.ts           Integer-cent maths and USD formatting
     time.ts            Pacific/Honolulu helpers and pickup-slot generation
     order-status.ts    Order lifecycle, mirrored from SQL
@@ -1183,14 +1430,19 @@ src/
       admin.ts         Service role — bypasses RLS, server only
       session.ts       Cookie refresh + /staff and /admin gating
   emails/              React Email templates: orders, catering, shared layout
-  instrumentation.ts   Starts the dev-only email outbox sweep
+  sw/sw.ts             The service worker (Serwist): caching, offline, push
+  instrumentation.ts   Dev outbox sweep; logs server errors (onRequestError)
   types/database.ts    Generated database types
-  proxy.ts             Next 16 proxy (formerly middleware)
+  proxy.ts             Next 16 proxy (formerly middleware): session, CSP nonce, request id
 supabase/
   migrations/          Schema, RLS policies, triggers
   seed/seed.ts         Demo data
   tests/               pgTAP database tests (npm run test:db)
 e2e/                   Playwright specs and their DB helpers (npm run test:e2e)
+brand/logo.svg         The one source of every icon, splash screen and share image
+scripts/brand-assets.ts  npm run brand:assets
+scripts/push-keys.mjs  npm run push:keys (VAPID keys into .env.local)
+scripts/lighthouse.mjs npm run lighthouse
 scripts/test-db.mjs    Runs supabase/tests against the local database
 scripts/stripe-*.mjs   npm run stripe:listen / stripe:doctor
 scripts/seed-reports-demo.mjs  npm run db:seed:reports-demo (local only)
@@ -1225,9 +1477,12 @@ the cafe has signed it off (Home shows the progress). In the code, grep for
 
 - [ ] Approved About / story copy from the current site (Admin → Content)
 - [ ] Official brand hex values and confirmed font names (currently Baloo 2 + Inter)
-- [ ] Logo (upload in Admin → Content; the typeset wordmark shows until then)
+- [ ] Logo (upload in Admin → Content; the typeset wordmark shows until then), and the logo mark for app icons, launch screens and share images (`brand/logo.svg`, then `npm run brand:assets`)
 - [ ] Instagram handle, Facebook URL, contact email, phone number (Admin → Content)
 - [ ] Real trading hours for each day
+- [ ] Contact for push notifications (`VAPID_SUBJECT`, placeholder `mailto:notifications@drincup.test`; push services use it if something goes wrong)
+- [ ] Accessibility statement wording and contact (Admin → Pages & contact; a draft is seeded)
+- [ ] Error monitoring: which service, if any (proposal in ARCHITECTURE.md, "Monitoring")
 - [ ] **GET rate** — seeded at 4.712% (Oʻahu visible pass-on rate)
 - [ ] Whether GET is charged on tips (setting `tax.tips_taxed`, assumed no)
 - [ ] Real menu, prices, sizes and modifier upcharges
@@ -1267,5 +1522,5 @@ the cafe has signed it off (Home shows the progress). In the code, grep for
 7. ✅ **Rewards** — points ledger with reservations, earning at pickup, refund reversals, data-driven reward tiers redeemed at checkout, rewards page with activity log, member QR, admin adjustments (data layer)
 8. ✅ **Catering, events & seasonal collections** — catering requests, versioned quotes, payment with the Payment Element, changes and cancellations with refunds, emails and reminders, prep list; pop-up events with publishing and duplication; seasonal collections with limited-time products; image uploads; the admin shell; the reconcile fallback and Stripe tooling
 9. ✅ **Admin dashboard** — audit log, needs-attention queue, menu editor with live preview and archive rules, spreadsheet import, locations and hours, typed settings with history, setup checklist and site content, promotions, rewards, orders with refunds, users and roles, reports with CSV exports
-10. ⬜ Polish (PWA, a11y, performance)
+10. ✅ **Polish** — installable app with offline page and update prompt, order-ready push notifications, WCAG 2.1 AA pass with axe in e2e, loading/error/empty states, strict nonce CSP and security headers, SEO and share images, Lighthouse 90+ on mobile, request-id error logging
 11. ⬜ Testing & deploy

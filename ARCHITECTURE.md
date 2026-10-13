@@ -25,7 +25,7 @@ Four rules explain most of the design decisions below.
 
 ## Data model
 
-39 tables in `public`. Grouped by what they are for:
+41 tables in `public`. Grouped by what they are for:
 
 ### People and places
 
@@ -86,6 +86,8 @@ is always shown: showing an unneeded choice is safer than hiding a needed one.
 | `webhook_events` | One row per provider event id: the dedupe log. Service role only. |
 | `rate_limit_hits` | Fixed-window counters for checkout and promo-code limits. Service role only. |
 | `email_outbox` | Emails owed by order and catering changes, written by trigger in the same transaction and delivered by the server-side sender. Unique `dedupe_key` (kind + order, request, quote or message). Admins can read it; only the server writes. |
+| `push_outbox` | Push notifications owed ("Your order is ready"), written by trigger when an order turns Ready and its customer has a device; delivered by the server-side sender, which records the devices reached. Admins can read it; only the server writes. |
+| `push_subscriptions` | One row per browser that turned order notifications on: the push service endpoint (https on a known push service), the encryption keys and a device label. Added only by the server; customers read and delete their own. |
 
 ### Money and loyalty
 
@@ -873,10 +875,12 @@ plus the reason in plain language and what happened to the money. On the
 change to Ready (not on opening a page that is already Ready) the tracker
 shows a banner, plays a synthesised chime if the customer has tapped the page
 (browsers block audio otherwise; mute is remembered in `localStorage`),
-vibrates, retitles the tab while ready, and shows a browser notification if
-the customer allowed it from the in-page prompt. Permission is never asked on
-page load. On Android Chrome a page notification needs a service worker,
-which arrives with the PWA (Phase 10).
+vibrates, retitles the tab while ready, bursts a little confetti (motion-safe
+only) and shows a notification if the customer turned them on with the
+in-page button. Permission is never asked on page load. Since Phase 10 the
+notification goes through the service worker (Android Chrome requires it),
+and the button subscribes the device to Web Push where it can, so "ready"
+also arrives with the app closed (see "Push notifications").
 
 ### History
 
@@ -1783,6 +1787,429 @@ whole ledger and every reservation are deleted with the account.
 
 ---
 
+## The installable app (PWA)
+
+### Manifest, icons and launch screens
+
+`src/app/manifest.ts` serves `/manifest.webmanifest`: "Drincup Cafe" /
+"Drincup", `display: standalone`, start URL `/`, theme and background colours
+from `BRAND_COLORS`, any and maskable icons, and shortcuts to Menu, Orders and
+Rewards. No `orientation` lock: WCAG 1.3.4, and counter tablets are used
+sideways. The root layout adds the Apple web-app tags and one
+`apple-touch-startup-image` per iPhone and iPad screen
+(`src/lib/pwa/splash-screens.ts`; iOS shows a white screen unless size and
+media query match exactly).
+
+**One source, one script.** Every brand image is drawn by
+`npm run brand:assets` (`scripts/brand-assets.ts`) from `brand/logo.svg` (or
+`brand/logo.png`): manifest icons (rounded tile, and maskable with the logo
+inside the 80% safe zone), the monochrome notification badge, the shortcut
+icons (lucide glyphs on a brand circle), the Apple touch icon, the favicon
+(PNG-in-ICO, 16/32/48), the Open Graph and Twitter card (typeset with Baloo 2
+and Inter from `@fontsource` through `next/og`), and 21 launch screens. The
+logo is trimmed to its drawn area first, so any replacement is centred the
+same way. Colours come from `BRAND_COLORS` in `src/lib/brand.ts`, which a unit
+test keeps equal to the CSS `--brand-*` tokens. The current mark is an
+original placeholder (`NEEDS_CONFIRMATION`).
+
+### The service worker
+
+**Library: Serwist** (`serwist`, `@serwist/turbopack`). It is the maintained
+successor to next-pwa and Workbox's Next.js integrations, it is what Next 16's
+own PWA guide points to, and its Turbopack integration works without a webpack
+plugin: a route handler (`src/app/serwist/[path]/route.ts`) bundles
+`src/sw/sw.ts` with esbuild at build time and serves `/serwist/sw.js` with
+`Service-Worker-Allowed: /`. Hand-rolling a worker was the alternative;
+Serwist's strategies, expiration and precache revisioning are well tested and
+small. It is built as a classic script (module workers are not supported
+everywhere yet), and `__DRINCUP_VERSION__` (the deployment id, or the build
+time) changes on every build, so every deploy is a new worker.
+
+**Caching rules** (`src/lib/pwa/cache-rules.ts`, pure and unit-tested; the
+worker routes on `cacheRuleFor()`):
+
+| Requests | Strategy |
+| --- | --- |
+| `/_next/static/*` (hashed JS, CSS, fonts) | cache first, 250 entries, 30 days |
+| `/_next/image` (menu photos), `/icons/*`, same-origin images | cache first, **60 entries, 7 days**, purged on quota errors |
+| An allow-list of public pages: `/`, `/menu`, `/menu/[slug]`, `/rewards`, `/events`, `/events/[slug]`, `/collections/[slug]`, `/catering`, `/about`, `/privacy`, `/terms`, `/accessibility` | network first; the last copy is kept for offline (30 pages, 7 days) |
+| Every other page | network only; offline → `/offline` |
+| `/api`, `/admin`, `/staff`, `/account`, `/orders`, `/checkout`, `/cart`, catering payment, sign-in, `/auth`, anything not GET, Server Actions, React Server Component requests and prefetches, every other origin (Supabase API, Auth, Realtime, Storage; Stripe) | **never touched or stored** |
+
+It is an allow-list: a page added later is never cached until someone adds it
+here. Only the offline page and its icon are precached. Serwist's default
+precaches every JavaScript chunk in the app (the admin's included), megabytes
+a customer's phone never needs; chunks are cached as they are used instead.
+Signing out tells the worker to drop the page cache (`CLEAR_PAGES`), since a
+kept Home page greets the person signing out. Under `npm run dev` the worker
+registers only with `NEXT_PUBLIC_SW_IN_DEV=true`, and then caches nothing
+(dev chunks are not content-hashed); it is there for trying push.
+
+**Offline.** `/offline` (`src/lib/pwa/offline-page.ts`) is one self-contained
+HTML page, no scripts and no web fonts, with its own strict CSP: "You're
+offline. Your cart is saved on this device. Reconnect to place your order."
+"Try again" links to the current address. Pages kept for offline show their
+last version under a sticky **Offline** banner (`OfflineBanner`, the same
+`useOnline()` signal the staff screen uses). Ordering and paying are blocked
+while offline: the cart's Checkout reads "Reconnect to check out" and
+checkout's Pay is disabled with the reason. The cart itself is local and
+stays.
+
+**Updates.** A new deploy's worker installs in the background and waits
+(`skipWaiting: false`). `src/lib/pwa/client.ts` notices it (also when another
+tab already switched) and shows "A new version is available. Refresh"; only
+the tap swaps workers (`SKIP_WAITING`) and reloads. The page asks for a new
+worker every 30 minutes, when the tab becomes visible and on route changes
+(throttled to a minute). **Checkout** asks on arrival and, while a newer
+version is waiting, disables Pay with "We've just updated the app. Refresh to
+continue; your cart is saved." (a Server Action from an old build would fail
+against the new server). A payment already in flight is never interrupted.
+
+**Install prompt.** `beforeinstallprompt` is caught and held (so Chrome's own
+mini-infobar never appears on a first visit). After a successful order the
+confirmation page offers "Add Drincup to your home screen": the browser's
+dialog on Android and desktop Chrome and Edge, "Tap Share → Add to Home
+Screen" steps on iPhone and iPad (no install API there). Hidden when already
+installed (`display-mode: standalone` / `navigator.standalone`), when the
+browser can't install, and for good once dismissed or installed
+(`localStorage`).
+
+**Payments in the installed app.** The Payment Element runs 3-D Secure in a
+Stripe frame on our page, not a top-level redirect, and `return_url` is our
+own `/orders/[id]/confirmed`, inside the app's scope, so the installed app
+stays in its window through payment and confirmation.
+
+---
+
+## Push notifications
+
+"Your order is ready" as standard Web Push (RFC 8030), encrypted to the
+device (aes128gcm, RFC 8291) and signed with our own VAPID key (RFC 8292). No
+third-party service or account: browsers deliver through their vendors' push
+services (Google FCM, Mozilla, Apple, Microsoft WNS), which only see an
+encrypted blob.
+
+**Keys.** `npm run push:keys` writes `NEXT_PUBLIC_VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` to `.env.local`. Existing keys are
+kept: every subscription is bound to the public key, so new keys cut every
+device off. Without keys the app simply doesn't offer push.
+
+**Subscribing** (`src/lib/push/client.ts`), only from a button: "Notify me
+when it's ready" on the tracker, or Account → Notifications. The tap asks for
+notification permission, subscribes this browser's `PushManager` with the
+public key, and sends the subscription to `savePushSubscriptionAction`. The
+server checks the session, rate-limits (20 per user, 60 per IP an hour),
+checks the endpoint is **https on a known push service host**
+(`src/lib/push/endpoints.ts`: an endpoint is a URL our server will POST to, so
+anything else would be server-side request forgery), labels the device
+("Chrome on Android", from the user agent; the user agent itself is not
+stored) and calls `save_push_subscription()` (service role only). A browser
+has one subscription per site, so a second account on the same browser takes
+the row over. Ten devices at most per customer, oldest out. Customers can
+read and delete their own rows (RLS), never insert or edit one. Signing out
+deletes this device's row in the same request (the sign-out form carries the
+endpoint) and unsubscribes it. `pushsubscriptionchange` in the worker
+re-subscribes and tells `/api/push/subscriptions` (same-origin, session).
+
+**Sending, through an outbox** like the emails. The trigger
+`enqueue_order_push` writes one `push_outbox` row when an order turns Ready
+and its customer has any device, in the status change's own transaction
+(dedupe key `order_ready:<order>`), so a push can never block or fail a
+status change. `processPushOutbox()` (`src/lib/push/outbox.ts`):
+
+1. claims due rows (`claim_push_outbox`, `FOR UPDATE SKIP LOCKED`)
+2. skips the row if the order is no longer Ready (a late retry says nothing)
+3. reads the customer's devices *now* (a device removed meanwhile gets
+   nothing) and leaves out ones already reached (`delivered_to`)
+4. re-checks each endpoint against the allow-list, builds the encrypted,
+   signed request (`web-push`'s `generateRequestDetails`, TTL 30 minutes,
+   urgency high) and sends it with `fetch` (no redirects, 10 s timeout)
+5. 2xx: delivered. 404/410: the subscription is gone, deleted. 400/401/403/
+   413: refused, deleted after three in a row. 429/5xx/no answer: retried for
+   that device only, after 30 s, 2 min, 5 min ("ready" goes stale fast)
+6. the row ends `sent` (any device reached), `failed` (a service kept
+   failing) or `skipped` (no device could take it)
+
+It runs after the response through `kickOutbox()` (the payment webhook, the
+staff cancel route, and `sendOwedNotifications()`, which the staff dashboard
+calls right after it moves an order, since that move is a direct database
+call); from the scheduled `/api/cron/send-emails` (path unchanged; it now runs
+both outboxes); and every 15 s under `npm run dev`.
+
+**The payload** is the order number and pickup location only, with the tag
+`order-ready-<order>` and the tracker's URL. The page's own notification uses
+the same tag, so a customer watching the tracker gets one notification, not
+two. The worker only ever opens a same-site path from a notification.
+
+**Where it works.** Chrome, Edge, Firefox and Samsung Internet on Android and
+desktop, in the browser or installed; Safari on macOS 13+. **iPhone and iPad
+only once the app is on the Home Screen, on iOS 16.4 or later**: in Safari the
+page says so and shows the steps (`needs-install`). Elsewhere the button
+falls back to plain page notifications while the tracker is open.
+
+**Tests.** pgTAP (`push_notifications.test.sql`); unit (endpoint allow-list
+and SSRF cases, delivery rules, payload safety, and a real encrypt-then-decrypt
+of a built request); e2e (`pwa.spec.ts`) against a stand-in push service on
+127.0.0.1, which the server accepts only on the Playwright test server against
+a local database (the e2e clock's guard): subscribe from the tracker, exactly
+one encrypted push on Ready (decrypted and checked), a dead device removed,
+Account management, sign-out.
+
+---
+
+## Security headers
+
+`src/lib/security/headers.ts` holds the policy (unit-tested); `src/proxy.ts`
+sets the Content Security Policy per request, `next.config.ts` the rest.
+
+**Content Security Policy, nonce-based.** Each request gets 128 random bits
+as a nonce, passed to the render in the request's CSP header (Next puts it on
+its own scripts) and sent to the browser:
+
+| Directive | Allows | Why |
+| --- | --- | --- |
+| `script-src` | `'nonce-…' 'strict-dynamic'` (+ `'self'` and Stripe's hosts as a fallback for old browsers) | only our scripts, and what they load (our chunks, Stripe.js); no inline handlers, no `javascript:` URLs, no eval (eval only under `next dev`, which React needs) |
+| `style-src` | `'self' 'unsafe-inline'` | server HTML carries `style=""` attributes (React style props, placeholder colours) that a nonce cannot cover; styles cannot run code |
+| `connect-src` | `'self'`, Supabase (https and wss), `api.stripe.com`, `merchant-ui-api.stripe.com`, `r.stripe.com`, `fonts.googleapis.com` | our API and Server Actions; Supabase REST, Auth and Realtime; Stripe's API; Stripe.js fetching the card form's font CSS |
+| `frame-src` | `js.stripe.com`, `*.js.stripe.com`, `hooks.stripe.com` | the card form, wallet buttons, 3-D Secure |
+| `img-src` | `'self' data: blob:`, Supabase, `*.stripe.com` | our images and the optimiser, Storage photos and the logo |
+| `font-src` | `'self' data:` | `next/font` self-hosts the fonts |
+| `worker-src`, `manifest-src`, `media-src` | `'self'` | the service worker, the manifest |
+| `frame-ancestors` | `'none'` | nobody may frame us. Stripe never frames our pages; it is the other way round (`frame-src`) |
+| `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` | | no plugins, no `<base>` hijack, forms post only to us |
+| `upgrade-insecure-requests` | on https sites only | local http and LAN phone testing keep working |
+
+A nonce needs a per-request render. Every page already was dynamic (they read
+the session); the root layout now calls `connection()` so Next's built-in 404
+page is too (prerendered, it had no nonce and its scripts were blocked; the
+e2e guard caught it). The offline page and the worker have their own fixed
+policies.
+
+**Other headers, every response:** `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY`
+(old browsers), `Cross-Origin-Opener-Policy: same-origin-allow-popups`, and in
+production builds `Strict-Transport-Security: max-age=63072000;
+includeSubDomains` (no `preload` until the domain is final). The
+`Permissions-Policy` turns off camera, microphone, geolocation, USB, serial,
+HID, MIDI, sensors, display capture, XR and picture-in-picture, and allows
+only what we use: `fullscreen` and `screen-wake-lock` (staff screen),
+`autoplay`, and `payment` / `publickey-credentials-get` for us and
+`js.stripe.com` (Apple Pay, Google Pay, Link). Notifications and vibration are
+not Permissions-Policy features at all, so they need no entry; only names
+Chromium recognises are listed (an unknown one is a console error on every
+page).
+
+**How it is tested.** The e2e page guard fails any test whose pages log a CSP
+violation or a Permissions-Policy error, so every flow in the suite (checkout
+with Stripe's card form, 3-D Secure, Express Checkout, Realtime, images, the
+service worker, push) doubles as a policy test. `e2e/security-headers.spec.ts`
+pins the policy itself: a fresh nonce per request on every script tag,
+injected markup (an inline handler, a `javascript:` link) blocked, the 404
+page's scripts running, and the static headers on pages, assets and the
+worker.
+
+---
+
+## Errors and logging
+
+**What people see.** Every route group has an error boundary inside its frame
+(customer app, sign-in, staff screen, admin) and the root has a branded
+`global-error.tsx`; all use `ErrorPanel`: a friendly sentence, Try again, a
+way home, and Next's error digest to quote. Never the error's text: Next
+replaces a Server Component's message in production, and Server Actions
+return written sentences (`GENERIC_ERROR`, or our own validation messages for
+admins), logging the rest. Every route has a skeleton `loading.tsx` and the
+customer and admin frames have branded not-found pages.
+
+**Real 404s under skeletons.** A dynamic page always streams, even to
+search engines, and once a `loading.tsx` skeleton has gone out the status is
+200; a `notFound()` after that shows the not-found page with `noindex` but
+cannot change the status. So the customer pages that can be missing or
+someone else's (a pop-up, a collection, an order, its confirmation, a
+catering request and its payment page) check in a `layout.tsx` of their own
+segment, which renders above that segment's skeleton, and the list pages
+above them keep their skeletons inside route groups (`(home)`, `events/(list)`,
+`orders/(list)`, `orders/[id]/(tracker)`, `account/(profile)`,
+`account/catering/(list)`, `catering/(info)`), so no skeleton sits above a
+check. The lookups are `cache()`d, so layout and page share one query. A
+guest still gets a real redirect to sign in. Product pages keep the soft 404
+they have had since Phase 3 (the menu's skeleton sits above them, and
+moving it would mean regrouping the menu's modal routes); admin detail
+pages likewise (admin-only, never indexed).
+
+**What the server logs** (`src/lib/log.ts`): one JSON line per error with
+`event`, `requestId`, `viewer`, `route` and the error's name, message, code
+and the top of the stack. The proxy gives each request an id (returned as
+`X-Request-Id`) and a viewer label: `guest`, `signed-in`, or the role when
+the route needed it, never an id, name or email. `onRequestError` in
+`src/instrumentation.ts` writes the same line for anything a page, Server
+Action, route handler or the proxy did not handle (path without its query
+string, which can hold search terms); a browser that went away mid-response
+(a prefetch cancelled by navigating on) is not our error and is skipped. `redact()` masks emails, US phone
+numbers, card-like numbers, JWTs, bearer credentials and Stripe/Supabase keys
+in every message, stack and context string (a Postgres error can quote the
+row it failed on). User ids are no longer written to logs.
+
+---
+
+## Monitoring (proposal, decided in Phase 11)
+
+Nothing is installed yet. What we have today: structured, redacted error
+lines in Vercel's runtime logs with request ids; Supabase's own logs and
+reports; Stripe's emails about failing webhooks; the admin's Needs-attention
+queue for failed emails, refunds and flagged payments.
+
+**Recommended for launch:**
+
+| Need | Tool | Cost (verify at sign-up) |
+| --- | --- | --- |
+| Errors, browser and server, with alerts | **Sentry**, Developer plan | free up to 5,000 errors a month, one user; Team about $26/month if it outgrows that |
+| Uptime: is the site up, can it reach the database | **UptimeRobot** (or Better Stack) checking `/` and a small `/api/health` (to add in Phase 11: one cheap database read), every 5 minutes, alerting by email and SMS | free (paid plans from about $7/month for 1-minute checks) |
+| Logs and performance | **Vercel's built-in** runtime logs and Speed Insights; log drains and longer retention need Vercel Pro (about $20/user/month), which the cron schedule may need anyway (Phase 11) | included / Pro |
+
+Sentry would be set up with `sendDefaultPii: false`, no session replay, our
+`redact()` in `beforeSend`, the request id as a tag, and source maps uploaded
+at build (an auth token in Vercel's build environment). Vercel-only (no
+Sentry) is the cheaper alternative: errors stay in the logs we already write,
+but nothing alerts anyone and logs age out quickly on Hobby.
+
+**What we need from the cafe:** who gets alerts (email and phone), whose
+account owns Sentry and the uptime monitor (best: an address the cafe
+controls, with the developer invited), a monthly budget ceiling, and a line
+in the privacy policy about error monitoring.
+
+---
+
+## Accessibility
+
+Target WCAG 2.1 AA, checked by `e2e/accessibility.spec.ts`:
+
+- **axe-core** on every main page and state as guest, customer, barista and
+  admin, including the product sheet, a form showing its errors, checkout,
+  the tracker (in progress and Ready), the staff queue with a ticket and a
+  dialog open, and some thirty admin pages; serious or critical fails.
+  Stripe's card frames are excluded (Stripe's to answer for).
+- **Keyboard only:** menu → product sheet → Add to Cart → cart → checkout →
+  Stripe's card fields → Pay → placed; the staff queue's Start shift and
+  Accept; an admin content form.
+- **Reflow** at 320 px (also 1280 px at 400% zoom), **touch targets** of 44 px
+  (56 on the staff screen; a stretched card link counts the card, a
+  checkbox counts its label), **skip links** first on every frame,
+  **reduced motion** stopping animations, and the **okina and kahakō** drawn
+  by Baloo 2 and Inter in every weight used.
+
+Built in: "Skip to content" (`SkipLink`) on every frame; focus moves to the
+page after client-side navigation (`RouteFocus`) unless a dialog opened or
+focus is already in the page; dialogs and sheets (Radix) trap and return
+focus; toasts never take focus. Live regions: the product's price as it
+changes, the order status on the tracker, the Ready banner, the staff
+screen's new-order alert (it changes only when the count does), cart
+validation messages; skeletons announce "Loading…" once. Form errors are tied
+to their fields with `aria-describedby` and `aria-invalid`. Every animation
+is `motion-safe` and the global reduced-motion rule cuts the rest to nothing.
+Fonts preload only `latin` (it carries the okina U+02BB); `latin-ext`, with
+the precomposed kahakō vowels, loads the first time a page shows one. The
+accessibility statement is site content (`/accessibility`, edited in Admin →
+Pages & contact).
+
+Contrast: deep teal on the teal tint was 4.48:1. The tint is now `#f0fafb`
+(4.66:1); the interactive teal (`#0e7c86`) is unchanged.
+
+---
+
+## Performance
+
+`npm run lighthouse` (`scripts/lighthouse.mjs`) builds, serves on port 3200
+and runs Lighthouse's mobile preset on Home, Menu, a product page, Cart,
+Rewards, Events and Catering, three runs each, median per category, failing
+below 90. Cart is disallowed in robots.txt on purpose, which "Page is blocked
+from indexing" always fails, so that one audit is left out of Cart's SEO
+score (printed every run).
+
+Mobile, simulated throttling, median of three runs, against the local
+dev database (Phase 9 code before, Phase 10 after):
+
+| Page | Performance | Accessibility | Best practices | SEO | LCP | TBT |
+| --- | --- | --- | --- | --- | --- | --- |
+| Home | 79 → **91** | 100 → 100 | 100 → 100 | 100 → 100 | 4.0 s → 3.3 s | 300 → 110 ms |
+| Menu | 72 → **90** | 100 → 100 | 100 → 100 | 100 → 100 | 5.7 s → 3.5 s | 530 → 120 ms |
+| Product | 63 → **90** | 100 → 100 | 100 → 100 | 90 → **100** | 5.7 s → 3.5 s | 510 → 150 ms |
+| Cart | 69 → **92** | 100 → 100 | 100 → 100 | 100 → 100* | 5.1 s → 3.1 s | 480 → 80 ms |
+| Rewards | 66 → **91** | 100 → 100 | 100 → 100 | 100 → 100 | 5.0 s → 3.3 s | 380 → 110 ms |
+| Events | 74 → **93** | 100 → 100 | 100 → 100 | 100 → 100 | 5.0 s → 3.2 s | 460 → 130 ms |
+| Catering | 70 → **91** | 100 → 100 | 100 → 100 | 100 → 100 | 5.0 s → 2.6 s | 470 → 110 ms |
+
+* Without "Page is blocked from indexing" (see above). CLS is 0 on every
+page. Menu and Product sit right at 90: a single run can land a point or two
+either side. Lighthouse's simulation counts every script that finished
+before the largest paint against LCP, and on localhost the scripts arrive
+before the first paint, so these numbers are, if anything, pessimistic; the
+real check is PageSpeed Insights on the deployed site (Phase 11).
+
+What moved it (all first-load JavaScript, which moves LCP and TBT together):
+
+- **Zod out of the browser.** `env.ts` was in every page's bundle (through
+  the Supabase browser client) and imported Zod (~90 KB gzipped). Public
+  variables are now checked by hand; the secrets moved to the server-only
+  `env.server.ts`; the favourite-name check and the auth constants the
+  forms show moved to Zod-free modules. Zod's `eval` probe was also a quiet
+  CSP violation (Best Practices).
+- **supabase-js on first use.** The live-order hooks imported it at module
+  load, so guests downloaded ~70 KB they never use.
+- **Only what renders.** Next bundles every client component a page imports
+  whether it renders or not. The header's location sheet, the cart's edit
+  sheet (it carries the whole product customizer) and Home's and the menu's
+  signed-in-only parts (favourites, order cards, Order again) are loaded with
+  `next/dynamic` from client modules when they are wanted.
+- **Toasts on idle.** Sonner loads when the browser is idle or a toast is
+  shown; no Radix Tooltip provider (nothing used it).
+- **The largest paint, sooner.** Home's skeleton shows the real taglines; the
+  cart shows the pickup location and instructions from the server before the
+  saved cart is read.
+- **Fonts:** only the `latin` files are preloaded (two instead of four).
+- **Metadata in `<head>` for everyone** (`htmlLimitedBots: /.*/`): streamed
+  metadata went into `<body>` for unknown user agents, and product pages lost
+  their description to tools that read the head.
+- **No layout shift:** `<main>` is at least a screen tall, so the footer
+  never jumps when a page streams in after its skeleton.
+- Already in place and kept: product images through `next/image` with
+  `sizes` (the product page's photo is `priority`; menu cards lazy-load);
+  no chart library (the admin's charts are HTML and CSS); Stripe.js loads
+  only on checkout and catering payment; the member QR is a tiny SVG
+  encoder; hashed `/_next/static` cached
+  for a year by Next, brand images for a week.
+
+**Database.** Reviewed with `pg_stat_statements` and each page's queries:
+history (`orders_user_created_idx`), tracker (primary key), rewards activity
+(`loyalty_transactions_user_idx`), favourites, the staff queue
+(`orders_location_status_idx`), the outboxes (partial due indexes) and the
+reports are covered, and no page loads in a loop. Added `refunds_payment_idx`
+(refunds are found by payment on every refund, retry and refund webhook).
+Foreign keys to `profiles` used only for "changed by" stay unindexed (only
+scanned when a profile is deleted). **Realtime:** one channel per filter,
+closed when its last component unmounts; `e2e/realtime-cleanup.spec.ts`
+watches the websocket's own frames to prove the tracker's channel is left on
+every navigation away while the app-wide one stays.
+
+---
+
+## SEO and sharing
+
+Every public page has a title, a description and a canonical URL built on
+`NEXT_PUBLIC_SITE_URL`; product pages share their photo. Private pages
+(sign-in, account, orders, cart, checkout, staff, admin) are `noindex`.
+`/robots.txt` disallows `/admin`, `/staff`, `/account`, `/orders`,
+`/checkout`, `/cart`, catering payment, `/api`, sign-in and `/offline`
+(`src/lib/seo/robots.ts`); `/sitemap.xml` lists the public pages, every
+product, published pop-ups that haven't ended and collections running now,
+read per request. Home and About carry `CafeOrCoffeeShop` JSON-LD
+(`src/lib/seo/structured-data.ts`): address, weekly opening hours from
+`location_hours` (days with equal hours grouped; `24:00` written as `23:59`),
+phone, email and social links from site content, the menu and an order
+action. The share card is drawn by `npm run brand:assets`.
+
+---
+
 ## Time handling
 
 `src/lib/time.ts` is the only place instants convert to Hawaii wall time.
@@ -1861,9 +2288,27 @@ Known follow-ups for later phases:
 
 ## Post-launch
 
-Agreed for after launch (Decisions Log, Phases 2, 5, 7 and 8). v1 auth is email +
-password only, order updates are in-app and by email only, points are
-earned online only, and catering is paid in full.
+Agreed for after launch (Decisions Log, Phases 2, 5, 7, 8 and 10). v1 auth is
+email + password only, order updates are in-app, by email and by push (no
+SMS), points are earned online only, catering is paid in full, and the app is
+light only.
+
+### Dark mode
+
+Not low-risk with today's tokens, so not in v1. The semantic tokens
+(`--background`, `--card`, `--primary`, ...) have dark values in
+`globals.css`, but the components use the raw brand palette directly about
+500 times (`bg-brand-teal-deep text-white`, `bg-brand-teal-soft`,
+`text-brand-magenta-deep`, the brand wash), and those don't change with the
+theme: in dark mode they would be pale tints and deep teal on near-black,
+much of it under 4.5:1. Doing it properly: give the brand layer semantic
+names (`--surface-tint`, `--accent-strong`, `--on-accent`, ...) with light
+and dark values, move components onto them, check every pairing for
+contrast (the axe suite would run in both modes), decide dark versions of
+the brand art (the wordmark, the placeholder cups, the share card) with the
+cafe, and switch on `prefers-color-scheme` with a toggle in Account. The
+customer app, staff screen and admin should move together, or a barista
+sees two looks. Toasts are pinned to light until then.
 
 ### Catering deposits
 
