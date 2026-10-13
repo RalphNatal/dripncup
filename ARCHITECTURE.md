@@ -931,13 +931,16 @@ ticket between columns or change its colour.
 | Ready | Ready |
 
 Within a column, tickets sort by pickup time, ASAP orders by when they were
-placed. A ticket turns amber, then red, `staff.ticket_warning_minutes` (5) and
-`staff.ticket_late_minutes` (10) after its estimated ready time (the scheduled
-time, or the ASAP estimate from checkout) while it is still being made, with a
-"Running behind" / "LATE" label so colour is never the only signal. Each
-selection gets its own line in build order (temperature, milk, shots,
-flavours, sweetness, ice, toppings, then the rest), decided by the modifier
-group's slug or name (`src/lib/staff/ticket.ts`). Special instructions and
+placed. A ticket gets an amber, then red, stripe down its edge and timer chip
+`staff.ticket_warning_minutes` (5) and `staff.ticket_late_minutes` (10) after its
+estimated ready time (the scheduled time, or the ASAP estimate from checkout)
+while it is still being made; the card itself stays neutral, so a rush of
+late orders doesn't turn the whole screen red. The timer is text as well as
+colour (`ticketTimer`): "4m" while on time, "12m late" once past the time the
+customer was given. Selections are listed in build order (temperature, milk,
+shots, flavours, sweetness, ice, toppings, then the rest), decided by the
+modifier group's slug or name (`src/lib/staff/ticket.ts`): one per line, or on
+one line in the Compact density. Special instructions and
 order notes are boxed; allergens are the product's plus every chosen option's.
 
 The data is one query: orders for the location that are on the queue, or were
@@ -2337,8 +2340,11 @@ and dark values, move components onto them, check every pairing for
 contrast (the axe suite would run in both modes), decide dark versions of
 the brand art (the wordmark, the placeholder cups, the share card) with the
 cafe, and switch on `prefers-color-scheme` with a toggle in Account. The
-customer app, staff screen and admin should move together, or a barista
-sees two looks. Toasts are pinned to light until then.
+customer app and admin should move together. The staff screen already has
+its own dark "counter" theme (asked for to cut glare on the counter tablet):
+a `--staff-*` token layer with light and dark values and the contrast noted on
+each, applied to `<html>` only while the dashboard is mounted. It is the
+template for the rest. Toasts are pinned to light until then.
 
 ### Catering deposits
 

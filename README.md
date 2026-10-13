@@ -412,7 +412,17 @@ nothing a hosted project could call.
   windows side by side, wait on real timers (the undo window, the repeating
   chime, which the suite shortens to 5 seconds, and a scheduled order falling
   due about 20 seconds after it is placed), cancel a real sandbox payment,
-  and stub `window.print` to count what would have printed.
+  and stub `window.print` to count what would have printed. They also check
+  the layout: density and theme remembered per device, the detail view as a
+  panel (1280 px), a sheet (1024 px) and full screen (phone), the empty
+  Upcoming strip, the alert strip, and the keyboard shortcuts. Axe runs on
+  the staff screen in both the light and the dark theme.
+- **Staff screenshots** (`e2e/staff-screens.spec.ts`, not part of the normal
+  run): `npm run test:e2e -- --project=screens` arranges an empty queue, 3
+  orders and a 25-order rush on the e2e stack and saves the staff screen at
+  every supported size, light and dark, to `docs/screenshots/staff/after/`
+  (`STAFF_SHOTS=before` names the folder; `STAFF_SHOT_SIZES=1180,390` and
+  `STAFF_SHOT_SCENARIOS=25-orders,extras` narrow it while you iterate).
 
 ---
 
@@ -658,9 +668,15 @@ the customer's activity log.
 
 ## Staff dashboard (`/staff`)
 
-The barista screen, built for a landscape tablet on the counter (1024–1366 px
-wide) and usable on a phone. Sign in as `barista@drincup.test` (or the admin)
-and open `/staff`.
+The barista screen: a kitchen display built for a landscape tablet on the
+counter, and laid out for every screen from a phone to a wall-mounted
+display. Sign in as `barista@drincup.test` (or the admin) and open `/staff`.
+
+| Light, rush of 25 orders (1180×820) | Dark counter theme, detail panel (1440×900) |
+|---|---|
+| ![The queue on a counter tablet](docs/screenshots/staff/after/tablet-landscape-1180x820-25-orders-light.png) | ![Dark theme with the detail panel open](docs/screenshots/staff/after/extra-detail-panel-1440x900-dark.png) |
+
+More, before and after, at every size: [`docs/screenshots/staff/`](docs/screenshots/staff/).
 
 ### Using it
 
@@ -669,38 +685,50 @@ and open `/staff`.
   keeps the screen awake, and goes fullscreen if you tick the box (the choice
   is remembered on the device). After reloading the page, tap Start shift
   again.
-- **Location.** The top line shows the counter, whether it is open, closed or
-  paused, and today's hours. If you work more than one counter (the cafe and
-  a pop-up running today), pick it from the menu there; the device remembers
-  it. Admins see every location.
+- **The toolbar** stays at the top. Left: the counter, whether it is open,
+  closed or paused, and today's hours (if you work more than one counter, the
+  cafe and a pop-up running today, pick it there; the device remembers it;
+  admins see every location). Centre: the Honolulu clock and today's numbers
+  (orders today, average minutes to ready, waiting). Right: **Pause online
+  orders**, **Sold out**, **Catering**, **Completed** and **Settings**.
 - **Columns.** **Upcoming** (scheduled orders not due yet), **New**, **In
-  progress** (Accepted or Preparing, shown on the ticket) and **Ready**. A
-  scheduled order moves from Upcoming to New at pickup time minus the
-  location's prep time, and rings like a new order. On a phone the columns
-  are tabs.
+  progress** (Accepted or Preparing, shown on the ticket) and **Ready**, each
+  with a large count, each scrolling on its own under its header. A scheduled
+  order moves from Upcoming to New at pickup time minus the location's prep
+  time, and rings like a new order. While nothing is scheduled, Upcoming
+  shrinks to a narrow strip so the busy columns get the room.
 - **One tap per step.** New → **Accept** → **Start** → **Ready** → **Picked
-  up**. Ready and Picked up wait five seconds with a big **Undo** before they
-  are sent, so a mis-tap never reaches the customer. If someone else already
-  moved the order on another screen you'll see "Already updated" and the
-  ticket refreshes.
-- **Tickets** show the cup name, order number, ASAP or the pickup time, and a
-  timer since the order was placed. They turn amber 5 minutes and red 10
-  minutes past the estimated ready time (settings `staff.ticket_warning_minutes`
-  and `staff.ticket_late_minutes`). Notes and special instructions are boxed
-  in pink; allergens are flagged in red.
+  up**, always the same colour (magenta, teal, green, black). Ready and Picked
+  up wait five seconds with **Undo** (on the ticket and in the bar at the
+  bottom of the screen, which never covers a ticket) before they are sent, so
+  a mis-tap never reaches the customer. If someone else already moved the
+  order on another screen you'll see "Already updated" and the ticket
+  refreshes.
+- **Tickets** read top to bottom: cup name (largest) and the order's daily
+  number; ASAP or the pickup time and a timer ("4m"; once past the time the
+  customer was given, "12m late", "1h 05m late"); every item with its
+  quantity, drink and size in bold and its selections in the order you build
+  the drink; notes and special instructions in a boxed callout; allergen and
+  REWARD pills; one big button. Cards stay neutral. A ticket running 5 minutes
+  past its estimated ready time gets an amber stripe down its edge and an
+  amber timer; at 10 minutes, red (settings `staff.ticket_warning_minutes`
+  and `staff.ticket_late_minutes`). New, unacknowledged tickets pulse a soft
+  outline.
 - **Tap a ticket** for the full order, its history (who did what, when),
-  **Print ticket**, **Print cup labels** and **Cancel order**. Cancelling asks
-  for a reason and says exactly how much will be refunded before anything
-  happens; the customer's tracker and the cancellation email follow
-  automatically.
+  **Print ticket**, **Print cup labels** and **Cancel order**. On a laptop or
+  wider (1280 px and up) it opens in a panel beside the queue, which stays
+  usable; on a tablet it slides over the right of the queue; on a phone it
+  fills the screen. Cancelling asks for a reason and says exactly how much
+  will be refunded before anything happens; the customer's tracker and the
+  cancellation email follow automatically.
 - **New-order alert.** A chime that repeats every 15 seconds
   (`staff.new_order_repeat_seconds`) until you open the order or tap
-  **Acknowledge**, a flashing outline, and the count in the tab title. The
-  speaker button mutes it; the slider sets the volume. Both are remembered on
-  the device.
+  **Acknowledge** in the magenta strip at the bottom of the screen, plus the
+  count on the New column (or tab) and in the tab title.
 - **Pause online orders** for a rush: 15, 30 or 60 minutes, or until you
-  resume. A banner counts down while paused; customers can browse but not
-  check out. It resumes by itself when the time is up.
+  resume. While paused the button turns solid amber with the time left, and
+  a banner says so with **Resume now**; customers can browse but not check
+  out. It resumes by itself when the time is up.
 - **Sold out**: search any drink, food item or option (milks, syrups…) and
   switch it off, **until end of day** (it comes back at the next day's opening,
   Honolulu time) or **until I turn it back on**. The menu and every cart see
@@ -710,9 +738,48 @@ and open `/staff`.
   contact's phone and any notes. After the event, **Mark fulfilled**.
 - **Completed**: today's picked-up and cancelled orders, searchable by order
   number or cup name.
-- **Offline.** A red "Offline — reconnecting…" banner means new orders may be
+- **Offline.** A red "Offline — reconnecting…" strip means new orders may be
   missing; taps fail with a message instead of being saved for later. It
   catches up by itself when the connection is back.
+
+### Settings (per device)
+
+**Settings** on the toolbar (in **Menu** on a phone). Everything here is
+remembered on that device only:
+
+- **New-order sound**: on or off, and the volume. While it is off, a red
+  **Muted** button sits on the toolbar; one tap turns it back on.
+- **Tickets: Comfortable or Compact.** Compact puts the timer on the cup
+  name's line and the selections on one line ("Iced · Oat milk · Vanilla (2
+  pumps)"), so a rush fits about half as many again per column, with nothing
+  left out.
+- **Theme: Light or Dark.** Dark is a "counter" theme with less glare on a
+  tablet under the bar lights; both meet WCAG AA contrast. It applies to the
+  staff screen only.
+- **Fullscreen**, and the list of **keyboard shortcuts**.
+
+### Screen sizes
+
+| Screen | Layout |
+|---|---|
+| Phone (under 768 px) | One column at a time as tabs (New, In progress, Ready, Upcoming) with counts; a one-row toolbar with Pause and **Menu** (today's numbers, hours, Sold out, Catering, Completed, settings) |
+| Tablet portrait (768–1023 px) | **New** always on the left, In progress / Ready / Upcoming as tabs on the right, so the two columns you work from are on screen together |
+| Tablet landscape (1024–1279 px) | All four columns and the full toolbar in one row (its buttons stack icon over label) |
+| Laptop (1280 px and up) | The same, with the detail panel docked beside the queue |
+| Wall display (1800 px and up) | Everything an eighth larger, to read from across the room |
+
+### Keyboard shortcuts
+
+For a laptop on the counter; none of them fire while you are typing in a box
+or a dialog is open. **?** shows the list.
+
+| Key | Does |
+|---|---|
+| ← ↑ → ↓ | Move between tickets |
+| Enter | The ticket's main action (Accept, Start, Ready, Picked up) |
+| Space or O | Open the ticket's details |
+| A | Acknowledge new orders |
+| Esc | Close the details panel |
 
 ### Two windows by hand (customer and barista)
 
