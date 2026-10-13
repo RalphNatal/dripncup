@@ -1177,8 +1177,11 @@ It uses Chrome if installed, else Microsoft Edge (`CHROME_PATH` overrides).
 Cart is kept out of search on purpose (robots.txt), which Lighthouse's "Page
 is blocked from indexing" always fails; that one audit is left out of Cart's
 SEO score and the run says so. Results before and after Phase 10 are in
-ARCHITECTURE.md ("Performance"); Menu and Product sit right at 90, so a single
-run can dip a point.
+ARCHITECTURE.md ("Performance"). Close other apps first: Lighthouse times the
+page on this machine and scales the result, so a busy PC (a game, a video
+call, Docker builds) costs Menu, Product and Cart several points. Each
+report's `environment.benchmarkIndex` shows how fast the machine was; runs
+that differ a lot in it aren't comparable.
 
 ### Cross-browser checklist
 

@@ -2153,11 +2153,21 @@ dev database (Phase 9 code before, Phase 10 after):
 | Catering | 70 → **91** | 100 → 100 | 100 → 100 | 100 → 100 | 5.0 s → 2.6 s | 470 → 110 ms |
 
 * Without "Page is blocked from indexing" (see above). CLS is 0 on every
-page. Menu and Product sit right at 90: a single run can land a point or two
-either side. Lighthouse's simulation counts every script that finished
-before the largest paint against LCP, and on localhost the scripts arrive
-before the first paint, so these numbers are, if anything, pessimistic; the
-real check is PageSpeed Insights on the deployed site (Phase 11).
+page. Lighthouse's simulation counts every script that finished before the
+largest paint against LCP, and on localhost the scripts arrive before the
+first paint, so these numbers are, if anything, pessimistic; the real check
+is PageSpeed Insights on the deployed site (Phase 11).
+
+**Margins.** Menu, Product and Cart sit close to 90 and move with the
+machine: the final checks (after TanStack Query left the root, below) ran
+while other apps held the CPU at 55-65%, and Lighthouse's own benchmark of
+the machine swung from 965 to 1465 within one run. Across those runs Home,
+Rewards, Events and Catering stayed at 90-94, while Menu measured 85-89,
+Product 84-91 and Cart 87-93. Menu is the tightest: its largest paint is
+server-rendered and observed at about 0.3 s, but the simulation charges it
+for the framework's JavaScript (React DOM and the router, about 150 KB
+compressed, the same on every page). Re-run on a quiet machine before
+reading anything into a single point.
 
 What moved it (all first-load JavaScript, which moves LCP and TBT together):
 
