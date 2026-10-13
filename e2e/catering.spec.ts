@@ -86,6 +86,10 @@ test.describe("catering", () => {
   });
 
   test("quote, changes, revised quote, pay with 4242: confirmed, receipts, and the prep list on the day @tablet", async ({ browser, request }) => {
+    // Two people, two quotes, three emails, a payment and the webhook: on a
+    // busy machine (Stripe holding the first Pay clicks a few seconds; see
+    // payWithCard) the default 45 s is too tight.
+    test.setTimeout(90_000);
     const customer = await createCustomer("cat-flow");
     const arranged = await arrangeCateringRequest({ userId: customer.id, email: customer.email });
 
