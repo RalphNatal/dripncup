@@ -14,6 +14,7 @@ import { CircleX, LoaderCircle, MapPin, PartyPopper, RotateCcw } from "lucide-re
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Swirl } from "@/components/brand/logo";
 import { OrderBreakdown, PointsNote, RewardTag } from "@/components/checkout/order-breakdown";
 import { getStripe, stripeAppearance, stripeFonts } from "@/components/checkout/stripe";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
@@ -154,6 +155,7 @@ export function ConfirmationView({
         <div className="text-center">
           <PartyPopper className="mx-auto size-10 text-brand-magenta-deep" aria-hidden="true" />
           <h1 className="mt-3 text-3xl font-extrabold">Mahalo!</h1>
+          <Swirl className="mx-auto mt-1 h-5 text-brand-magenta" />
           <p className="mt-1 text-muted-foreground">Your order is in. We&apos;ll have it ready for you.</p>
           <p className="mt-4 text-sm font-semibold tracking-wide text-muted-foreground uppercase">Order number</p>
           <p className="tabular text-4xl font-extrabold" data-testid="order-number">

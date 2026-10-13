@@ -15,7 +15,8 @@ export function ProgressBar({ percent, label, className }: { percent: number; la
       aria-valuenow={percent}
       className={cn("h-3 w-full overflow-hidden rounded-full bg-white/70 ring-1 ring-brand-magenta-deep/20", className)}
     >
-      <div className="h-full rounded-full bg-brand-magenta-deep transition-[width]" style={{ width: `${percent}%` }} />
+      {/* Fills from empty on arrival (motion-safe), then follows the balance. */}
+      <div className="h-full rounded-full bg-brand-magenta-deep transition-[width] motion-safe:animate-progress-fill" style={{ width: `${percent}%` }} />
     </div>
   );
 }
