@@ -2306,6 +2306,115 @@ export type Database = {
         }
         Relationships: []
       }
+      push_outbox: {
+        Row: {
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          delivered_to: string[]
+          id: string
+          kind: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          order_id: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          dedupe_key: string
+          delivered_to?: string[]
+          id?: string
+          kind: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          order_id: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string
+          delivered_to?: string[]
+          id?: string
+          kind?: string
+          last_error?: string | null
+          locked_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          order_id?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_outbox_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          device_label: string
+          endpoint: string
+          failure_count: number
+          id: string
+          last_failure_at: string | null
+          last_success_at: string | null
+          p256dh: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          device_label?: string
+          endpoint: string
+          failure_count?: number
+          id?: string
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          p256dh: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          device_label?: string
+          endpoint?: string
+          failure_count?: number
+          id?: string
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          p256dh?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rate_limit_hits: {
         Row: {
           hits: number
@@ -3558,6 +3667,31 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_push_outbox: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          delivered_to: string[]
+          id: string
+          kind: string
+          last_error: string | null
+          locked_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          order_id: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "push_outbox"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_catering_request: {
         Args: { p_items: Json; p_request: Json; p_user_id: string }
         Returns: {
@@ -3689,6 +3823,7 @@ export type Database = {
       place_free_order: { Args: { p_order_id: string }; Returns: string }
       product_size_used: { Args: { p_size_id: string }; Returns: boolean }
       product_usage: { Args: { p_product_id: string }; Returns: Json }
+      push_subscription_limit: { Args: never; Returns: number }
       rate_limit_hit: {
         Args: {
           p_cost?: number
@@ -3736,6 +3871,16 @@ export type Database = {
           tip_cents: number
           total_cents: number
         }[]
+      }
+      save_push_subscription: {
+        Args: {
+          p_auth: string
+          p_device_label?: string
+          p_endpoint: string
+          p_p256dh: string
+          p_user_id: string
+        }
+        Returns: string
       }
       set_location_accepting_orders: {
         Args: {

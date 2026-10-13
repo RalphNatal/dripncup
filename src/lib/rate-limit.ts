@@ -11,6 +11,7 @@ import "server-only";
  */
 import { headers } from "next/headers";
 
+import { logError } from "@/lib/log";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface Limit {
@@ -33,6 +34,9 @@ export const LIMITS = {
   /** Starting a catering payment (each one asks Stripe for a PaymentIntent). */
   cateringPaymentPerUser: { scope: "catering-pay:user", max: 12, windowSeconds: 600 },
   cateringPaymentPerIp: { scope: "catering-pay:ip", max: 40, windowSeconds: 600 },
+  /** Saving a push subscription ("Notify me"): a few devices, a few retries. */
+  pushSubscribePerUser: { scope: "push:user", max: 20, windowSeconds: 3600 },
+  pushSubscribePerIp: { scope: "push:ip", max: 60, windowSeconds: 3600 },
 } satisfies Record<string, Limit>;
 
 /**
@@ -54,7 +58,7 @@ async function call(limit: Limit, subject: string, cost: number, max: number): P
   });
   if (error) {
     // An outage of the limiter must not take ordering down with it.
-    console.error(`Rate limiter unavailable for ${limit.scope}`, error);
+    logError("rate_limit.unavailable", error, { scope: limit.scope });
     return true;
   }
   return data === true;

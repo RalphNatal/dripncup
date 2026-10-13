@@ -15,6 +15,7 @@
  * toggle), so they run one at a time.
  */
 import { defineConfig, devices } from "@playwright/test";
+import webpush from "web-push";
 
 import { e2eStackEnv } from "./e2e/support/stack";
 
@@ -35,6 +36,17 @@ process.env.E2E_RUN_ID ??= `e2e-${new Date().toISOString().replace(/[-:]/g, "").
 // The order-expiry route only answers with its secret; the test server gets a
 // fixed one, and the tests read it back from here.
 process.env.E2E_CRON_SECRET ??= "e2e-local-cron-secret";
+
+// Web Push: a key pair for this run (never the one in .env.local), and the
+// address of the stand-in push service the push tests start
+// (e2e/support/push.ts). The server accepts that origin as a push endpoint
+// only because E2E_RUN_ID is set and the database is local (src/lib/push/config.ts).
+if (!process.env.E2E_VAPID_PUBLIC_KEY || !process.env.E2E_VAPID_PRIVATE_KEY) {
+  const keys = webpush.generateVAPIDKeys();
+  process.env.E2E_VAPID_PUBLIC_KEY = keys.publicKey;
+  process.env.E2E_VAPID_PRIVATE_KEY = keys.privateKey;
+}
+process.env.E2E_PUSH_PORT ??= "3199";
 
 /**
  * Which browser build to drive. On Windows this defaults to the Microsoft Edge
@@ -92,6 +104,10 @@ export default defineConfig({
       TEST_STORE_ALWAYS_OPEN: "false",
       RESEND_API_KEY: "",
       E2E_RUN_ID: process.env.E2E_RUN_ID,
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.E2E_VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY: process.env.E2E_VAPID_PRIVATE_KEY,
+      VAPID_SUBJECT: "mailto:e2e@drincup.test",
+      E2E_PUSH_ORIGIN: `http://127.0.0.1:${process.env.E2E_PUSH_PORT}`,
     },
     // Never reuse a server already on the port: one left over from an older
     // run may have been built against the dev database.

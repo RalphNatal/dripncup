@@ -17,6 +17,7 @@ import type { SnapshotModifier } from "@/lib/orders/detail";
 import type { OrderStatus } from "@/lib/order-status";
 import { createClient } from "@/lib/supabase/client";
 
+import { sendOwedNotifications } from "./actions";
 import type { StaffOrder } from "./queue";
 import type { CatalogMeta } from "./ticket";
 import type { LiveLocationState } from "./types";
@@ -192,7 +193,11 @@ export async function advanceOrder(orderId: string, from: OrderStatus, to: Order
   if (current.data.status !== from) return { outcome: "already", status: current.data.status };
 
   const { error } = await supabase.rpc("advance_order_status", { p_order_id: orderId, p_new_status: to });
-  if (!error) return { outcome: "done" };
+  if (!error) {
+    // The push and email a move owes ("Your order is ready") go out now.
+    void sendOwedNotifications().catch(() => undefined);
+    return { outcome: "done" };
+  }
   // The order moved between the check and the call.
   if (error.code === "23514") return { outcome: "already", status: null };
   if (error.code === "42501") return { outcome: "error", message: "You're not rostered at this location." };

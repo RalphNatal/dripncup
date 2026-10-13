@@ -10,16 +10,22 @@
  *     is remembered on this device
  *   - a vibration on phones that support it
  *   - the tab title changes while the order is ready
- *   - a browser notification, if the customer allowed them from the in-page
- *     prompt (never asked for on page load)
+ *   - a notification, if the customer turned them on with the in-page
+ *     button (never asked for on page load). Where Web Push works, that
+ *     button subscribes this device, so "ready" arrives even with the app
+ *     closed; the page's own notification and the push share a tag, so
+ *     only one shows. Shown through the service worker, which Android
+ *     Chrome requires.
  *
  * The chime, vibration and notification fire on the *change* to Ready, not
  * when a page opens on an order that was already ready.
  */
-import { Bell, BellOff, BellRing, PartyPopper, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { Bell, BellOff, BellRing, PartyPopper, Smartphone, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import type { OrderStatus } from "@/lib/order-status";
+import { usePushNotifications } from "@/lib/push/client";
+import { orderReadyTag } from "@/lib/push/payload";
 
 // ---------------------------------------------------------------------------
 // Sound: a short three-note chime, synthesised so there is no audio file.
@@ -126,13 +132,23 @@ function askPermission() {
   void Notification.requestPermission().then(done, done);
 }
 
-function showNotification(title: string, body: string, tag: string) {
+async function showNotification(title: string, body: string, tag: string, url: string) {
   if (notificationPermission() !== "granted") return;
+  const options: NotificationOptions = { body, tag, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url } };
   try {
-    new Notification(title, { body, tag, icon: "/favicon.ico" });
+    // Chrome on Android only allows notifications from a service worker.
+    const registration = await navigator.serviceWorker?.getRegistration();
+    if (registration) {
+      await registration.showNotification(title, options);
+      return;
+    }
   } catch {
-    // Chrome on Android only allows notifications from a service worker
-    // (arrives with the PWA in Phase 10); the banner and chime still run.
+    // Fall through to a page notification.
+  }
+  try {
+    new Notification(title, options);
+  } catch {
+    // Not allowed here; the banner and chime still run.
   }
 }
 
@@ -152,7 +168,6 @@ export function ReadyAlert({
   const [muted, setMuted] = useMuted();
   const mutedRef = useRef(muted);
   const previous = useRef<OrderStatus | null>(null);
-  const permission = usePermission();
   const ready = status === "ready";
   const message = `Your order is ready at ${locationName}! 🎉`;
 
@@ -182,7 +197,7 @@ export function ReadyAlert({
     } catch {
       // Not allowed without a gesture on some browsers; nothing to do.
     }
-    showNotification("Your order is ready! 🎉", `${orderNumber} is waiting for you at ${locationName}.`, `order-ready-${orderId}`);
+    void showNotification("Your order is ready! 🎉", `${orderNumber} is waiting for you at ${locationName}. Mahalo!`, orderReadyTag(orderId), `/orders/${orderId}`);
   }, [status, orderId, orderNumber, locationName]);
 
   // The tab title says so while it is ready.
@@ -204,9 +219,10 @@ export function ReadyAlert({
           role="status"
           aria-live="assertive"
           data-testid="ready-banner"
-          className="flex items-center gap-3 rounded-3xl bg-brand-magenta-deep px-5 py-4 text-white shadow-lg"
+          className="relative flex items-center gap-3 rounded-3xl bg-brand-magenta-deep px-5 py-4 text-white shadow-lg"
         >
-          <PartyPopper className="size-8 shrink-0" aria-hidden="true" />
+          <Confetti />
+          <PartyPopper className="size-8 shrink-0 motion-safe:animate-cart-bump" aria-hidden="true" />
           <div>
             <p className="text-lg leading-tight font-extrabold">{message}</p>
             <p className="text-sm text-white/90">Grab it from the pickup shelf. Mahalo!</p>
@@ -229,33 +245,120 @@ export function ReadyAlert({
             {muted ? "Ready sound off" : "Ready sound on"}
           </button>
 
-          {active && permission === "default" ? (
-            <button
-              type="button"
-              onClick={() => {
-                unlockAudio();
-                askPermission();
-              }}
-              className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-teal-deep/40 bg-brand-teal-soft px-4 font-semibold text-brand-teal-deep hover:bg-brand-teal-soft/70"
-            >
-              <Bell className="size-4" aria-hidden="true" />
-              Notify me when it&apos;s ready
-            </button>
-          ) : null}
-          {active && permission === "granted" ? (
-            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-              <BellRing className="size-4" aria-hidden="true" />
-              We&apos;ll send a notification when it&apos;s ready.
-            </span>
-          ) : null}
-          {active && permission === "denied" ? (
-            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-              <BellOff className="size-4" aria-hidden="true" />
-              Notifications are blocked in your browser settings.
-            </span>
-          ) : null}
+          {active ? <NotifyMe /> : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+/** Brand-coloured pieces that burst out of the Ready banner once (motion-safe only). */
+const CONFETTI = Array.from({ length: 14 }, (_, i) => {
+  const angle = (i / 14) * Math.PI * 2;
+  const reach = 70 + (i % 3) * 22;
+  return {
+    dx: `${Math.round(Math.cos(angle) * reach * 1.6)}px`,
+    dy: `${Math.round(Math.sin(angle) * reach)}px`,
+    turn: `${(i % 2 ? 1 : -1) * (180 + i * 25)}deg`,
+    color: ["var(--brand-teal)", "var(--brand-pink)", "#ffffff", "var(--brand-sand)"][i % 4],
+    round: i % 3 === 0,
+  };
+});
+
+function Confetti() {
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 hidden overflow-visible motion-safe:block">
+      {CONFETTI.map((piece, i) => (
+        <span
+          key={i}
+          className={`absolute top-1/2 left-1/2 size-2.5 animate-confetti ${piece.round ? "rounded-full" : "rounded-[2px]"}`}
+          style={{ backgroundColor: piece.color, ["--dx" as string]: piece.dx, ["--dy" as string]: piece.dy, ["--turn" as string]: piece.turn, animationDelay: `${(i % 4) * 40}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+const NOTIFY_BUTTON =
+  "focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-teal-deep/40 bg-brand-teal-soft px-4 font-semibold text-brand-teal-deep hover:bg-brand-teal-soft/70 disabled:opacity-60";
+
+function Note({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0">
+      {icon}
+      <span>{children}</span>
+    </span>
+  );
+}
+
+/**
+ * "Notify me when it's ready". With Web Push this device is subscribed, so
+ * the notification arrives even if the app is closed; without it (or before
+ * the server has keys) the page asks for plain notifications, which work
+ * while this page is open.
+ */
+function NotifyMe() {
+  const push = usePushNotifications();
+  const permission = usePermission();
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (push.status === "loading") return null;
+  if (push.status === "on") {
+    return <Note icon={<BellRing aria-hidden="true" />}>We&apos;ll notify you when it&apos;s ready, even if you close the app.</Note>;
+  }
+  if (push.status === "denied" || (push.status === "unsupported" && permission === "denied")) {
+    return <Note icon={<BellOff aria-hidden="true" />}>Notifications are blocked in your browser settings.</Note>;
+  }
+  if (push.status === "needs-install") {
+    return (
+      <Note icon={<Smartphone aria-hidden="true" />}>
+        On iPhone, add Drincup to your Home Screen (iOS 16.4 or later) to get notified when it&apos;s ready.
+      </Note>
+    );
+  }
+  if (push.status === "off") {
+    return (
+      <>
+        <button
+          type="button"
+          disabled={push.busy}
+          onClick={async () => {
+            unlockAudio();
+            setMessage(null);
+            const result = await push.turnOn();
+            if (!result.ok && result.message) setMessage(result.message);
+          }}
+          className={NOTIFY_BUTTON}
+        >
+          <Bell className="size-4" aria-hidden="true" />
+          Notify me when it&apos;s ready
+        </button>
+        {message ? (
+          <span role="status" className="text-sm font-semibold text-destructive">
+            {message}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+  // No Web Push here: plain notifications while the page is open.
+  if (permission === "default") {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          unlockAudio();
+          askPermission();
+        }}
+        className={NOTIFY_BUTTON}
+      >
+        <Bell className="size-4" aria-hidden="true" />
+        Notify me when it&apos;s ready
+      </button>
+    );
+  }
+  if (permission === "granted") {
+    return <Note icon={<BellRing aria-hidden="true" />}>We&apos;ll send a notification when it&apos;s ready (keep this page open).</Note>;
+  }
+  return null;
 }

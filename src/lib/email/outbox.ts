@@ -15,6 +15,9 @@ import "server-only";
  * the last attempt (six by default), left as `failed` for an admin to see. A row that should
  * no longer be sent (no recipient, ready-email turned off) is `skipped`.
  *
+ * Push notifications have their own outbox (src/lib/push/outbox.ts), run
+ * alongside this one by everything below.
+ *
  * Who runs it:
  *   - kickOutbox(): after the response, from the payment webhook and the
  *     staff actions that change an order, so emails go out within seconds
@@ -24,6 +27,8 @@ import "server-only";
  */
 import { after } from "next/server";
 
+import { logError, redact } from "@/lib/log";
+import { processPushOutbox } from "@/lib/push/outbox";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { composeCateringEmail, isCateringEmailKind } from "./catering-email";
@@ -97,10 +102,10 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
         .update(giveUp ? { status: "failed", last_error: message, locked_at: null } : { status: "pending", last_error: message, next_attempt_at: next, locked_at: null })
         .eq("id", row.id);
       if (giveUp) {
-        console.error(`Email ${row.kind} for ${row.order_id ?? row.catering_request_id} failed for good: ${message}`);
+        logError("email.failed", failure, { kind: row.kind, orderId: row.order_id, cateringRequestId: row.catering_request_id, attempts: row.attempts });
         report.failed += 1;
       } else {
-        console.warn(`Email ${row.kind} for ${row.order_id ?? row.catering_request_id} failed (attempt ${row.attempts}); retrying at ${next}: ${message}`);
+        console.warn(`Email ${row.kind} for ${row.order_id ?? row.catering_request_id} failed (attempt ${row.attempts}); retrying at ${next}: ${redact(message)}`);
         report.retrying += 1;
       }
     }
@@ -110,16 +115,16 @@ export async function processOutbox({ limit = 20 }: { limit?: number } = {}): Pr
 }
 
 /**
- * Sends whatever is due once the current response has gone out. Never
- * throws: an email problem must not fail a webhook or a staff action, and
- * anything unsent is picked up by the next sweep.
+ * Sends whatever is due -- emails and push notifications -- once the current
+ * response has gone out. Never throws: a delivery problem must not fail a
+ * webhook or a staff action, and anything unsent is picked up by the next
+ * sweep.
  */
 export function kickOutbox() {
   after(async () => {
-    try {
-      await processOutbox();
-    } catch (error) {
-      console.error("Email outbox run failed", error);
-    }
+    await Promise.all([
+      processPushOutbox().catch((error) => logError("push.outbox_run_failed", error)),
+      processOutbox().catch((error) => logError("email.outbox_run_failed", error)),
+    ]);
   });
 }

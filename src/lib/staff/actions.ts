@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { requireRole } from "@/lib/auth/dal";
+import { kickOutbox } from "@/lib/email/outbox";
 import { clientEnv } from "@/lib/env";
 
 import { STAFF_LOCATION_COOKIE, STAFF_LOCATION_COOKIE_MAX_AGE, getStaffLocationOptions } from "./locations";
@@ -33,4 +34,16 @@ export async function rememberStaffLocation(locationId: unknown): Promise<Rememb
     secure: clientEnv.NEXT_PUBLIC_SITE_URL.startsWith("https://"),
   });
   return { ok: true };
+}
+
+/**
+ * Called by the dashboard right after it moves an order (advanceOrder in
+ * ./client, which writes through the database directly): sends what the move
+ * owes now, the "ready" push and the opt-in "ready" email, instead of at the
+ * next scheduled sweep. It only runs the outboxes; it can send nothing the
+ * database did not queue, so an extra call is harmless.
+ */
+export async function sendOwedNotifications(): Promise<void> {
+  await requireRole(["staff", "admin"], "/staff");
+  kickOutbox();
 }

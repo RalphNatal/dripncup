@@ -100,8 +100,14 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
   redirect(next);
 }
 
-export async function signOut(): Promise<void> {
+export async function signOut(formData?: FormData): Promise<void> {
   const supabase = await createClient();
+  // This device's push subscription, if it has one (the sign-out button
+  // fills it in): its "order ready" notifications stop with the session.
+  const pushEndpoint = formData?.get("pushEndpoint");
+  if (typeof pushEndpoint === "string" && pushEndpoint && pushEndpoint.length <= 2048) {
+    await supabase.from("push_subscriptions").delete().eq("endpoint", pushEndpoint);
+  }
   // This device only; signing out a phone should not end a laptop session.
   await supabase.auth.signOut({ scope: "local" });
   revalidatePath("/", "layout");
